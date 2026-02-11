@@ -1,0 +1,35 @@
+"""ORM models for metadata and business context storage."""
+
+from sqlalchemy import Column, DateTime, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.orm import DeclarativeBase
+from pgvector.sqlalchemy import Vector
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class MetadataEntry(Base):
+    """Schema metadata describing a database table and its columns."""
+
+    __tablename__ = "metadata_entries"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_name = Column(String(255), nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    columns_metadata = Column(JSON, nullable=True)  # [{name, type, description}, ...]
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class BusinessContext(Base):
+    """Natural-language business context stored with vector embeddings."""
+
+    __tablename__ = "business_contexts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(1536), nullable=True)
+    source = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
