@@ -80,13 +80,17 @@ async def upload_file(
     file_bytes = await file.read()
     file_name = file.filename or "upload.csv"
 
-    agent = DataEngineerAgent()
-    report = await agent.invoke({
-        "file_bytes": file_bytes,
-        "file_name": file_name,
-        "db_session": session,
-    })
-    return report
+    try:
+        agent = DataEngineerAgent()
+        report = await agent.invoke({
+            "file_bytes": file_bytes,
+            "file_name": file_name,
+            "db_session": session,
+        })
+        return report
+    except Exception as exc:
+        logger.exception("Upload failed")
+        return {"error": str(exc)}
 
 
 @app.get("/metadata")
