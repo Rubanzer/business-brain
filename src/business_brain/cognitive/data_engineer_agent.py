@@ -78,8 +78,8 @@ def parse_pdf(raw: bytes) -> str:
 # Type inference (no numpy — pure Python)
 # ---------------------------------------------------------------------------
 
-_BOOL_TRUE = {"true", "yes", "1", "t", "y"}
-_BOOL_FALSE = {"false", "no", "0", "f", "n"}
+_BOOL_TRUE = {"true", "yes", "t", "y"}
+_BOOL_FALSE = {"false", "no", "f", "n"}
 
 
 def _try_parse_type(value: str) -> str:
@@ -88,11 +88,7 @@ def _try_parse_type(value: str) -> str:
     if not v:
         return "empty"
 
-    # Boolean
-    if v.lower() in _BOOL_TRUE | _BOOL_FALSE:
-        return "boolean"
-
-    # Integer
+    # Integer (check before boolean so "1"/"0" are treated as numbers)
     try:
         int(v)
         return "integer"
@@ -105,6 +101,10 @@ def _try_parse_type(value: str) -> str:
         return "float"
     except ValueError:
         pass
+
+    # Boolean (after numeric checks to avoid "1"/"0" ambiguity)
+    if v.lower() in _BOOL_TRUE | _BOOL_FALSE:
+        return "boolean"
 
     # Date
     for pattern, fmt in _DATE_PATTERNS:
@@ -280,8 +280,12 @@ def clean_rows(rows: list[dict], col_types: dict[str, str]) -> tuple[list[dict],
                 if val == "":
                     row[col] = None
                 elif _try_parse_type(val) != expected:
+                    detected = _try_parse_type(val)
                     # Allow integer values in float columns
-                    if expected == "float" and _try_parse_type(val) == "integer":
+                    if expected == "float" and detected == "integer":
+                        continue
+                    # Allow integer values (0/1) in boolean columns
+                    if expected == "boolean" and detected == "integer" and val in ("0", "1"):
                         continue
                     row[col] = None
 
