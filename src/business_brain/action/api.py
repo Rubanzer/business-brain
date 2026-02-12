@@ -70,6 +70,25 @@ async def upload_csv(file: UploadFile = File(...), session: AsyncSession = Depen
     return {"status": "loaded", "table": table_name, "rows": rows}
 
 
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...), session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Smart file upload — parse, clean, load, and auto-generate metadata."""
+    from business_brain.cognitive.data_engineer_agent import DataEngineerAgent
+
+    file_bytes = await file.read()
+    file_name = file.filename or "upload.csv"
+
+    agent = DataEngineerAgent()
+    report = await agent.invoke({
+        "file_bytes": file_bytes,
+        "file_name": file_name,
+        "db_session": session,
+    })
+    return report
+
+
 @app.get("/metadata")
 async def list_metadata(session: AsyncSession = Depends(get_session)) -> list[dict]:
     """List all table metadata."""

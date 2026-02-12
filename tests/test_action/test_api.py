@@ -72,6 +72,30 @@ def test_upload_csv(mock_upsert):
     mock_upsert.assert_called_once()
 
 
+@patch("business_brain.cognitive.data_engineer_agent.DataEngineerAgent.invoke")
+def test_upload_file(mock_invoke):
+    mock_invoke.return_value = {
+        "table_name": "sales",
+        "file_type": "csv",
+        "rows_total": 3,
+        "rows_inserted": 3,
+        "rows_dropped": 0,
+        "duplicates_removed": 0,
+        "issues": [],
+        "metadata": {"description": "Sales data", "columns": []},
+        "context_generated": "Sales tracking.",
+    }
+
+    csv_content = b"id,name,value\n1,alpha,10\n2,beta,20\n3,gamma,30"
+    resp = client.post("/upload", files={"file": ("sales.csv", csv_content, "text/csv")})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["table_name"] == "sales"
+    assert data["rows_total"] == 3
+    assert data["file_type"] == "csv"
+    mock_invoke.assert_called_once()
+
+
 @patch("business_brain.action.api.metadata_store")
 def test_list_metadata(mock_store):
     entry = MagicMock()

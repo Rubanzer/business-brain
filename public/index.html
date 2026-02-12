@@ -284,6 +284,65 @@
     .context-form { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
     .context-row { display: flex; gap: 0.5rem; }
 
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 2.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 1.5rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(108,92,231,0.05);
+      color: var(--text);
+    }
+    .drop-zone input[type="file"] { display: none; }
+    .drop-zone .drop-icon { font-size: 1.8rem; margin-bottom: 0.5rem; display: block; }
+    .drop-zone .drop-hint { font-size: 0.7rem; color: var(--muted); margin-top: 0.3rem; }
+
+    .report-section { margin-bottom: 1rem; }
+    .report-section h4 {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.4rem;
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .stat-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 0.8rem;
+      text-align: center;
+    }
+    .stat-card .stat-value { font-size: 1.2rem; font-weight: 600; color: var(--accent); }
+    .stat-card .stat-label { font-size: 0.65rem; color: var(--muted); margin-top: 0.1rem; }
+
+    .issue-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+      margin: 0.5rem 0;
+    }
+    .issue-table th {
+      text-align: left;
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .issue-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+
     .toast {
       position: fixed;
       bottom: 2rem;
@@ -313,6 +372,7 @@
     <div class="tabs">
       <button class="tab active" data-panel="analyze">Analyze</button>
       <button class="tab" data-panel="context">Context</button>
+      <button class="tab" data-panel="upload">Upload</button>
       <button class="tab" data-panel="schema">Schema</button>
     </div>
 
@@ -343,6 +403,23 @@
       <div id="context-result" class="result">
         <div class="result-header"><span>Ingestion Log</span></div>
         <div class="result-body" id="context-body"></div>
+      </div>
+    </div>
+
+    <!-- Upload Panel -->
+    <div id="upload" class="panel">
+      <div class="drop-zone" id="drop-zone">
+        <span class="drop-icon">&#8593;</span>
+        <div>Drag &amp; drop a file here, or click to browse</div>
+        <div class="drop-hint">Accepts .csv, .xlsx, .pdf</div>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.pdf" />
+      </div>
+      <div id="upload-result" class="result" style="display:none">
+        <div class="result-header">
+          <span>Upload Report</span>
+          <span id="upload-status"></span>
+        </div>
+        <div class="result-body" id="upload-body"></div>
       </div>
     </div>
 
@@ -535,6 +612,105 @@
       } catch (e) {
         body.innerHTML = `<p style="color:var(--red)">${e.message}</p>`;
       }
+    }
+
+    // Upload
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleUpload(fileInput.files[0]);
+    });
+
+    async function handleUpload(file) {
+      const resultEl = document.getElementById('upload-result');
+      const status = document.getElementById('upload-status');
+      const body = document.getElementById('upload-body');
+
+      resultEl.style.display = 'block';
+      status.innerHTML = '<span class="spinner"></span> Processing...';
+      body.innerHTML = '';
+
+      const form = new FormData();
+      form.append('file', file);
+
+      try {
+        const res = await fetch(`${API}/upload`, { method: 'POST', body: form });
+        const data = await res.json();
+
+        if (data.detail) {
+          status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+          body.textContent = data.detail;
+          return;
+        }
+
+        status.innerHTML = `<span class="badge badge-green">${esc(data.file_type.toUpperCase())}</span>`;
+        body.innerHTML = renderUploadReport(data);
+        toast('File processed successfully');
+      } catch (e) {
+        status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+        body.textContent = e.message;
+      }
+
+      fileInput.value = '';
+    }
+
+    function renderUploadReport(d) {
+      let html = '';
+
+      // Stats
+      html += `<div class="stat-grid">
+        <div class="stat-card"><div class="stat-value">${d.rows_total}</div><div class="stat-label">Total Rows</div></div>
+        <div class="stat-card"><div class="stat-value">${d.rows_inserted}</div><div class="stat-label">Inserted</div></div>
+        <div class="stat-card"><div class="stat-value">${d.rows_dropped}</div><div class="stat-label">Dropped</div></div>
+        <div class="stat-card"><div class="stat-value">${d.duplicates_removed}</div><div class="stat-label">Duplicates</div></div>
+      </div>`;
+
+      // Table name
+      html += `<div class="report-section"><h4>Table</h4><p style="color:var(--accent);font-weight:500">${esc(d.table_name)}</p></div>`;
+
+      // Issues
+      if (d.issues && d.issues.length) {
+        html += `<div class="report-section"><h4>Data Issues</h4><table class="issue-table"><thead><tr><th>Column</th><th>Issue</th><th>Action</th></tr></thead><tbody>`;
+        d.issues.forEach(i => {
+          const actionBadge = i.action.startsWith('will_')
+            ? `<span class="badge badge-yellow">${esc(i.action)}</span>`
+            : `<span class="badge badge-accent">${esc(i.action)}</span>`;
+          html += `<tr><td><strong>${esc(i.column)}</strong></td><td>${esc(i.issue)}</td><td>${actionBadge}</td></tr>`;
+        });
+        html += `</tbody></table></div>`;
+      } else {
+        html += `<div class="report-section"><h4>Data Issues</h4><p style="color:var(--green)">No issues found</p></div>`;
+      }
+
+      // Metadata
+      if (d.metadata) {
+        html += `<div class="report-section"><h4>Generated Metadata</h4>`;
+        html += `<div class="meta-card"><p>${esc(d.metadata.description || 'No description')}</p>`;
+        if (d.metadata.columns && d.metadata.columns.length) {
+          html += `<div class="col-list">`;
+          d.metadata.columns.forEach(c => {
+            html += `<span class="col-chip"><strong>${esc(c.name)}</strong> ${esc(c.type)}${c.description ? ' — ' + esc(c.description) : ''}</span>`;
+          });
+          html += `</div>`;
+        }
+        html += `</div></div>`;
+      }
+
+      // Context
+      if (d.context_generated) {
+        html += `<div class="report-section"><h4>Business Context</h4><p style="color:var(--muted);font-size:0.8rem;">${esc(d.context_generated)}</p></div>`;
+      }
+
+      return html;
     }
 
     function esc(s) {

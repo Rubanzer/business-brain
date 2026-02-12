@@ -14,6 +14,7 @@
     { "src": "/analyze", "dest": "api/index.py" },
     { "src": "/context", "dest": "api/index.py" },
     { "src": "/csv", "dest": "api/index.py" },
+    { "src": "/upload", "dest": "api/index.py" },
     { "src": "/metadata(.*)", "dest": "api/index.py" },
     { "src": "/(.*)", "dest": "public/$1" }
   ]
