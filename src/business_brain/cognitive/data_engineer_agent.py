@@ -230,6 +230,28 @@ def check_hygiene(rows: list[dict]) -> list[dict]:
 # Cleaning
 # ---------------------------------------------------------------------------
 
+def _drop_empty_columns(rows: list[dict]) -> tuple[list[dict], list[str]]:
+    """Remove columns that are entirely empty across all rows.
+
+    Returns (rows_with_columns_removed, list_of_dropped_column_names).
+    """
+    if not rows:
+        return rows, []
+
+    columns = list(rows[0].keys())
+    empty_cols: list[str] = []
+    for col in columns:
+        if all(str(row.get(col, "")).strip() == "" or row.get(col) is None for row in rows):
+            empty_cols.append(col)
+
+    if not empty_cols:
+        return rows, []
+
+    drop_set = set(empty_cols)
+    cleaned = [{k: v for k, v in row.items() if k not in drop_set} for row in rows]
+    return cleaned, empty_cols
+
+
 def clean_rows(rows: list[dict], col_types: dict[str, str]) -> tuple[list[dict], int, int]:
     """Clean rows in place. Returns (cleaned_rows, rows_dropped, duplicates_removed)."""
     if not rows:
@@ -288,6 +310,15 @@ def clean_rows(rows: list[dict], col_types: dict[str, str]) -> tuple[list[dict],
                     if expected == "boolean" and detected == "integer" and val in ("0", "1"):
                         continue
                     row[col] = None
+
+    # Drop rows where the primary key (first column) is NULL
+    pk_col = columns[0]
+    before = len(deduped)
+    deduped = [
+        row for row in deduped
+        if row.get(pk_col) is not None and str(row.get(pk_col, "")).strip() != ""
+    ]
+    rows_dropped += before - len(deduped)
 
     return deduped, rows_dropped, duplicates_removed
 
@@ -494,12 +525,22 @@ class DataEngineerAgent:
             }
 
         rows_total = len(rows)
+        issues: list[dict] = []
+
+        # --- Drop entirely-empty columns ---
+        rows, dropped_cols = _drop_empty_columns(rows)
+        for col_name in dropped_cols:
+            issues.append({
+                "column": col_name,
+                "issue": "column is entirely empty",
+                "action": "dropped_column",
+            })
 
         # --- Type inference ---
         col_types = infer_column_types(rows)
 
         # --- Hygiene checks ---
-        issues = check_hygiene(rows)
+        issues.extend(check_hygiene(rows))
 
         # --- Clean ---
         cleaned, rows_dropped, duplicates_removed = clean_rows(rows, col_types)

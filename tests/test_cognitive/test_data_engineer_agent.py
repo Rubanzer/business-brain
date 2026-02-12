@@ -6,6 +6,7 @@ import pytest
 
 from business_brain.cognitive.data_engineer_agent import (
     DataEngineerAgent,
+    _drop_empty_columns,
     _sanitize_col_name,
     _sanitize_table_name,
     _try_parse_type,
@@ -222,6 +223,56 @@ class TestCleanRows:
         assert cleaned == []
         assert dropped == 0
         assert dups == 0
+
+    def test_drop_null_pk_rows(self):
+        rows = [
+            {"id": "1", "name": "Alice"},
+            {"id": "", "name": "Bob"},
+            {"id": "3", "name": "Carol"},
+        ]
+        col_types = {"id": "BIGINT", "name": "TEXT"}
+        cleaned, dropped, dups = clean_rows(rows, col_types)
+        assert len(cleaned) == 2
+        assert dropped == 1
+        assert all(row["id"] is not None for row in cleaned)
+
+
+# ---------------------------------------------------------------------------
+# Drop empty columns tests
+# ---------------------------------------------------------------------------
+
+class TestDropEmptyColumns:
+    def test_drops_fully_empty_columns(self):
+        rows = [
+            {"id": "1", "name": "Alice", "extra": ""},
+            {"id": "2", "name": "Bob", "extra": ""},
+        ]
+        cleaned, dropped = _drop_empty_columns(rows)
+        assert "extra" not in cleaned[0]
+        assert dropped == ["extra"]
+
+    def test_keeps_partially_filled_columns(self):
+        rows = [
+            {"id": "1", "name": "Alice", "notes": ""},
+            {"id": "2", "name": "Bob", "notes": "important"},
+        ]
+        cleaned, dropped = _drop_empty_columns(rows)
+        assert "notes" in cleaned[0]
+        assert dropped == []
+
+    def test_empty_rows_input(self):
+        cleaned, dropped = _drop_empty_columns([])
+        assert cleaned == []
+        assert dropped == []
+
+    def test_drops_none_columns(self):
+        rows = [
+            {"id": "1", "name": "Alice", "col_5": None},
+            {"id": "2", "name": "Bob", "col_5": None},
+        ]
+        cleaned, dropped = _drop_empty_columns(rows)
+        assert "col_5" not in cleaned[0]
+        assert dropped == ["col_5"]
 
 
 # ---------------------------------------------------------------------------
