@@ -1,4 +1,5 @@
 """Shared Gemini embedding utility used across ingestion and memory layers."""
+from __future__ import annotations
 
 from google import genai
 

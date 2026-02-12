@@ -1,4 +1,5 @@
 """Supervisor agent — decomposes business questions into analysis tasks."""
+from __future__ import annotations
 
 import json
 import logging
@@ -15,6 +16,7 @@ You are the Supervisor of a business analytics team. Given a business question,
 you decompose it into sub-tasks and delegate to specialist agents:
 - sql_agent: for data retrieval via SQL
 - analyst_agent: for statistical analysis and insight extraction
+- python_analyst: for deep computational analysis (correlations, percentiles, aggregations)
 - cfo_agent: for economic viability assessment
 
 Return ONLY a JSON array of steps. Each step must have "agent" and "task" keys.

@@ -47,15 +47,16 @@ def test_analyze(mock_build):
     assert "db_session" not in data
 
 
-@patch("business_brain.action.api.ingest_context")
+@patch("business_brain.action.api.ingest_context", new_callable=AsyncMock)
 def test_context(mock_ingest):
-    mock_ingest.return_value = 7
+    mock_ingest.return_value = [7]
 
     resp = client.post("/context", json={"text": "We sell widgets", "source": "test"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "created"
-    assert data["id"] == 7
+    assert data["ids"] == [7]
+    assert data["chunks"] == 1
 
 
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe")

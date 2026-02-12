@@ -1,4 +1,5 @@
 """Nightly DB introspection — discover tables and auto-generate descriptions."""
+from __future__ import annotations
 
 import logging
 

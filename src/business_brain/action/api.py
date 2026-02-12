@@ -53,8 +53,8 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
 @app.post("/context")
 async def submit_context(req: ContextRequest, session: AsyncSession = Depends(get_session)) -> dict:
     """Submit natural-language business context for embedding."""
-    row_id = await ingest_context(req.text, session, source=req.source)
-    return {"status": "created", "id": row_id, "source": req.source}
+    ids = await ingest_context(req.text, session, source=req.source)
+    return {"status": "created", "ids": ids, "chunks": len(ids), "source": req.source}
 
 
 @app.post("/csv")

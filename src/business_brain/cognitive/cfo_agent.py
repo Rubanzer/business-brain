@@ -1,4 +1,5 @@
 """CFO Filter agent — economic viability gate for proposed actions."""
+from __future__ import annotations
 
 import json
 import logging

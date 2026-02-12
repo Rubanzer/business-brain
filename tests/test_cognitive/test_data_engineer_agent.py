@@ -305,7 +305,7 @@ class TestDataEngineerAgentInvoke:
         mock_client.return_value.models.generate_content.return_value = mock_response
 
         mock_meta.upsert = AsyncMock()
-        mock_ingest.return_value = 1
+        mock_ingest.return_value = [1]
 
         session = AsyncMock()
 
@@ -336,7 +336,7 @@ class TestDataEngineerAgentInvoke:
         mock_response = MagicMock()
         mock_response.text = '{"table_description": "Revenue report", "column_descriptions": {}, "business_context": "Quarterly revenue data."}'
         mock_client.return_value.models.generate_content.return_value = mock_response
-        mock_ingest.return_value = 42
+        mock_ingest.return_value = [42]
 
         session = AsyncMock()
 
@@ -350,7 +350,7 @@ class TestDataEngineerAgentInvoke:
 
         assert result["file_type"] == "pdf"
         assert result["rows_total"] == 0
-        assert result["context_id"] == 42
+        assert result["context_ids"] == [42]
         mock_ingest.assert_called_once()
 
     @pytest.mark.asyncio
@@ -387,7 +387,7 @@ class TestDataEngineerAgentInvoke:
         mock_response.text = '{"table_description": "Test", "column_descriptions": {}, "business_context": ""}'
         mock_client.return_value.models.generate_content.return_value = mock_response
         mock_meta.upsert = AsyncMock()
-        mock_ingest.return_value = 1
+        mock_ingest.return_value = [1]
 
         session = AsyncMock()
 

@@ -532,6 +532,29 @@
         html += `</div>`;
       }
 
+      // Python Analysis
+      if (d.python_analysis) {
+        html += `<div class="step"><div class="step-label">Python Analysis</div>`;
+        if (d.python_analysis.error) {
+          html += `<p style="color:var(--red);">${esc(d.python_analysis.error)}</p>`;
+        } else {
+          if (d.python_analysis.computations?.length) {
+            html += `<div class="stat-grid">`;
+            d.python_analysis.computations.forEach(c => {
+              html += `<div class="stat-card"><div class="stat-value">${esc(c.value)}</div><div class="stat-label">${esc(c.label)}</div></div>`;
+            });
+            html += `</div>`;
+          }
+          if (d.python_analysis.narrative) {
+            html += `<p>${esc(d.python_analysis.narrative)}</p>`;
+          }
+        }
+        if (d.python_analysis.code) {
+          html += `<details style="margin-top:0.5rem;"><summary style="cursor:pointer;font-size:0.7rem;color:var(--muted);">Show generated code</summary><div class="sql-block">${esc(d.python_analysis.code)}</div></details>`;
+        }
+        html += `</div>`;
+      }
+
       // CFO
       html += `<div class="step"><div class="step-label">CFO Review</div>`;
       html += `<h3>${d.approved ? '&#10003; Approved' : '&#10007; Rejected'}</h3>`;
@@ -576,7 +599,7 @@
         });
         const data = await res.json();
         const body = document.getElementById('context-body');
-        body.innerHTML = `<p>Stored context <strong>id=${data.id}</strong> from source <span class="badge badge-accent">${esc(data.source)}</span></p>` + body.innerHTML;
+        body.innerHTML = `<p>Stored context <strong>${data.chunks} chunk${data.chunks !== 1 ? 's' : ''}</strong> (ids: ${data.ids.join(', ')}) from source <span class="badge badge-accent">${esc(data.source)}</span></p>` + body.innerHTML;
         document.getElementById('ctx-text').value = '';
         toast('Context ingested successfully');
       } catch (e) {

@@ -1,4 +1,5 @@
 """Data Engineer Agent — parse, clean, load, and auto-generate metadata for uploaded files."""
+from __future__ import annotations
 
 import csv
 import io
@@ -489,7 +490,7 @@ class DataEngineerAgent:
         elif ext == "pdf":
             pdf_text = parse_pdf(file_bytes)
             # PDF is context-only — no tabular loading
-            context_id = await ingest_context(pdf_text, db_session, source=f"upload:{file_name}")
+            context_ids = await ingest_context(pdf_text, db_session, source=f"upload:{file_name}")
             gemini_meta = await generate_metadata_with_gemini(
                 table_name, ["pdf_text"], [{"pdf_text": pdf_text[:500]}]
             )
@@ -506,7 +507,7 @@ class DataEngineerAgent:
                     "columns": [],
                 },
                 "context_generated": gemini_meta.get("business_context", ""),
-                "context_id": context_id,
+                "context_ids": context_ids,
             }
         else:
             raise ValueError(f"Unsupported file type: .{ext}")

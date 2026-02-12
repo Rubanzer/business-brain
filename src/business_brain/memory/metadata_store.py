@@ -1,4 +1,5 @@
 """CRUD operations for schema metadata entries."""
+from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

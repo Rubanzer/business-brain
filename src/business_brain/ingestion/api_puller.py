@@ -1,4 +1,5 @@
 """Generic async REST API fetcher that normalises JSON → SQL rows."""
+from __future__ import annotations
 
 import logging
 from typing import Any

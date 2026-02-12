@@ -1,4 +1,5 @@
 """SQL Specialist agent — converts natural language to SQL and executes."""
+from __future__ import annotations
 
 import logging
 from typing import Any

@@ -1,4 +1,5 @@
 """Data Scientist agent — statistical analysis with Gemini."""
+from __future__ import annotations
 
 import json
 import logging
