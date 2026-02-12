@@ -1,9 +1,8 @@
 """FastAPI application with external trigger endpoints."""
 
 import logging
-from io import BytesIO, StringIO
+from io import StringIO
 
-import pandas as pd
 from fastapi import Depends, FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from business_brain.cognitive.graph import build_graph
 from business_brain.db.connection import get_session
 from business_brain.ingestion.context_ingestor import ingest_context
-from business_brain.ingestion.csv_loader import upsert_dataframe
 from business_brain.memory import metadata_store
 
 logger = logging.getLogger(__name__)
@@ -62,6 +60,9 @@ async def submit_context(req: ContextRequest, session: AsyncSession = Depends(ge
 @app.post("/csv")
 async def upload_csv(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)) -> dict:
     """Upload a CSV file for ingestion into the database."""
+    import pandas as pd
+    from business_brain.ingestion.csv_loader import upsert_dataframe
+
     contents = await file.read()
     table_name = (file.filename or "upload").rsplit(".", 1)[0].replace("-", "_").replace(" ", "_")
     df = pd.read_csv(StringIO(contents.decode("utf-8")))

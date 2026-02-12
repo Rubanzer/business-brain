@@ -58,7 +58,7 @@ def test_context(mock_ingest):
     assert data["id"] == 7
 
 
-@patch("business_brain.action.api.upsert_dataframe")
+@patch("business_brain.ingestion.csv_loader.upsert_dataframe")
 def test_upload_csv(mock_upsert):
     mock_upsert.return_value = 3
 
