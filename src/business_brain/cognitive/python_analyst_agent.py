@@ -23,6 +23,7 @@ Python code to perform deep analysis. The data is available as `rows` (list[dict
 Rules:
 - Only use stdlib: statistics, collections, math, itertools, datetime, re
 - No pandas, numpy, scipy, or any external libraries
+- IMPORTANT: Values in rows may be None. Always filter out None values before doing math, e.g.: values = [r["col"] for r in rows if r["col"] is not None]
 - Keep code concise (under 50 lines)
 - Return ONLY valid Python code. No markdown fences, no explanations, no comments before/after.
 - CRITICAL: Your code MUST end by assigning a variable called `result` as a dict with exactly this structure:
@@ -34,7 +35,7 @@ result = {
 
 Example:
 import statistics
-values = [r["revenue"] for r in rows]
+values = [r["revenue"] for r in rows if r["revenue"] is not None]
 result = {
     "computations": [
         {"label": "Mean Revenue", "value": str(round(statistics.mean(values), 2))},
