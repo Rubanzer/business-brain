@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
-    embedding_model: str = "text-embedding-004"
+    embedding_model: str = "gemini-embedding-001"
     gemini_model: str = "gemini-2.0-flash"
 
     # Watcher
