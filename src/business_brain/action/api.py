@@ -37,13 +37,16 @@ class ContextRequest(BaseModel):
 
 @app.get("/health")
 async def health() -> dict:
-    from business_brain.cognitive.python_analyst_agent import execute_sandboxed
-    # Quick sanity check that sandbox works
-    test = execute_sandboxed("print('ok')", [])
+    try:
+        from business_brain.cognitive.python_analyst_agent import execute_sandboxed
+        test = execute_sandboxed("print('ok')", [])
+        sandbox = test["stdout"]
+    except Exception as e:
+        sandbox = f"ERROR: {e}"
     return {
         "status": "ok",
-        "version": "2.0.0-two-phase-python-analyst",
-        "sandbox_test": test["stdout"],
+        "version": "2.0.0",
+        "sandbox": sandbox,
     }
 
 
