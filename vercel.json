@@ -1,12 +1,22 @@
 {
-  "rewrites": [
-    { "source": "/health", "destination": "/api/index.py" },
-    { "source": "/analyze", "destination": "/api/index.py" },
-    { "source": "/context", "destination": "/api/index.py" },
-    { "source": "/csv", "destination": "/api/index.py" },
-    { "source": "/upload", "destination": "/api/index.py" },
-    { "source": "/metadata/:path*", "destination": "/api/index.py" },
-    { "source": "/metadata", "destination": "/api/index.py" }
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
   ],
-  "outputDirectory": "public"
+  "routes": [
+    { "src": "/health", "dest": "api/index.py" },
+    { "src": "/analyze", "dest": "api/index.py" },
+    { "src": "/context", "dest": "api/index.py" },
+    { "src": "/csv", "dest": "api/index.py" },
+    { "src": "/upload", "dest": "api/index.py" },
+    { "src": "/metadata/(.*)", "dest": "api/index.py" },
+    { "src": "/metadata", "dest": "api/index.py" },
+    { "src": "/(.*)", "dest": "public/$1" }
+  ]
 }
