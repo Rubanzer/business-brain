@@ -3,12 +3,18 @@
     {
       "src": "api/index.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "api/index.py"
-    }
+    { "src": "/health", "dest": "api/index.py" },
+    { "src": "/analyze", "dest": "api/index.py" },
+    { "src": "/context", "dest": "api/index.py" },
+    { "src": "/csv", "dest": "api/index.py" },
+    { "src": "/metadata(.*)", "dest": "api/index.py" },
+    { "src": "/(.*)", "dest": "public/$1" }
   ]
 }
