@@ -58,6 +58,20 @@ def test_context(mock_ingest):
     assert data["id"] == 7
 
 
+@patch("business_brain.action.api.upsert_dataframe")
+def test_upload_csv(mock_upsert):
+    mock_upsert.return_value = 3
+
+    csv_content = b"id,name,value\n1,alpha,10\n2,beta,20\n3,gamma,30"
+    resp = client.post("/csv", files={"file": ("sales.csv", csv_content, "text/csv")})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "loaded"
+    assert data["table"] == "sales"
+    assert data["rows"] == 3
+    mock_upsert.assert_called_once()
+
+
 @patch("business_brain.action.api.metadata_store")
 def test_list_metadata(mock_store):
     entry = MagicMock()
