@@ -646,9 +646,9 @@
         const res = await fetch(`${API}/upload`, { method: 'POST', body: form });
         const data = await res.json();
 
-        if (data.detail) {
+        if (data.detail || data.error) {
           status.innerHTML = '<span class="badge badge-red">ERROR</span>';
-          body.textContent = data.detail;
+          body.textContent = data.detail || data.error;
           return;
         }
 
