@@ -118,3 +118,12 @@ async def get_table_metadata(table: str, session: AsyncSession = Depends(get_ses
         "description": entry.description,
         "columns": entry.columns_metadata,
     }
+
+
+@app.delete("/metadata/{table}")
+async def delete_table_metadata(table: str, session: AsyncSession = Depends(get_session)) -> dict:
+    """Delete metadata for a table (e.g. after dropping the table)."""
+    deleted = await metadata_store.delete(session, table)
+    if not deleted:
+        return {"error": "Table not found"}
+    return {"status": "deleted", "table": table}
