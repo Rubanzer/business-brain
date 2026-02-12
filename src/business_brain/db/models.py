@@ -30,6 +30,6 @@ class BusinessContext(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     content = Column(Text, nullable=False)
-    embedding = Column(Vector(1536), nullable=True)
+    embedding = Column(Vector(768), nullable=True)
     source = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

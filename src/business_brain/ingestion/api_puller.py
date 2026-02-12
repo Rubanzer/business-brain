@@ -1,9 +1,15 @@
 """Generic async REST API fetcher that normalises JSON → SQL rows."""
 
+import logging
 from typing import Any
 
 import httpx
+import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from business_brain.ingestion.csv_loader import upsert_dataframe
+
+logger = logging.getLogger(__name__)
 
 
 async def pull_api(
@@ -13,6 +19,7 @@ async def pull_api(
     *,
     headers: dict[str, str] | None = None,
     params: dict[str, Any] | None = None,
+    pk_column: str | None = None,
 ) -> int:
     """Fetch JSON from *url*, flatten, and upsert into *table_name*.
 
@@ -25,7 +32,10 @@ async def pull_api(
         data = resp.json()
 
     rows = data if isinstance(data, list) else [data]
+    df = pd.json_normalize(rows)
 
-    # TODO: flatten nested JSON, create table if needed, upsert rows
-    print(f"[api_puller] Fetched {len(rows)} records from {url} → {table_name}")
-    return len(rows)
+    if df.empty:
+        logger.warning("No data returned from %s", url)
+        return 0
+
+    return await upsert_dataframe(df, session, table_name, pk_column)
