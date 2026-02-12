@@ -26,7 +26,8 @@ Rules:
 - IMPORTANT: Values in rows may be None. Always filter out None values before doing math, e.g.: values = [r["col"] for r in rows if r["col"] is not None]
 - Keep code concise (under 50 lines)
 - Return ONLY valid Python code. No markdown fences, no explanations, no comments before/after.
-- CRITICAL: Your code MUST end by assigning a variable called `result` as a dict with exactly this structure:
+- Do NOT wrap code in a function. Write flat top-level code.
+- CRITICAL: Your code MUST end by assigning a variable called `result` at the TOP LEVEL (not inside a function) as a dict with exactly this structure:
 
 result = {
     "computations": [{"label": "metric name", "value": "metric value"}, ...],
@@ -98,6 +99,16 @@ def execute_sandboxed(code: str, rows: list[dict]) -> dict[str, Any]:
         }
 
     result = namespace.get("result")
+
+    # If code wrapped in a function, try calling it
+    if result is None:
+        for val in namespace.values():
+            if callable(val) and val is not _safe_import:
+                try:
+                    result = val()
+                    break
+                except Exception:
+                    continue
 
     # If result is a string, wrap it as a narrative
     if isinstance(result, str):
