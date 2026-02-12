@@ -23,11 +23,25 @@ Python code to perform deep analysis. The data is available as `rows` (list[dict
 Rules:
 - Only use stdlib: statistics, collections, math, itertools, datetime, re
 - No pandas, numpy, scipy, or any external libraries
-- Store your final output in a variable called `result` as a dict with:
-  - "computations": list of {"label": str, "value": str} computed metrics
-  - "narrative": str — 2-3 sentence interpretation
 - Keep code concise (under 50 lines)
-- Return ONLY the Python code, no explanation or markdown fences.
+- Return ONLY valid Python code. No markdown fences, no explanations, no comments before/after.
+- CRITICAL: Your code MUST end by assigning a variable called `result` as a dict with exactly this structure:
+
+result = {
+    "computations": [{"label": "metric name", "value": "metric value"}, ...],
+    "narrative": "2-3 sentence interpretation of the data"
+}
+
+Example:
+import statistics
+values = [r["revenue"] for r in rows]
+result = {
+    "computations": [
+        {"label": "Mean Revenue", "value": str(round(statistics.mean(values), 2))},
+        {"label": "Median Revenue", "value": str(round(statistics.median(values), 2))},
+    ],
+    "narrative": "Revenue averages $X with a median of $Y, suggesting a right-skewed distribution."
+}
 """
 
 _client: Optional[genai.Client] = None
@@ -83,12 +97,27 @@ def execute_sandboxed(code: str, rows: list[dict]) -> dict[str, Any]:
         }
 
     result = namespace.get("result")
-    if not isinstance(result, dict):
+
+    # If result is a string, wrap it as a narrative
+    if isinstance(result, str):
         return {
             "computations": [],
-            "narrative": "",
-            "error": "Code did not produce a `result` dict.",
+            "narrative": result,
+            "error": None,
         }
+
+    if not isinstance(result, dict):
+        # Try to find any dict in the namespace that looks like output
+        for val in namespace.values():
+            if isinstance(val, dict) and ("computations" in val or "narrative" in val):
+                result = val
+                break
+        else:
+            return {
+                "computations": [],
+                "narrative": "",
+                "error": "Code did not produce a `result` dict.",
+            }
 
     return {
         "computations": result.get("computations", []),

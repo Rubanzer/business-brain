@@ -71,11 +71,16 @@ result = {
         assert out["error"] is not None
         assert "ZeroDivision" in out["error"]
 
-    def test_result_not_dict(self):
-        code = "result = 'not a dict'"
+    def test_result_string_becomes_narrative(self):
+        code = "result = 'some analysis text'"
+        out = execute_sandboxed(code, [])
+        assert out["error"] is None
+        assert out["narrative"] == "some analysis text"
+
+    def test_result_not_dict_or_string(self):
+        code = "result = 42"
         out = execute_sandboxed(code, [])
         assert out["error"] is not None
-        assert "result" in out["error"].lower()
 
     def test_math_module(self):
         code = """
