@@ -1,4 +1,4 @@
-"""Python Analyst Agent — executes generated Python code for deep data analysis."""
+"""Python Analyst Agent — two-phase: execute code then interpret results."""
 
 from __future__ import annotations
 
@@ -16,34 +16,34 @@ SAFE_MODULES = frozenset({
     "statistics", "collections", "math", "itertools", "datetime", "re", "json",
 })
 
-SYSTEM_PROMPT = """\
-You are a Python data analyst. Given tabular data as a list of dicts, write
-Python code to perform deep analysis. The data is available as `rows` (list[dict]).
+# Phase 1: Ask Gemini to write analysis code. No format constraints — just print.
+CODE_GEN_PROMPT = """\
+You are a Python data analyst. Write Python code to analyze the data in `rows` (a list of dicts).
 
 Rules:
 - Only use stdlib: statistics, collections, math, itertools, datetime, re
 - No pandas, numpy, scipy, or any external libraries
-- IMPORTANT: Values in rows may be None. Always filter out None values before doing math, e.g.: values = [r["col"] for r in rows if r["col"] is not None]
-- Keep code concise (under 50 lines)
-- Return ONLY valid Python code. No markdown fences, no explanations, no comments before/after.
-- Do NOT wrap code in a function. Write flat top-level code.
-- CRITICAL: Your code MUST end by assigning a variable called `result` at the TOP LEVEL (not inside a function) as a dict with exactly this structure:
+- Values may be None — always filter before math: [v for v in vals if v is not None]
+- Use print() to output every metric, insight, or finding you compute
+- Write flat top-level code, no functions or classes
+- Keep it under 50 lines
+- Return ONLY Python code, no markdown fences or explanation
+"""
 
-result = {
-    "computations": [{"label": "metric name", "value": "metric value"}, ...],
-    "narrative": "2-3 sentence interpretation of the data"
+# Phase 2: Ask Gemini to structure the raw output into our format.
+INTERPRET_PROMPT = """\
+You are formatting raw analysis output into structured JSON.
+
+Given the printed output from a Python analysis script, return ONLY a JSON object:
+{
+  "computations": [{"label": "metric name", "value": "metric value"}, ...],
+  "narrative": "2-3 sentence interpretation of the findings"
 }
 
-Example:
-import statistics
-values = [r["revenue"] for r in rows if r["revenue"] is not None]
-result = {
-    "computations": [
-        {"label": "Mean Revenue", "value": str(round(statistics.mean(values), 2))},
-        {"label": "Median Revenue", "value": str(round(statistics.median(values), 2))},
-    ],
-    "narrative": "Revenue averages $X with a median of $Y, suggesting a right-skewed distribution."
-}
+Rules:
+- Extract every numeric finding into computations with a clear label
+- Write a concise narrative summarizing the key insights
+- Return ONLY valid JSON, no markdown fences or explanation
 """
 
 _client: Optional[genai.Client] = None
@@ -59,33 +59,49 @@ def _get_client() -> genai.Client:
 def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
     """Custom __import__ that only allows safe stdlib modules."""
     if name not in SAFE_MODULES:
-        raise ImportError(f"Import of '{name}' is not allowed. Only {sorted(SAFE_MODULES)} are permitted.")
-    return __builtins__.__import__(name, *args, **kwargs) if hasattr(__builtins__, '__import__') else __import__(name, *args, **kwargs)
+        raise ImportError(
+            f"Import of '{name}' is not allowed. "
+            f"Only {sorted(SAFE_MODULES)} are permitted."
+        )
+    return __import__(name, *args, **kwargs)
 
 
 def _make_restricted_builtins() -> dict[str, Any]:
     """Build a restricted __builtins__ dict for sandboxed exec."""
     import builtins as _builtins
 
-    BLOCKED = {"open", "exec", "eval", "compile", "globals", "locals",
-               "breakpoint", "exit", "quit", "input", "memoryview",
-               "__import__"}
+    BLOCKED = {
+        "open", "exec", "eval", "compile", "globals", "locals",
+        "breakpoint", "exit", "quit", "input", "memoryview",
+        "__import__",
+    }
 
-    safe = {k: getattr(_builtins, k) for k in dir(_builtins)
-            if not k.startswith("_") and k not in BLOCKED}
+    safe = {
+        k: getattr(_builtins, k)
+        for k in dir(_builtins)
+        if not k.startswith("_") and k not in BLOCKED
+    }
     safe["__import__"] = _safe_import
     safe["__build_class__"] = _builtins.__build_class__
     return safe
 
 
 def execute_sandboxed(code: str, rows: list[dict]) -> dict[str, Any]:
-    """Execute generated Python code in a restricted sandbox.
+    """Execute code in sandbox, capture print output and all namespace variables.
 
-    Returns:
-        dict with keys: computations, narrative, error
+    Returns dict with: stdout, variables, error
     """
+    captured_lines: list[str] = []
+
+    def _capture_print(*args: Any, **kwargs: Any) -> None:
+        line = kwargs.get("sep", " ").join(str(a) for a in args)
+        captured_lines.append(line)
+
+    builtins = _make_restricted_builtins()
+    builtins["print"] = _capture_print
+
     namespace: dict[str, Any] = {
-        "__builtins__": _make_restricted_builtins(),
+        "__builtins__": builtins,
         "rows": rows,
     }
 
@@ -93,56 +109,111 @@ def execute_sandboxed(code: str, rows: list[dict]) -> dict[str, Any]:
         exec(code, namespace)  # noqa: S102
     except Exception as exc:
         return {
-            "computations": [],
-            "narrative": "",
-            "error": f"Execution error: {type(exc).__name__}: {exc}",
+            "stdout": "\n".join(captured_lines),
+            "variables": {},
+            "error": f"{type(exc).__name__}: {exc}",
         }
 
-    result = namespace.get("result")
+    # Collect user-defined variables (skip builtins, modules, callables, rows)
+    import types
 
-    # If code wrapped in a function, try calling it
-    if result is None:
-        for val in namespace.values():
-            if callable(val) and val is not _safe_import:
-                try:
-                    result = val()
-                    break
-                except Exception:
-                    continue
-
-    # If result is a string, wrap it as a narrative
-    if isinstance(result, str):
-        return {
-            "computations": [],
-            "narrative": result,
-            "error": None,
-        }
-
-    if not isinstance(result, dict):
-        # Try to find any dict in the namespace that looks like output
-        for val in namespace.values():
-            if isinstance(val, dict) and ("computations" in val or "narrative" in val):
-                result = val
-                break
-        else:
-            return {
-                "computations": [],
-                "narrative": "",
-                "error": "Code did not produce a `result` dict.",
-            }
+    skip = {"__builtins__", "rows"}
+    variables = {}
+    for k, v in namespace.items():
+        if k in skip or k.startswith("_"):
+            continue
+        # Skip modules, functions, types — keep data only
+        if isinstance(v, types.ModuleType):
+            continue
+        if callable(v) and not isinstance(v, (list, dict, tuple, set)):
+            continue
+        try:
+            json.dumps(v, default=str)  # verify serializable
+            variables[k] = v
+        except (TypeError, ValueError):
+            continue
 
     return {
-        "computations": result.get("computations", []),
-        "narrative": result.get("narrative", ""),
+        "stdout": "\n".join(captured_lines),
+        "variables": variables,
         "error": None,
     }
 
 
+def _extract_code(raw: str) -> str:
+    """Strip markdown fences and language tags from LLM response."""
+    text = raw.strip()
+    if "```" in text:
+        parts = text.split("```")
+        # Take the first fenced block
+        if len(parts) >= 3:
+            block = parts[1]
+        else:
+            block = parts[1] if len(parts) > 1 else text
+        # Strip language tag
+        for tag in ("python", "py"):
+            if block.startswith(tag):
+                block = block[len(tag):]
+        return block.strip()
+    return text
+
+
+def _interpret_output(
+    client: genai.Client,
+    question: str,
+    stdout: str,
+    variables: dict,
+) -> dict[str, Any]:
+    """Phase 2: Have Gemini interpret raw execution output into structured format."""
+    # Build a summary of what the code produced
+    output_parts = []
+    if stdout.strip():
+        output_parts.append(f"Printed output:\n{stdout}")
+    if variables:
+        var_summary = json.dumps(variables, default=str, indent=2)
+        # Truncate if too long
+        if len(var_summary) > 2000:
+            var_summary = var_summary[:2000] + "\n... (truncated)"
+        output_parts.append(f"Variables:\n{var_summary}")
+
+    if not output_parts:
+        return {
+            "computations": [],
+            "narrative": "Analysis code ran but produced no output.",
+        }
+
+    raw_output = "\n\n".join(output_parts)
+
+    prompt = (
+        f"{INTERPRET_PROMPT}\n\n"
+        f"Original question: {question}\n\n"
+        f"Raw analysis output:\n{raw_output}"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=prompt,
+        )
+        text = _extract_code(response.text)  # reuse fence stripper for JSON
+        parsed = json.loads(text)
+        return {
+            "computations": parsed.get("computations", []),
+            "narrative": parsed.get("narrative", ""),
+        }
+    except Exception:
+        logger.exception("Interpretation LLM call failed")
+        # Fall back: use raw stdout as narrative
+        return {
+            "computations": [],
+            "narrative": stdout.strip()[:500] if stdout.strip() else "Analysis completed but interpretation failed.",
+        }
+
+
 class PythonAnalystAgent:
-    """Generates and executes Python analysis code on SQL result data."""
+    """Two-phase Python analysis: generate code → execute → interpret results."""
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Generate Python analysis code via Gemini and execute it."""
         sql_result = state.get("sql_result", {})
         rows = sql_result.get("rows", [])
         question = state.get("question", "")
@@ -156,12 +227,12 @@ class PythonAnalystAgent:
             }
             return state
 
-        # Build prompt with column names and sample rows
+        # --- Phase 1: Generate code ---
         columns = list(rows[0].keys()) if rows else []
         sample = rows[:10]
 
         prompt = (
-            f"{SYSTEM_PROMPT}\n\n"
+            f"{CODE_GEN_PROMPT}\n\n"
             f"Question: {question}\n"
             f"Columns: {columns}\n"
             f"Total rows: {len(rows)}\n"
@@ -175,15 +246,9 @@ class PythonAnalystAgent:
                 model=settings.gemini_model,
                 contents=prompt,
             )
-            code = response.text.strip()
-            # Strip markdown fences if present
-            if "```" in code:
-                code = code.split("```")[1]
-                if code.startswith("python"):
-                    code = code[6:]
-                code = code.strip()
+            code = _extract_code(response.text)
         except Exception:
-            logger.exception("Python analyst LLM call failed")
+            logger.exception("Code generation LLM call failed")
             state["python_analysis"] = {
                 "code": "",
                 "computations": [],
@@ -192,9 +257,27 @@ class PythonAnalystAgent:
             }
             return state
 
-        # Execute in sandbox with ALL rows
-        result = execute_sandboxed(code, rows)
-        result["code"] = code
+        # --- Phase 2: Execute ---
+        exec_result = execute_sandboxed(code, rows)
 
-        state["python_analysis"] = result
+        if exec_result["error"]:
+            state["python_analysis"] = {
+                "code": code,
+                "computations": [],
+                "narrative": "",
+                "error": f"Execution error: {exec_result['error']}",
+            }
+            return state
+
+        # --- Phase 3: Interpret ---
+        interpreted = _interpret_output(
+            client, question, exec_result["stdout"], exec_result["variables"]
+        )
+
+        state["python_analysis"] = {
+            "code": code,
+            "computations": interpreted["computations"],
+            "narrative": interpreted["narrative"],
+            "error": None,
+        }
         return state
