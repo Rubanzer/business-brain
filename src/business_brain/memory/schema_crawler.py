@@ -1,7 +1,24 @@
 """Nightly DB introspection — discover tables and auto-generate descriptions."""
 
+import logging
+
+from google import genai
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from business_brain.memory import metadata_store
+from config.settings import settings
+
+logger = logging.getLogger(__name__)
+
+_client: genai.Client | None = None
+
+
+def _get_client() -> genai.Client:
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=settings.gemini_api_key)
+    return _client
 
 
 async def crawl_schema(session: AsyncSession, schema: str = "public") -> list[dict]:
@@ -29,12 +46,35 @@ async def crawl_schema(session: AsyncSession, schema: str = "public") -> list[di
 
 
 async def auto_describe(session: AsyncSession) -> None:
-    """Crawl schema and upsert metadata entries with auto-generated descriptions.
-
-    TODO: call LLM to generate human-readable descriptions for each table.
-    """
+    """Crawl schema and upsert metadata entries with LLM-generated descriptions."""
     tables = await crawl_schema(session)
+    client = _get_client()
+
     for table_info in tables:
-        # TODO: generate description via LLM, then call metadata_store.upsert()
-        print(f"[schema_crawler] Found table: {table_info['table_name']} "
-              f"({len(table_info['columns'])} columns)")
+        table_name = table_info["table_name"]
+        columns = table_info["columns"]
+
+        col_summary = ", ".join(f"{c['name']} ({c['type']})" for c in columns)
+        prompt = (
+            f"Write a concise one-sentence description of a database table named "
+            f"'{table_name}' with columns: {col_summary}. "
+            f"Focus on what business data this table likely stores."
+        )
+
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+            )
+            description = response.text.strip()
+        except Exception:
+            logger.exception("Failed to generate description for %s", table_name)
+            description = f"Table {table_name} with {len(columns)} columns."
+
+        await metadata_store.upsert(
+            session,
+            table_name=table_name,
+            description=description,
+            columns_metadata=columns,
+        )
+        logger.info("Upserted metadata for table: %s", table_name)

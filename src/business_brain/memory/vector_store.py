@@ -1,9 +1,10 @@
 """pgvector interface for embedding search and insertion."""
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.db.models import BusinessContext
+from business_brain.ingestion.embeddings import embed_text
 
 
 async def search(
@@ -12,7 +13,6 @@ async def search(
     top_k: int = 5,
 ) -> list[BusinessContext]:
     """Return the top-k most similar business context entries."""
-    # pgvector cosine distance operator: <=>
     stmt = (
         select(BusinessContext)
         .order_by(BusinessContext.embedding.cosine_distance(query_embedding))
@@ -34,3 +34,13 @@ async def insert(
     await session.commit()
     await session.refresh(entry)
     return entry.id
+
+
+async def search_by_text(
+    session: AsyncSession,
+    text: str,
+    top_k: int = 5,
+) -> list[BusinessContext]:
+    """Convenience: embed text and search for similar contexts."""
+    embedding = embed_text(text)
+    return await search(session, embedding, top_k=top_k)

@@ -17,6 +17,8 @@ class AgentState(TypedDict, total=False):
     analysis: dict
     approved: bool
     cfo_notes: str
+    recommendations: list[str]
+    db_session: Any  # AsyncSession — typed as Any to avoid serialization issues
 
 
 # Instantiate agents
@@ -31,7 +33,7 @@ def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
 
     graph.add_node("supervisor", _supervisor.invoke)
-    graph.add_node("sql_agent", _sql_agent.invoke)
+    graph.add_node("sql_agent", _sql_agent.invoke)  # async invoke
     graph.add_node("analyst", _analyst.invoke)
     graph.add_node("cfo", _cfo.invoke)
 

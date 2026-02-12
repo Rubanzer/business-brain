@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
     embedding_model: str = "text-embedding-004"
+    gemini_model: str = "gemini-2.0-flash"
 
     # Watcher
     watch_directory: str = "data/incoming"

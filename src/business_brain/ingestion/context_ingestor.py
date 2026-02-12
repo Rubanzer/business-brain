@@ -2,32 +2,12 @@
 
 import logging
 
-from google import genai
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.db.models import BusinessContext
-from config.settings import settings
+from business_brain.ingestion.embeddings import embed_text
 
 logger = logging.getLogger(__name__)
-
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
-
-
-def _embed(text: str) -> list[float]:
-    """Get a 768-dim embedding from Gemini text-embedding-004."""
-    client = _get_client()
-    result = client.models.embed_content(
-        model=settings.embedding_model,
-        contents=text,
-    )
-    return result.embeddings[0].values
 
 
 async def ingest_context(
@@ -45,7 +25,7 @@ async def ingest_context(
     Returns:
         The ID of the newly created row.
     """
-    embedding = _embed(text)
+    embedding = embed_text(text)
 
     entry = BusinessContext(content=text, embedding=embedding, source=source)
     session.add(entry)
