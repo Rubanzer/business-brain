@@ -214,3 +214,110 @@ class TestSupervisorAgent:
         agent = SupervisorAgent()
         result = agent.invoke({"question": "test"})
         assert len(result["plan"]) == 1
+
+
+class TestDrillDown:
+    """Tests for drill-down / parent_finding support in the supervisor."""
+
+    @patch("business_brain.cognitive.supervisor._get_client")
+    def test_drill_down_uses_drill_prompt(self, mock_client):
+        """When parent_finding is present, the drill-down prompt should be used."""
+        response = MagicMock()
+        response.text = '[{"agent": "sql_agent", "task": "Get MGM data"}]'
+        mock_client.return_value.models.generate_content.return_value = response
+
+        agent = SupervisorAgent()
+        state = {
+            "question": "Investigate MGM rate",
+            "parent_finding": {
+                "type": "comparison",
+                "description": "MGM has the highest rate at Rs 28,000",
+                "business_impact": "Premium pricing may reduce competitiveness",
+            },
+        }
+        result = agent.invoke(state)
+
+        call_args = mock_client.return_value.models.generate_content.call_args
+        prompt = call_args.kwargs.get("contents", call_args.args[0] if call_args.args else "")
+        # Drill-down prompt should include the finding details
+        assert "MGM has the highest rate" in prompt
+        assert "comparison" in prompt
+        assert "Premium pricing" in prompt
+        # Should NOT use the standard system prompt intro
+        assert "INSIGHT BEING INVESTIGATED" in prompt
+
+    @patch("business_brain.cognitive.supervisor._get_client")
+    def test_no_parent_finding_uses_standard_prompt(self, mock_client):
+        """Without parent_finding, the standard prompt should be used."""
+        response = MagicMock()
+        response.text = '[{"agent": "sql_agent", "task": "Get data"}]'
+        mock_client.return_value.models.generate_content.return_value = response
+
+        agent = SupervisorAgent()
+        state = {"question": "Compare rates"}
+        result = agent.invoke(state)
+
+        call_args = mock_client.return_value.models.generate_content.call_args
+        prompt = call_args.kwargs.get("contents", call_args.args[0] if call_args.args else "")
+        assert "INSIGHT BEING INVESTIGATED" not in prompt
+        assert "Supervisor of a business analytics team" in prompt
+
+    @patch("business_brain.cognitive.supervisor._get_client")
+    def test_drill_down_with_chat_history(self, mock_client):
+        """Drill-down should still include chat history context."""
+        response = MagicMock()
+        response.text = '[{"agent": "sql_agent", "task": "Investigate"}]'
+        mock_client.return_value.models.generate_content.return_value = response
+
+        agent = SupervisorAgent()
+        state = {
+            "question": "Why is MGM expensive?",
+            "parent_finding": {
+                "type": "insight",
+                "description": "MGM rate is 8% above average",
+                "business_impact": "",
+            },
+            "chat_history": [
+                {"role": "user", "content": "Compare all parties"},
+                {"role": "assistant", "content": "Analysis shows rate variation"},
+            ],
+        }
+        result = agent.invoke(state)
+
+        call_args = mock_client.return_value.models.generate_content.call_args
+        prompt = call_args.kwargs.get("contents", call_args.args[0] if call_args.args else "")
+        assert "Compare all parties" in prompt
+        assert "MGM rate is 8% above average" in prompt
+
+    @patch("business_brain.cognitive.supervisor._get_client")
+    def test_drill_down_fallback_on_error(self, mock_client):
+        """Drill-down should still produce a fallback plan on LLM error."""
+        mock_client.return_value.models.generate_content.side_effect = RuntimeError("API down")
+
+        agent = SupervisorAgent()
+        state = {
+            "question": "drill deeper",
+            "parent_finding": {
+                "type": "anomaly",
+                "description": "Outlier detected",
+                "business_impact": "Quality risk",
+            },
+        }
+        result = agent.invoke(state)
+        assert result["plan"][0]["agent"] == "sql_agent"
+        assert len(result["plan"]) >= 2
+
+    @patch("business_brain.cognitive.supervisor._get_client")
+    def test_drill_down_missing_fields(self, mock_client):
+        """parent_finding with missing optional fields should not crash."""
+        response = MagicMock()
+        response.text = '[{"agent": "sql_agent", "task": "Investigate"}]'
+        mock_client.return_value.models.generate_content.return_value = response
+
+        agent = SupervisorAgent()
+        state = {
+            "question": "drill deeper",
+            "parent_finding": {"description": "Something interesting"},
+        }
+        result = agent.invoke(state)
+        assert len(result["plan"]) == 1

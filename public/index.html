@@ -443,19 +443,33 @@
       margin-top: 1px;
     }
 
-    /* Finding cards */
+    /* Finding cards — clickable for drill-down */
     .finding-card {
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 0.6rem 0.8rem;
       margin-bottom: 0.4rem;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .finding-card:hover {
+      border-color: var(--accent);
+      background: rgba(108,92,231,0.05);
     }
     .finding-card .finding-desc {
       font-size: 0.8rem;
       color: var(--text);
       line-height: 1.5;
     }
+    .finding-card .drill-hint {
+      font-size: 0.65rem;
+      color: var(--accent);
+      margin-top: 0.25rem;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .finding-card:hover .drill-hint { opacity: 1; }
     .finding-impact {
       font-size: 0.72rem;
       color: var(--muted);
@@ -510,6 +524,67 @@
 
     .chart-container canvas {
       max-height: 400px;
+    }
+
+    /* Drill-down breadcrumb & navigation */
+    .drill-breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+      font-size: 0.75rem;
+    }
+    .drill-breadcrumb .crumb {
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .drill-breadcrumb .crumb:hover { color: var(--accent-hover); }
+    .drill-breadcrumb .crumb-sep { color: var(--muted); }
+    .drill-breadcrumb .crumb-current {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .drill-back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.3rem 0.7rem;
+      font-size: 0.72rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 0.5rem;
+    }
+    .drill-back-btn:hover { border-color: var(--accent); color: var(--text); }
+
+    /* Clickable hero stat cards */
+    .stat-card-hero {
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .stat-card-hero:hover { transform: translateY(-2px); }
+
+    /* Clickable computation stat cards */
+    .stat-card.clickable {
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .stat-card.clickable:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    /* Drill-down loading overlay on a card */
+    .finding-card.drilling, .stat-card-hero.drilling, .stat-card.drilling {
+      opacity: 0.6;
+      pointer-events: none;
+      position: relative;
     }
 
     .issue-table {
@@ -801,6 +876,10 @@
     let lastAnalysisData = null;
     let activeCharts = [];
 
+    // Drill-down navigation stack
+    // Each entry: { question, data, finding (null for root) }
+    let analysisStack = [];
+
     function updateSessionLabel() {
       document.getElementById('session-label').textContent = `Session: ${sessionId.slice(0, 8)}...`;
     }
@@ -810,6 +889,8 @@
       sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
       localStorage.setItem('bb_session_id', sessionId);
       chatMessages.length = 0;
+      analysisStack = [];
+      destroyCharts();
       document.getElementById('chat-thread').style.display = 'none';
       document.getElementById('chat-thread').innerHTML = '';
       document.getElementById('analyze-body').innerHTML = '';
@@ -892,7 +973,7 @@
     // ---------------------------------------------------------------------------
     // Analyze
     // ---------------------------------------------------------------------------
-    async function runAnalysis() {
+    async function runAnalysis(parentFinding) {
       const q = document.getElementById('question').value.trim();
       if (!q) return;
 
@@ -907,11 +988,17 @@
 
       addChatMessage('user', q);
 
+      // Fresh query → reset drill-down stack
+      if (!parentFinding) analysisStack = [];
+
       try {
+        const payload = { question: q, session_id: sessionId };
+        if (parentFinding) payload.parent_finding = parentFinding;
+
         const res = await fetch(`${API}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: q, session_id: sessionId })
+          body: JSON.stringify(payload)
         });
         const data = await res.json();
 
@@ -923,6 +1010,9 @@
         }
 
         lastAnalysisData = data;
+
+        // Push to drill-down stack
+        analysisStack.push({ question: q, data, finding: parentFinding || null });
 
         status.innerHTML = data.approved
           ? '<span class="badge badge-green">APPROVED</span>'
@@ -954,14 +1044,37 @@
     function renderAnalysis(d) {
       let html = '';
 
-      // 1. CFO Key Metrics — Hero stat cards
+      // Store data for drill-down onclick references
+      _currentFindings = d.analysis?.findings || [];
+      _currentMetrics = d.cfo_key_metrics || [];
+      _currentComputations = d.python_analysis?.computations || [];
+
+      // Breadcrumb navigation (only show when drilled down)
+      if (analysisStack.length > 1) {
+        html += `<div class="drill-breadcrumb">`;
+        html += `<button class="drill-back-btn" onclick="drillBack(${analysisStack.length - 2})">&#8592; Back</button>`;
+        analysisStack.forEach((entry, i) => {
+          if (i > 0) html += `<span class="crumb-sep">&#8250;</span>`;
+          const label = entry.question.length > 40
+            ? entry.question.slice(0, 40) + '...'
+            : entry.question;
+          if (i < analysisStack.length - 1) {
+            html += `<span class="crumb" onclick="drillBack(${i})">${esc(label)}</span>`;
+          } else {
+            html += `<span class="crumb-current">${esc(label)}</span>`;
+          }
+        });
+        html += `</div>`;
+      }
+
+      // 1. CFO Key Metrics — Hero stat cards (clickable for drill-down)
       if (d.cfo_key_metrics?.length) {
-        html += `<div class="step"><div class="step-label">Key Metrics</div>`;
+        html += `<div class="step"><div class="step-label">Key Metrics <span style="font-size:0.6rem;color:var(--accent);font-style:italic;">click to investigate</span></div>`;
         html += `<div class="stat-grid">`;
-        d.cfo_key_metrics.forEach(m => {
+        d.cfo_key_metrics.forEach((m, i) => {
           const verdict = m.verdict || 'good';
           const cls = `stat-card-hero stat-${verdict}`;
-          html += `<div class="${cls}">`;
+          html += `<div class="${cls}" onclick="drillFromMetric(_currentMetrics[${i}])">`;
           html += `<div class="stat-value">${esc(String(m.value))}</div>`;
           html += `<div class="stat-label">${esc(m.label)}</div>`;
           if (m.unit) html += `<div class="stat-unit">${esc(m.unit)}</div>`;
@@ -992,24 +1105,25 @@
       }
       html += `</div>`;
 
-      // 4. Analyst Findings
+      // 4. Analyst Findings (clickable for drill-down)
       if (d.analysis) {
-        html += `<div class="step"><div class="step-label">Analyst Findings</div>`;
+        html += `<div class="step"><div class="step-label">Analyst Findings <span style="font-size:0.6rem;color:var(--accent);font-style:italic;">click to drill down</span></div>`;
         if (d.analysis.summary) {
           html += `<div class="insight-summary">${esc(d.analysis.summary)}</div>`;
         }
         if (d.analysis.findings?.length) {
-          d.analysis.findings.forEach(f => {
+          d.analysis.findings.forEach((f, i) => {
             const badge = f.type === 'trend' ? 'badge-yellow'
               : f.type === 'anomaly' ? 'badge-red'
               : f.type === 'correlation' ? 'badge-accent'
               : f.type === 'comparison' ? 'badge-accent'
               : 'badge-green';
-            html += `<div class="finding-card">`;
+            html += `<div class="finding-card" onclick="drillDown(_currentFindings[${i}])">`;
             html += `<div class="finding-desc"><span class="badge ${badge}" style="margin-right:0.4rem;">${esc(f.type)}</span>${esc(f.description)}</div>`;
             if (f.business_impact) {
               html += `<div class="finding-impact">${esc(f.business_impact)}</div>`;
             }
+            html += `<div class="drill-hint">Click to investigate deeper &#8594;</div>`;
             html += `</div>`;
           });
         }
@@ -1033,10 +1147,13 @@
           if (d.python_analysis.computations?.length) {
             // Sort by priority (higher first)
             const sorted = [...d.python_analysis.computations].sort((a, b) => (b.priority || 5) - (a.priority || 5));
+            // Build index map so onclick finds the right computation
+            const compIndexMap = sorted.map(s => d.python_analysis.computations.indexOf(s));
             html += `<div class="stat-grid">`;
-            sorted.forEach(c => {
+            sorted.forEach((c, si) => {
               const fmtVal = formatCompValue(c);
-              html += `<div class="stat-card"><div class="stat-value">${esc(String(fmtVal))}</div><div class="stat-label">${esc(c.label)}</div>`;
+              const origIdx = compIndexMap[si];
+              html += `<div class="stat-card clickable" onclick="drillFromComputation(_currentComputations[${origIdx}])"><div class="stat-value">${esc(String(fmtVal))}</div><div class="stat-label">${esc(c.label)}</div>`;
               if (c.unit) html += `<div class="stat-unit">${esc(c.unit)}</div>`;
               html += `</div>`;
             });
@@ -1303,6 +1420,107 @@
         if (allRows.length) _renderChart(area, cs, allRows);
       });
     }
+
+    // ---------------------------------------------------------------------------
+    // Drill-down into an insight
+    // ---------------------------------------------------------------------------
+    async function drillDown(finding) {
+      const btn = document.getElementById('ask-btn');
+      const status = document.getElementById('analyze-status');
+      const body = document.getElementById('analyze-body');
+
+      btn.disabled = true;
+      status.innerHTML = '<span class="spinner"></span> Drilling deeper...';
+      body.innerHTML = '';
+      destroyCharts();
+
+      const drillQuestion = `Investigate deeper: ${finding.description}` +
+        (finding.business_impact ? ` — ${finding.business_impact}` : '');
+
+      addChatMessage('user', drillQuestion);
+
+      try {
+        const payload = {
+          question: drillQuestion,
+          session_id: sessionId,
+          parent_finding: finding,
+        };
+        const res = await fetch(`${API}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+
+        if (data.session_id) {
+          sessionId = data.session_id;
+          localStorage.setItem('bb_session_id', sessionId);
+          updateSessionLabel();
+        }
+
+        lastAnalysisData = data;
+
+        // Push to stack
+        analysisStack.push({ question: drillQuestion, data, finding });
+
+        status.innerHTML = data.approved
+          ? '<span class="badge badge-green">APPROVED</span>'
+          : '<span class="badge badge-red">REJECTED</span>';
+        body.innerHTML = renderAnalysis(data);
+
+        const summary = data.analysis?.summary || 'Analysis completed.';
+        addChatMessage('assistant', summary);
+
+        autoRenderCharts(data);
+      } catch (e) {
+        status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+        body.textContent = e.message;
+      }
+      btn.disabled = false;
+    }
+
+    function drillBack(targetIndex) {
+      if (targetIndex < 0 || targetIndex >= analysisStack.length) return;
+
+      // Trim stack to target
+      analysisStack = analysisStack.slice(0, targetIndex + 1);
+      const entry = analysisStack[targetIndex];
+
+      lastAnalysisData = entry.data;
+
+      const status = document.getElementById('analyze-status');
+      const body = document.getElementById('analyze-body');
+      destroyCharts();
+
+      status.innerHTML = entry.data.approved
+        ? '<span class="badge badge-green">APPROVED</span>'
+        : '<span class="badge badge-red">REJECTED</span>';
+      body.innerHTML = renderAnalysis(entry.data);
+      autoRenderCharts(entry.data);
+    }
+
+    function drillFromMetric(metric) {
+      // Build a finding-like object from a CFO key metric
+      drillDown({
+        type: 'insight',
+        description: `${metric.label}: ${metric.value}${metric.unit ? ' ' + metric.unit : ''}`,
+        business_impact: `This key metric has a "${metric.verdict}" verdict — investigate what drives it and how to improve it.`,
+      });
+    }
+
+    function drillFromComputation(comp) {
+      // Build a finding-like object from a python computation
+      drillDown({
+        type: 'insight',
+        description: `${comp.label}: ${comp.value}${comp.unit ? ' ' + comp.unit : ''}`,
+        business_impact: 'Investigate the underlying data and breakdown behind this metric.',
+      });
+    }
+
+    // Store findings and metrics globally for onclick references
+    let _currentFindings = [];
+    let _currentMetrics = [];
+    let _currentComputations = [];
 
     function buildCustomChart() {
       const type = document.getElementById('cb-type').value;

@@ -32,6 +32,7 @@ class AgentState(TypedDict, total=False):
     column_classification: dict      # column classifier output
     cfo_key_metrics: list[dict]      # CFO's top metrics with verdicts
     cfo_chart_suggestions: list[dict]  # CFO's chart suggestions
+    parent_finding: dict             # drill-down: the finding being investigated
 
 
 # Instantiate agents

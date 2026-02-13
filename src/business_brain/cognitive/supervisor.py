@@ -28,6 +28,28 @@ Example:
 ]
 """
 
+DRILL_DOWN_PROMPT = """\
+You are the Supervisor of a business analytics team. The user is drilling deeper
+into a specific insight from a previous analysis. Your job is to design SQL queries
+and analysis tasks that INVESTIGATE this insight thoroughly.
+
+INSIGHT BEING INVESTIGATED:
+Type: {finding_type}
+Finding: {finding_description}
+Business Impact: {finding_impact}
+
+The user's follow-up question is: {question}
+
+Design SQL queries that:
+1. Retrieve ALL relevant data supporting or contradicting this insight
+2. Break down the insight by additional dimensions (time, category, sub-group)
+3. Look for root causes, patterns, or exceptions related to this insight
+4. Compare the subject of the insight against benchmarks or peers
+
+Return ONLY a JSON array of steps. Each step must have "agent" and "task" keys.
+Focus the sql_agent tasks on granular data retrieval for this specific insight.
+"""
+
 _client: genai.Client | None = None
 
 
@@ -45,10 +67,21 @@ class SupervisorAgent:
         """Produce an analysis plan from the user's business question."""
         question = state.get("question", "")
         chat_history = state.get("chat_history", [])
+        parent_finding = state.get("parent_finding")
         logger.info("Planning analysis for: %s", question)
 
-        # Build prompt with conversation history for context
-        prompt_parts = [SYSTEM_PROMPT]
+        # Build prompt — use drill-down prompt if investigating a specific finding
+        if parent_finding:
+            system = DRILL_DOWN_PROMPT.format(
+                finding_type=parent_finding.get("type", "insight"),
+                finding_description=parent_finding.get("description", ""),
+                finding_impact=parent_finding.get("business_impact", ""),
+                question=question,
+            )
+            prompt_parts = [system]
+        else:
+            prompt_parts = [SYSTEM_PROMPT]
+
         if chat_history:
             prompt_parts.append("\nRecent conversation history (for context):")
             for msg in chat_history[-10:]:  # last 5 Q&A pairs = 10 messages

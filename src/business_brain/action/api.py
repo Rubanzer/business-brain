@@ -44,6 +44,7 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     question: str
     session_id: Optional[str] = None
+    parent_finding: Optional[dict] = None
 
 
 class ContextRequest(BaseModel):
@@ -85,12 +86,15 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
         await session.rollback()
 
     graph = build_graph()
-    result = await graph.ainvoke({
+    invoke_state = {
         "question": req.question,
         "db_session": session,
         "session_id": session_id,
         "chat_history": chat_history,
-    })
+    }
+    if req.parent_finding:
+        invoke_state["parent_finding"] = req.parent_finding
+    result = await graph.ainvoke(invoke_state)
 
     # Save Q+A pair to chat history
     try:
