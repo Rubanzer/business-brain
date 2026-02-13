@@ -12,13 +12,25 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.cognitive.graph import build_graph
-from business_brain.db.connection import get_session
+from business_brain.db.connection import engine, get_session
+from business_brain.db.models import Base
 from business_brain.ingestion.context_ingestor import ingest_context
 from business_brain.memory import chat_store, metadata_store
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Business Brain API", version="0.1.0")
+
+
+@app.on_event("startup")
+async def _ensure_tables():
+    """Create any missing tables (e.g. chat_messages) on first deploy."""
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables ensured")
+    except Exception:
+        logger.exception("Failed to auto-create tables — chat history may be unavailable")
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +82,7 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
         ]
     except Exception:
         logger.exception("Failed to load chat history")
+        await session.rollback()
 
     graph = build_graph()
     result = await graph.ainvoke({
@@ -100,6 +113,7 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
         await chat_store.append(session, session_id, "assistant", assistant_content, result_meta)
     except Exception:
         logger.exception("Failed to save chat history")
+        await session.rollback()
 
     # Strip non-serializable db_session from response
     result.pop("db_session", None)
@@ -266,6 +280,7 @@ async def get_table_data(
         }
     except Exception as exc:
         logger.exception("Failed to fetch table data")
+        await session.rollback()
         return {"error": str(exc)}
 
 

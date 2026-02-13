@@ -67,6 +67,7 @@ async def validate_tables(session: AsyncSession) -> list[str]:
         actual_tables = {row[0] for row in result.fetchall()}
     except Exception:
         logger.exception("Failed to query pg_tables for validation")
+        await session.rollback()
         return []
 
     all_entries = await get_all(session)

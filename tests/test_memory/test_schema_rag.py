@@ -99,3 +99,42 @@ async def test_context_boost(mock_embed, mock_meta, mock_vs, mock_session):
     assert len(contexts) == 1
     assert contexts[0]["content"] == "The customers table tracks customer lifetime value"
     assert contexts[0]["source"] == "manual"
+
+
+@pytest.mark.asyncio
+@patch("business_brain.memory.schema_rag.vector_store")
+@patch("business_brain.memory.schema_rag.metadata_store")
+@patch("business_brain.memory.schema_rag.embed_text")
+async def test_vector_search_failure_triggers_rollback(mock_embed, mock_meta, mock_vs, mock_session):
+    """When vector search fails, session.rollback() must be called to prevent
+    InFailedSqlTransaction from poisoning the metadata query that follows."""
+    mock_embed.side_effect = Exception("embedding service down")
+    mock_meta.get_all = AsyncMock(return_value=[
+        _make_entry("sales", "Sales data"),
+    ])
+
+    tables, contexts = await retrieve_relevant_tables(mock_session, "show me sales")
+
+    mock_session.rollback.assert_called_once()
+    # Should still return tables via keyword fallback
+    assert len(tables) >= 1
+
+
+@pytest.mark.asyncio
+@patch("business_brain.memory.schema_rag.vector_store")
+@patch("business_brain.memory.schema_rag.metadata_store")
+@patch("business_brain.memory.schema_rag.embed_text")
+async def test_vector_search_failure_still_returns_results(mock_embed, mock_meta, mock_vs, mock_session):
+    """After vector search failure + rollback, keyword matching should still work."""
+    mock_embed.side_effect = Exception("embedding service down")
+    mock_meta.get_all = AsyncMock(return_value=[
+        _make_entry("orders", "Customer orders"),
+        _make_entry("products", "Product catalog"),
+    ])
+
+    tables, contexts = await retrieve_relevant_tables(mock_session, "show orders")
+
+    # Keyword match should still work
+    assert tables[0]["table_name"] == "orders"
+    # No context snippets when vector search fails
+    assert contexts == []

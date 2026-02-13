@@ -42,6 +42,7 @@ async def retrieve_relevant_tables(
         ]
     except Exception:
         logger.exception("Vector search failed, falling back to keyword-only")
+        await session.rollback()
         context_keywords = ""
 
     # 2. Keyword + context matching against metadata entries

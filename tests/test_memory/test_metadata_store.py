@@ -98,3 +98,13 @@ class TestValidateTables:
 
         removed = await validate_tables(session)
         assert removed == []
+
+    @pytest.mark.asyncio
+    async def test_pg_tables_error_triggers_rollback(self):
+        """When pg_tables query fails, session.rollback() must be called to
+        prevent InFailedSqlTransaction poisoning subsequent queries."""
+        session = AsyncMock()
+        session.execute = AsyncMock(side_effect=Exception("connection error"))
+
+        await validate_tables(session)
+        session.rollback.assert_called_once()
