@@ -93,7 +93,8 @@ class SQLAgent:
         if sql_tasks and idx < len(sql_tasks):
             task = sql_tasks[idx].get("task", "")
         else:
-            task = state.get("plan", [{}])[0].get("task", "")
+            plan = state.get("plan", [])
+            task = plan[0].get("task", "") if plan else ""
 
         question = state.get("question", task)
 
