@@ -46,3 +46,7 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     metadata_ = Column("metadata", JSON, nullable=True)  # sql_result, analysis, etc.
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# Import discovery models so Base.metadata picks them up for auto-create
+import business_brain.db.discovery_models as _discovery_models  # noqa: E402, F401

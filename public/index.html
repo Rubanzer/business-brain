@@ -768,6 +768,172 @@
     }
     .ctx-file-zone:hover { border-color: var(--accent); color: var(--text); }
     .ctx-file-zone input { display: none; }
+
+    /* Feed discovery status bar */
+    .discovery-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .discovery-bar .disc-stats { display: flex; gap: 1rem; }
+
+    /* Feed insight cards */
+    .feed-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      margin-bottom: 0.6rem;
+      transition: border-color 0.2s;
+    }
+    .feed-card:hover { border-color: var(--accent); }
+    .feed-card.severity-critical { border-left: 3px solid var(--red); }
+    .feed-card.severity-warning { border-left: 3px solid var(--yellow); }
+    .feed-card.severity-info { border-left: 3px solid var(--green); }
+    .feed-card.type-story { border-left: 3px solid var(--accent); }
+    .feed-card-title {
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 0.3rem;
+    }
+    .feed-card-desc {
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.5;
+      margin-bottom: 0.4rem;
+    }
+    .feed-card-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.4rem;
+    }
+    .feed-card-actions {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.4rem;
+    }
+    .table-chip {
+      display: inline-block;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.65rem;
+      color: var(--muted);
+    }
+    .feed-empty {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    /* Report cards */
+    .report-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      margin-bottom: 0.6rem;
+    }
+    .report-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.3rem;
+    }
+    .report-card-title {
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+    .report-card-meta {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+    .report-card-actions {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    /* Suggestion pills */
+    .suggestion-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.75rem;
+    }
+    .suggestion-pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.72rem;
+      padding: 0.35rem 0.7rem;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .suggestion-pill:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(108,92,231,0.08);
+    }
+
+    /* Export buttons */
+    .export-bar {
+      display: flex;
+      gap: 0.4rem;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+    .btn-export {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.35rem 0.8rem;
+      font-size: 0.7rem;
+    }
+    .btn-export:hover { border-color: var(--accent); color: var(--text); }
+
+    /* Deploy modal */
+    .deploy-modal-content {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .deploy-modal-content label {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .deploy-modal-content input {
+      width: 100%;
+    }
+
+    /* Report view in modal */
+    .report-view-section {
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .report-view-section:last-child { border-bottom: none; }
+    .report-view-section h4 {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
   </style>
 </head>
 <body>
@@ -778,19 +944,37 @@
     </header>
 
     <div class="tabs">
-      <button class="tab active" data-panel="analyze">Analyze</button>
+      <button class="tab active" data-panel="feed">Feed</button>
+      <button class="tab" data-panel="analyze">Analyze</button>
+      <button class="tab" data-panel="reports">Reports</button>
       <button class="tab" data-panel="context">Context</button>
       <button class="tab" data-panel="upload">Upload</button>
       <button class="tab" data-panel="schema">Schema</button>
     </div>
 
+    <!-- Feed Panel (Default) -->
+    <div id="feed" class="panel active">
+      <div class="discovery-bar" id="discovery-bar">
+        <div class="disc-stats" id="disc-stats">
+          <span>No discovery runs yet</span>
+        </div>
+        <button class="btn-sm" onclick="triggerDiscovery()" id="scan-btn">Scan Now</button>
+      </div>
+      <div id="feed-body">
+        <div class="feed-empty" id="feed-empty">
+          Upload some data and run a discovery scan to see insights here.
+        </div>
+      </div>
+    </div>
+
     <!-- Analyze Panel -->
-    <div id="analyze" class="panel active">
+    <div id="analyze" class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
         <span style="font-size:0.7rem;color:var(--muted);" id="session-label"></span>
         <button class="new-chat-btn" onclick="newChat()">New Chat</button>
       </div>
       <div id="chat-thread" class="chat-thread" style="display:none;"></div>
+      <div class="suggestion-pills" id="suggestion-pills"></div>
       <div class="input-group">
         <input type="text" id="question" placeholder="Ask a business question..." />
         <button id="ask-btn" onclick="runAnalysis()">Analyze</button>
@@ -798,7 +982,11 @@
       <div id="analyze-result" class="result">
         <div class="result-header">
           <span>Analysis Pipeline</span>
-          <span id="analyze-status"></span>
+          <div style="display:flex;gap:0.4rem;align-items:center;">
+            <button class="btn-export btn-sm" onclick="exportCSV()" title="Export CSV">CSV</button>
+            <button class="btn-export btn-sm" onclick="exportPDF()" title="Export PDF">PDF</button>
+            <span id="analyze-status"></span>
+          </div>
         </div>
         <div class="result-body" id="analyze-body"></div>
       </div>
@@ -840,12 +1028,39 @@
       </div>
     </div>
 
+    <!-- Reports Panel -->
+    <div id="reports" class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <span style="font-size:0.8rem;color:var(--muted);">Deployed Reports</span>
+      </div>
+      <div id="reports-body">
+        <div class="feed-empty">No deployed reports yet. Deploy insights from the Feed tab.</div>
+      </div>
+    </div>
+
     <!-- Schema Panel -->
     <div id="schema" class="panel">
       <div class="input-group">
         <button onclick="loadSchema()">Refresh Schema</button>
       </div>
       <div id="schema-body"></div>
+    </div>
+  </div>
+
+  <!-- Deploy Modal -->
+  <div class="modal-overlay" id="deploy-modal">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-header">
+        <h3>Deploy as Report</h3>
+        <button class="modal-close" onclick="closeDeployModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="deploy-modal-content">
+          <label>Report Name</label>
+          <input type="text" id="deploy-name" placeholder="Enter report name..." />
+          <button onclick="confirmDeploy()">Deploy</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1915,6 +2130,471 @@
 
     // Auto-load schema on tab click
     document.querySelector('[data-panel="schema"]').addEventListener('click', loadSchema);
+
+    // ---------------------------------------------------------------------------
+    // Feed — Proactive Insight Discovery
+    // ---------------------------------------------------------------------------
+    let feedInsights = [];
+
+    async function loadFeed() {
+      const body = document.getElementById('feed-body');
+      const empty = document.getElementById('feed-empty');
+
+      try {
+        // Load discovery status
+        const statusRes = await fetch(`${API}/discovery/status`);
+        const statusData = await statusRes.json();
+        const statsEl = document.getElementById('disc-stats');
+
+        if (statusData.status !== 'no_runs') {
+          const ago = statusData.completed_at
+            ? _timeAgo(new Date(statusData.completed_at))
+            : 'running...';
+          statsEl.innerHTML = `
+            <span>${statusData.tables_scanned || 0} tables scanned</span>
+            <span>${statusData.insights_found || 0} insights</span>
+            <span>Last run: ${ago}</span>
+          `;
+        }
+
+        // Load feed
+        const feedRes = await fetch(`${API}/feed`);
+        const insights = await feedRes.json();
+        feedInsights = insights;
+
+        if (!insights.length) {
+          body.innerHTML = '<div class="feed-empty">No insights discovered yet. Upload data and click "Scan Now" to discover insights.</div>';
+          return;
+        }
+
+        body.innerHTML = insights.map((ins, i) => {
+          const sevClass = ins.insight_type === 'story' ? 'type-story' : `severity-${ins.severity}`;
+          const sevBadge = ins.severity === 'critical' ? 'badge-red'
+            : ins.severity === 'warning' ? 'badge-yellow'
+            : ins.insight_type === 'story' ? 'badge-accent'
+            : 'badge-green';
+
+          let html = `<div class="feed-card ${sevClass}">`;
+          html += `<div class="feed-card-title">${esc(ins.title)}</div>`;
+          html += `<div class="feed-card-desc">${esc(ins.description)}</div>`;
+          html += `<div class="feed-card-meta">`;
+          html += `<span class="badge ${sevBadge}">${esc(ins.insight_type)}</span>`;
+          html += `<span class="badge badge-accent">Score: ${ins.impact_score}</span>`;
+          if (ins.source_tables?.length) {
+            ins.source_tables.forEach(t => {
+              html += `<span class="table-chip">${esc(t)}</span>`;
+            });
+          }
+          if (ins.discovered_at) {
+            html += `<span style="font-size:0.65rem;color:var(--muted);">${_timeAgo(new Date(ins.discovered_at))}</span>`;
+          }
+          html += `</div>`;
+
+          // Narrative for stories
+          if (ins.narrative && ins.insight_type === 'story') {
+            html += `<div style="font-size:0.78rem;color:var(--text);line-height:1.5;margin:0.3rem 0;padding:0.5rem;background:rgba(108,92,231,0.05);border-radius:4px;">${esc(ins.narrative)}</div>`;
+          }
+
+          // Suggested actions
+          if (ins.suggested_actions?.length) {
+            html += `<div style="font-size:0.7rem;color:var(--muted);margin-top:0.3rem;">`;
+            ins.suggested_actions.forEach(a => {
+              html += `<div style="margin-bottom:0.15rem;">&#8226; ${esc(a)}</div>`;
+            });
+            html += `</div>`;
+          }
+
+          html += `<div class="feed-card-actions">`;
+          html += `<button class="btn-sm" onclick="investigateInsight(${i})">Investigate</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
+          html += `</div>`;
+          html += `</div>`;
+          return html;
+        }).join('');
+      } catch (e) {
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">Failed to load feed: ${esc(e.message)}</div>`;
+      }
+    }
+
+    async function investigateInsight(index) {
+      const ins = feedInsights[index];
+      if (!ins) return;
+
+      // Mark as seen
+      try {
+        await fetch(`${API}/feed/${ins.id}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'seen' }),
+        });
+      } catch(e) {}
+
+      // Switch to analyze tab
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.querySelector('[data-panel="analyze"]').classList.add('active');
+      document.getElementById('analyze').classList.add('active');
+
+      // Set question and run analysis with insight as parent finding
+      const q = `Investigate: ${ins.title} — ${ins.description}`;
+      document.getElementById('question').value = q;
+      runAnalysis({
+        type: ins.insight_type,
+        description: ins.description,
+        business_impact: ins.suggested_actions?.[0] || '',
+      });
+    }
+
+    async function dismissInsight(insightId, btn) {
+      try {
+        await fetch(`${API}/feed/${insightId}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'dismissed' }),
+        });
+        // Remove card from DOM
+        const card = btn.closest('.feed-card');
+        if (card) card.remove();
+        toast('Insight dismissed');
+      } catch (e) {
+        toast('Failed to dismiss: ' + e.message);
+      }
+    }
+
+    async function triggerDiscovery() {
+      const btn = document.getElementById('scan-btn');
+      btn.disabled = true;
+      btn.textContent = 'Scanning...';
+
+      try {
+        await fetch(`${API}/discovery/trigger`, { method: 'POST' });
+        toast('Discovery scan started');
+
+        // Poll for completion
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          try {
+            const res = await fetch(`${API}/discovery/status`);
+            const data = await res.json();
+            if (data.status === 'completed' || data.status === 'failed' || attempts > 60) {
+              clearInterval(poll);
+              btn.disabled = false;
+              btn.textContent = 'Scan Now';
+              if (data.status === 'completed') {
+                toast(`Discovery complete: ${data.insights_found} insights found`);
+              } else if (data.status === 'failed') {
+                toast('Discovery failed: ' + (data.error || 'Unknown error'));
+              }
+              await loadFeed();
+            }
+          } catch(e) {
+            clearInterval(poll);
+            btn.disabled = false;
+            btn.textContent = 'Scan Now';
+          }
+        }, 2000);
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = 'Scan Now';
+        toast('Failed to trigger discovery: ' + e.message);
+      }
+    }
+
+    function _timeAgo(date) {
+      const seconds = Math.floor((new Date() - date) / 1000);
+      if (seconds < 60) return 'just now';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ago`;
+    }
+
+    // Auto-load feed on page load and tab click
+    document.querySelector('[data-panel="feed"]').addEventListener('click', loadFeed);
+    loadFeed();
+
+    // ---------------------------------------------------------------------------
+    // Reports
+    // ---------------------------------------------------------------------------
+    let _deployInsightId = null;
+
+    function showDeployModal(insightId, title) {
+      _deployInsightId = insightId;
+      document.getElementById('deploy-name').value = title;
+      document.getElementById('deploy-modal').classList.add('active');
+    }
+
+    function closeDeployModal() {
+      document.getElementById('deploy-modal').classList.remove('active');
+      _deployInsightId = null;
+    }
+
+    document.getElementById('deploy-modal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('deploy-modal')) closeDeployModal();
+    });
+
+    async function confirmDeploy() {
+      if (!_deployInsightId) return;
+      const name = document.getElementById('deploy-name').value.trim();
+      if (!name) { toast('Enter a report name'); return; }
+
+      try {
+        const res = await fetch(`${API}/feed/${_deployInsightId}/deploy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          toast('Deploy failed: ' + data.error);
+        } else {
+          toast('Report deployed: ' + name);
+          closeDeployModal();
+          // Switch to reports tab
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+          document.querySelector('[data-panel="reports"]').classList.add('active');
+          document.getElementById('reports').classList.add('active');
+          loadReports();
+        }
+      } catch (e) {
+        toast('Deploy failed: ' + e.message);
+      }
+    }
+
+    async function loadReports() {
+      const body = document.getElementById('reports-body');
+      body.innerHTML = '<p style="color:var(--muted)"><span class="spinner"></span> Loading...</p>';
+
+      try {
+        const res = await fetch(`${API}/reports`);
+        const reports = await res.json();
+
+        if (!reports.length) {
+          body.innerHTML = '<div class="feed-empty">No deployed reports yet. Deploy insights from the Feed tab.</div>';
+          return;
+        }
+
+        body.innerHTML = reports.map(r => {
+          let html = `<div class="report-card">`;
+          html += `<div class="report-card-header">`;
+          html += `<span class="report-card-title">${esc(r.name)}</span>`;
+          html += `<span class="badge badge-green">Active</span>`;
+          html += `</div>`;
+          html += `<div class="report-card-meta">`;
+          if (r.last_run_at) html += `Last updated: ${_timeAgo(new Date(r.last_run_at))}`;
+          if (r.last_result && Array.isArray(r.last_result)) {
+            html += ` | ${r.last_result.length} rows`;
+          }
+          html += `</div>`;
+          html += `<div class="report-card-actions">`;
+          html += `<button class="btn-sm" onclick="viewReport('${r.id}')">View Full Report</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="refreshReport('${r.id}', this)">Refresh Now</button>`;
+          html += `<button class="btn-sm btn-secondary" style="color:var(--red);" onclick="removeReport('${r.id}', this)">Remove</button>`;
+          html += `</div>`;
+          html += `</div>`;
+          return html;
+        }).join('');
+      } catch (e) {
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">Failed to load reports: ${esc(e.message)}</div>`;
+      }
+    }
+
+    async function viewReport(reportId) {
+      const modal = document.getElementById('data-modal');
+      const title = document.getElementById('modal-title');
+      const body = document.getElementById('modal-body');
+
+      title.textContent = 'Report';
+      body.innerHTML = '<p><span class="spinner"></span> Loading...</p>';
+      modal.classList.add('active');
+
+      try {
+        const res = await fetch(`${API}/reports/${reportId}`);
+        const report = await res.json();
+
+        if (report.error) {
+          body.innerHTML = `<p style="color:var(--red);">${esc(report.error)}</p>`;
+          return;
+        }
+
+        title.textContent = report.name;
+        let html = '';
+
+        // Chart if chart_spec available
+        if (report.chart_spec && report.last_result && Array.isArray(report.last_result)) {
+          html += `<div class="report-view-section"><h4>Chart</h4><div id="report-chart-area"></div></div>`;
+        }
+
+        // Data table
+        if (report.last_result && Array.isArray(report.last_result) && report.last_result.length) {
+          html += `<div class="report-view-section"><h4>Data (${report.last_result.length} rows)</h4>`;
+          html += renderTable(report.last_result, 20);
+          html += `</div>`;
+        }
+
+        // Query
+        if (report.query) {
+          html += `<div class="report-view-section"><h4>Query</h4><div class="sql-block">${esc(report.query)}</div></div>`;
+        }
+
+        // Timestamp
+        html += `<div class="report-view-section"><h4>Last Updated</h4><p style="font-size:0.78rem;color:var(--muted);">${report.last_run_at || 'Never'}</p></div>`;
+
+        body.innerHTML = html;
+
+        // Render chart if spec exists
+        if (report.chart_spec && report.last_result && Array.isArray(report.last_result)) {
+          const area = document.getElementById('report-chart-area');
+          if (area) {
+            _renderChart(area, report.chart_spec, report.last_result);
+          }
+        }
+      } catch (e) {
+        body.innerHTML = `<p style="color:var(--red);">${esc(e.message)}</p>`;
+      }
+    }
+
+    async function refreshReport(reportId, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Refreshing...';
+      try {
+        const res = await fetch(`${API}/reports/${reportId}/refresh`, { method: 'POST' });
+        const data = await res.json();
+        if (data.error) {
+          toast('Refresh failed: ' + data.error);
+        } else {
+          toast('Report refreshed');
+          loadReports();
+        }
+      } catch (e) {
+        toast('Refresh failed: ' + e.message);
+      }
+      btn.disabled = false;
+      btn.textContent = 'Refresh Now';
+    }
+
+    async function removeReport(reportId, btn) {
+      try {
+        await fetch(`${API}/reports/${reportId}`, { method: 'DELETE' });
+        const card = btn.closest('.report-card');
+        if (card) card.remove();
+        toast('Report removed');
+      } catch (e) {
+        toast('Remove failed: ' + e.message);
+      }
+    }
+
+    // Auto-load reports on tab click
+    document.querySelector('[data-panel="reports"]').addEventListener('click', loadReports);
+
+    // ---------------------------------------------------------------------------
+    // Smart Question Suggestions
+    // ---------------------------------------------------------------------------
+    async function loadSuggestions() {
+      try {
+        const res = await fetch(`${API}/suggestions`);
+        const data = await res.json();
+        const pills = document.getElementById('suggestion-pills');
+
+        if (data.suggestions?.length) {
+          pills.innerHTML = data.suggestions.map(s =>
+            `<button class="suggestion-pill" onclick="useSuggestion(this)">${esc(s)}</button>`
+          ).join('');
+        } else {
+          pills.innerHTML = '';
+        }
+      } catch (e) {
+        // Silently fail — suggestions are a nice-to-have
+      }
+    }
+
+    function useSuggestion(btn) {
+      document.getElementById('question').value = btn.textContent;
+      runAnalysis();
+    }
+
+    // Load suggestions when Analyze tab is clicked
+    document.querySelector('[data-panel="analyze"]').addEventListener('click', loadSuggestions);
+
+    // ---------------------------------------------------------------------------
+    // Export — PDF & CSV (Client-side)
+    // ---------------------------------------------------------------------------
+    function exportCSV() {
+      if (!lastAnalysisData) { toast('No analysis data to export'); return; }
+
+      const sqlResults = lastAnalysisData.sql_results || (lastAnalysisData.sql_result ? [lastAnalysisData.sql_result] : []);
+      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+
+      if (!allRows.length) { toast('No data rows to export'); return; }
+
+      const keys = Object.keys(allRows[0]);
+      let csv = keys.join(',') + '\n';
+      allRows.forEach(row => {
+        csv += keys.map(k => {
+          const val = String(row[k] ?? '');
+          return val.includes(',') || val.includes('"') || val.includes('\n')
+            ? '"' + val.replace(/"/g, '""') + '"'
+            : val;
+        }).join(',') + '\n';
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'business_brain_export.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('CSV exported');
+    }
+
+    async function exportPDF() {
+      if (!lastAnalysisData) { toast('No analysis data to export'); return; }
+
+      // Use html2canvas + jsPDF for PDF generation
+      try {
+        // Dynamically load libraries if not present
+        if (!window.html2canvas) {
+          await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+        }
+        if (!window.jspdf) {
+          await _loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        }
+
+        const element = document.getElementById('analyze-body');
+        const canvas = await html2canvas(element, {
+          backgroundColor: '#0a0a0f',
+          scale: 2,
+        });
+        const imgData = canvas.toDataURL('image/png');
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, Math.min(pdfHeight, pdf.internal.pageSize.getHeight()));
+        pdf.save('business_brain_report.pdf');
+        toast('PDF exported');
+      } catch (e) {
+        toast('PDF export failed: ' + e.message);
+      }
+    }
+
+    function _loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
   </script>
 </body>
 </html>

@@ -6,20 +6,20 @@ import uuid
 from io import StringIO
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.cognitive.graph import build_graph
-from business_brain.db.connection import engine, get_session
+from business_brain.db.connection import async_session, engine, get_session
 from business_brain.db.models import Base
 from business_brain.ingestion.context_ingestor import ingest_context
 from business_brain.memory import chat_store, metadata_store
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Business Brain API", version="0.1.0")
+app = FastAPI(title="Business Brain API", version="2.0.0")
 
 
 @app.on_event("startup")
@@ -151,7 +151,9 @@ async def upload_csv(file: UploadFile = File(...), session: AsyncSession = Depen
 
 @app.post("/upload")
 async def upload_file(
-    file: UploadFile = File(...), session: AsyncSession = Depends(get_session)
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Smart file upload — parse, clean, load, and auto-generate metadata."""
     from business_brain.cognitive.data_engineer_agent import DataEngineerAgent
@@ -166,6 +168,11 @@ async def upload_file(
             "file_name": file_name,
             "db_session": session,
         })
+
+        # Trigger discovery in background after successful upload
+        table_name = report.get("table_name", "unknown")
+        background_tasks.add_task(_run_discovery_background, f"upload:{table_name}")
+
         return report
     except Exception as exc:
         logger.exception("Upload failed")
@@ -375,3 +382,220 @@ async def generate_chart(body: dict) -> dict:
             },
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Background discovery helper
+# ---------------------------------------------------------------------------
+
+async def _run_discovery_background(trigger: str = "manual") -> None:
+    """Run discovery engine in a background task with its own session."""
+    from business_brain.discovery.engine import run_discovery
+
+    try:
+        async with async_session() as session:
+            await run_discovery(session, trigger=trigger)
+    except Exception:
+        logger.exception("Background discovery failed")
+
+
+# ---------------------------------------------------------------------------
+# Discovery & Feed endpoints
+# ---------------------------------------------------------------------------
+
+
+class DeployRequest(BaseModel):
+    name: str
+
+
+class StatusRequest(BaseModel):
+    status: str  # seen/dismissed
+
+
+@app.get("/feed")
+async def get_feed(session: AsyncSession = Depends(get_session)) -> list[dict]:
+    """Get ranked insight feed."""
+    from business_brain.discovery.feed_store import get_feed as _get_feed
+
+    insights = await _get_feed(session)
+    return [
+        {
+            "id": i.id,
+            "insight_type": i.insight_type,
+            "severity": i.severity,
+            "impact_score": i.impact_score,
+            "title": i.title,
+            "description": i.description,
+            "narrative": i.narrative,
+            "source_tables": i.source_tables,
+            "source_columns": i.source_columns,
+            "evidence": i.evidence,
+            "related_insights": i.related_insights,
+            "suggested_actions": i.suggested_actions,
+            "composite_template": i.composite_template,
+            "discovered_at": i.discovered_at.isoformat() if i.discovered_at else None,
+            "status": i.status,
+        }
+        for i in insights
+    ]
+
+
+@app.post("/feed/{insight_id}/status")
+async def update_insight_status(
+    insight_id: str,
+    req: StatusRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Update insight status (seen/dismissed)."""
+    from business_brain.discovery.feed_store import update_status
+
+    await update_status(session, insight_id, req.status)
+    return {"status": "updated", "insight_id": insight_id, "new_status": req.status}
+
+
+@app.post("/feed/{insight_id}/deploy")
+async def deploy_insight_as_report(
+    insight_id: str,
+    req: DeployRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Deploy an insight as a persistent report."""
+    from business_brain.discovery.feed_store import deploy_insight
+
+    try:
+        report = await deploy_insight(session, insight_id, req.name)
+        return {
+            "status": "deployed",
+            "report_id": report.id,
+            "name": report.name,
+            "insight_id": report.insight_id,
+        }
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+
+@app.get("/reports")
+async def list_reports(session: AsyncSession = Depends(get_session)) -> list[dict]:
+    """List all deployed reports."""
+    from business_brain.discovery.feed_store import get_reports
+
+    reports = await get_reports(session)
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "insight_id": r.insight_id,
+            "query": r.query,
+            "chart_spec": r.chart_spec,
+            "last_result": r.last_result,
+            "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "active": r.active,
+        }
+        for r in reports
+    ]
+
+
+@app.get("/reports/{report_id}")
+async def get_report(
+    report_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get a single report with latest data."""
+    from business_brain.discovery.feed_store import get_report as _get_report
+
+    report = await _get_report(session, report_id)
+    if not report:
+        return {"error": "Report not found"}
+    return {
+        "id": report.id,
+        "name": report.name,
+        "insight_id": report.insight_id,
+        "query": report.query,
+        "chart_spec": report.chart_spec,
+        "last_result": report.last_result,
+        "last_run_at": report.last_run_at.isoformat() if report.last_run_at else None,
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+        "active": report.active,
+    }
+
+
+@app.post("/reports/{report_id}/refresh")
+async def refresh_report(
+    report_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Re-run a report's query and update results."""
+    from business_brain.discovery.feed_store import refresh_report as _refresh
+
+    report = await _refresh(session, report_id)
+    if not report:
+        return {"error": "Report not found"}
+    return {
+        "status": "refreshed",
+        "report_id": report.id,
+        "last_run_at": report.last_run_at.isoformat() if report.last_run_at else None,
+        "row_count": len(report.last_result) if isinstance(report.last_result, list) else 0,
+    }
+
+
+@app.delete("/reports/{report_id}")
+async def delete_report(
+    report_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Remove a deployed report."""
+    from business_brain.discovery.feed_store import delete_report as _delete
+
+    deleted = await _delete(session, report_id)
+    if not deleted:
+        return {"error": "Report not found"}
+    return {"status": "deleted", "report_id": report_id}
+
+
+@app.post("/discovery/trigger")
+async def trigger_discovery(
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Manually trigger a discovery sweep."""
+    background_tasks.add_task(_run_discovery_background, "manual")
+    return {"status": "started", "message": "Discovery sweep triggered in background"}
+
+
+@app.get("/discovery/status")
+async def discovery_status(session: AsyncSession = Depends(get_session)) -> dict:
+    """Get the last discovery run info."""
+    from business_brain.discovery.feed_store import get_last_run
+
+    run = await get_last_run(session)
+    if not run:
+        return {"status": "no_runs", "message": "No discovery runs yet"}
+    return {
+        "id": run.id,
+        "status": run.status,
+        "trigger": run.trigger,
+        "tables_scanned": run.tables_scanned,
+        "insights_found": run.insights_found,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "error": run.error,
+    }
+
+
+@app.get("/suggestions")
+async def get_suggestions(session: AsyncSession = Depends(get_session)) -> dict:
+    """Get smart question suggestions based on profiled tables."""
+    from sqlalchemy import select
+
+    from business_brain.db.discovery_models import TableProfile
+    from business_brain.discovery.profiler import generate_suggestions
+
+    result = await session.execute(select(TableProfile))
+    profiles = list(result.scalars().all())
+
+    if not profiles:
+        return {"suggestions": []}
+
+    suggestions = generate_suggestions(profiles)
+    return {"suggestions": suggestions}
