@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Business Brain</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
       --bg: #0a0a0f;
@@ -120,6 +121,18 @@
     button:hover { background: var(--accent-hover); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
 
+    .btn-sm {
+      padding: 0.3rem 0.8rem;
+      font-size: 0.7rem;
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover { background: var(--border); }
+
     .result {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -219,11 +232,39 @@
       border-bottom: 1px solid var(--border);
       color: var(--muted);
       font-weight: 500;
+      cursor: pointer;
+      user-select: none;
     }
+
+    .data-table th:hover { color: var(--accent); }
 
     .data-table td {
       padding: 0.4rem 0.6rem;
       border-bottom: 1px solid var(--border);
+    }
+
+    .data-table td.editable:hover {
+      outline: 1px solid var(--accent);
+      cursor: pointer;
+    }
+
+    .data-table td.editing {
+      padding: 0;
+    }
+
+    .data-table td.editing input {
+      width: 100%;
+      background: var(--bg);
+      border: 2px solid var(--accent);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.75rem;
+      padding: 0.4rem 0.6rem;
+      outline: none;
+    }
+
+    .data-table td.edited {
+      background: rgba(108,92,231,0.1);
     }
 
     .finding {
@@ -357,9 +398,173 @@
       transform: translateY(100px);
       opacity: 0;
       transition: all 0.3s;
+      z-index: 1000;
     }
 
     .toast.show { transform: translateY(0); opacity: 1; }
+
+    /* Chat history thread */
+    .chat-thread {
+      margin-bottom: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem;
+    }
+
+    .chat-msg {
+      padding: 0.5rem 0.7rem;
+      margin-bottom: 0.4rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+    }
+
+    .chat-msg.user {
+      background: rgba(108,92,231,0.1);
+      border-left: 3px solid var(--accent);
+    }
+
+    .chat-msg.assistant {
+      background: rgba(0,206,201,0.05);
+      border-left: 3px solid var(--green);
+      color: var(--muted);
+    }
+
+    .chat-msg .chat-role {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+    }
+
+    .new-chat-btn {
+      font-size: 0.7rem;
+      padding: 0.3rem 0.7rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .new-chat-btn:hover { color: var(--text); border-color: var(--accent); }
+
+    /* Pagination */
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .pagination button {
+      padding: 0.25rem 0.6rem;
+      font-size: 0.7rem;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 999;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 90vw;
+      max-width: 1000px;
+      max-height: 85vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.8rem 1.2rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-header h3 { font-size: 0.85rem; }
+
+    .modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 0.2rem 0.5rem;
+    }
+
+    .modal-close:hover { color: var(--text); }
+
+    /* Chart container */
+    .chart-container {
+      margin: 1rem 0;
+      padding: 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      position: relative;
+      max-width: 100%;
+    }
+
+    .chart-container canvas {
+      max-height: 350px;
+    }
+
+    .chart-builder {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin: 0.5rem 0;
+      font-size: 0.75rem;
+    }
+
+    .chart-builder select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.75rem;
+      padding: 0.3rem 0.5rem;
+      border-radius: 4px;
+      outline: none;
+    }
+
+    /* Context file upload zone */
+    .ctx-file-zone {
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      padding: 0.8rem;
+      text-align: center;
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+      transition: all 0.2s;
+    }
+    .ctx-file-zone:hover { border-color: var(--accent); color: var(--text); }
+    .ctx-file-zone input { display: none; }
   </style>
 </head>
 <body>
@@ -378,6 +583,11 @@
 
     <!-- Analyze Panel -->
     <div id="analyze" class="panel active">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <span style="font-size:0.7rem;color:var(--muted);" id="session-label"></span>
+        <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+      </div>
+      <div id="chat-thread" class="chat-thread" style="display:none;"></div>
       <div class="input-group">
         <input type="text" id="question" placeholder="Ask a business question..." />
         <button id="ask-btn" onclick="runAnalysis()">Analyze</button>
@@ -399,6 +609,10 @@
           <input type="text" id="ctx-source" placeholder="Source (optional)" value="manual" />
           <button onclick="submitContext()">Submit Context</button>
         </div>
+      </div>
+      <div class="ctx-file-zone" id="ctx-file-zone">
+        Upload a document as context (.txt, .md, .pdf)
+        <input type="file" id="ctx-file-input" accept=".txt,.md,.pdf" />
       </div>
       <div id="context-result" class="result">
         <div class="result-header"><span>Ingestion Log</span></div>
@@ -432,10 +646,49 @@
     </div>
   </div>
 
+  <!-- Data Viewer Modal -->
+  <div class="modal-overlay" id="data-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title">Data Viewer</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script>
     const API = window.location.origin;
+
+    // Session management
+    let sessionId = localStorage.getItem('bb_session_id');
+    if (!sessionId) {
+      sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      localStorage.setItem('bb_session_id', sessionId);
+    }
+
+    const chatMessages = [];
+    let lastAnalysisData = null;
+    let activeCharts = [];
+
+    function updateSessionLabel() {
+      document.getElementById('session-label').textContent = `Session: ${sessionId.slice(0, 8)}...`;
+    }
+    updateSessionLabel();
+
+    function newChat() {
+      sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      localStorage.setItem('bb_session_id', sessionId);
+      chatMessages.length = 0;
+      document.getElementById('chat-thread').style.display = 'none';
+      document.getElementById('chat-thread').innerHTML = '';
+      document.getElementById('analyze-body').innerHTML = '';
+      document.getElementById('analyze-status').innerHTML = '';
+      updateSessionLabel();
+      toast('New chat started');
+    }
 
     // Tabs
     document.querySelectorAll('.tab').forEach(tab => {
@@ -455,6 +708,18 @@
       setTimeout(() => el.classList.remove('show'), 3000);
     }
 
+    // Chat thread rendering
+    function addChatMessage(role, content) {
+      chatMessages.push({ role, content });
+      const thread = document.getElementById('chat-thread');
+      thread.style.display = 'block';
+      const div = document.createElement('div');
+      div.className = `chat-msg ${role}`;
+      div.innerHTML = `<div class="chat-role">${role}</div><div>${esc(content)}</div>`;
+      thread.appendChild(div);
+      thread.scrollTop = thread.scrollHeight;
+    }
+
     // Analyze
     async function runAnalysis() {
       const q = document.getElementById('question').value.trim();
@@ -468,17 +733,38 @@
       status.innerHTML = '<span class="spinner"></span> Running...';
       body.innerHTML = '';
 
+      addChatMessage('user', q);
+
       try {
         const res = await fetch(`${API}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: q })
+          body: JSON.stringify({ question: q, session_id: sessionId })
         });
         const data = await res.json();
+
+        // Update session_id if server returns one
+        if (data.session_id) {
+          sessionId = data.session_id;
+          localStorage.setItem('bb_session_id', sessionId);
+          updateSessionLabel();
+        }
+
+        lastAnalysisData = data;
+
         status.innerHTML = data.approved
           ? '<span class="badge badge-green">APPROVED</span>'
           : '<span class="badge badge-red">REJECTED</span>';
         body.innerHTML = renderAnalysis(data);
+
+        // Add assistant message to chat
+        const summary = data.analysis?.summary || 'Analysis completed.';
+        addChatMessage('assistant', summary);
+
+        // Render suggested charts
+        renderChartSuggestions(data);
+
+        document.getElementById('question').value = '';
       } catch (e) {
         status.innerHTML = '<span class="badge badge-red">ERROR</span>';
         body.textContent = e.message;
@@ -502,20 +788,28 @@
         html += `</ul></div>`;
       }
 
-      // SQL
-      if (d.sql_result) {
-        html += `<div class="step"><div class="step-label">SQL Agent</div>`;
-        if (d.sql_result.query) {
-          html += `<div class="sql-block">${esc(d.sql_result.query)}</div>`;
+      // SQL Results (support multi-query)
+      const sqlResults = d.sql_results || (d.sql_result ? [d.sql_result] : []);
+      sqlResults.forEach((sr, i) => {
+        html += `<div class="step"><div class="step-label">SQL Agent${sqlResults.length > 1 ? ` (Query ${i+1})` : ''}</div>`;
+        if (sr.task) {
+          html += `<p style="margin-bottom:0.3rem;font-size:0.75rem;color:var(--accent);">${esc(sr.task)}</p>`;
         }
-        if (d.sql_result.error) {
-          html += `<p style="color:var(--red);">${esc(d.sql_result.error)}</p>`;
+        if (sr.query) {
+          html += `<div class="sql-block">${esc(sr.query)}</div>`;
         }
-        if (d.sql_result.rows?.length) {
-          html += renderTable(d.sql_result.rows);
+        if (sr.error) {
+          html += `<p style="color:var(--red);">${esc(sr.error)}</p>`;
+        }
+        if (sr.rows?.length) {
+          html += renderTable(sr.rows, 20);
+          if (sr.rows.length > 20) {
+            const btnId = `view-full-${i}`;
+            html += `<button class="btn-sm btn-secondary" id="${btnId}" onclick="openDataModal(${i})">View Full Data (${sr.rows.length} rows)</button>`;
+          }
         }
         html += `</div>`;
-      }
+      });
 
       // Analysis
       if (d.analysis) {
@@ -529,6 +823,15 @@
             html += `<div class="finding"><span class="badge ${badge}">${f.type}</span><span>${esc(f.description)}</span></div>`;
           });
         }
+        // Chart suggestions
+        if (d.analysis.chart_suggestions?.length) {
+          html += `<div style="margin-top:0.5rem;">`;
+          d.analysis.chart_suggestions.forEach((cs, ci) => {
+            html += `<button class="btn-sm" style="margin-right:0.3rem;margin-bottom:0.3rem;" onclick="renderSuggestedChart(${ci})">Generate: ${esc(cs.title || cs.type + ' chart')}</button>`;
+          });
+          html += `</div>`;
+        }
+        html += `<div id="chart-area"></div>`;
         html += `</div>`;
       }
 
@@ -541,7 +844,7 @@
           if (d.python_analysis.computations?.length) {
             html += `<div class="stat-grid">`;
             d.python_analysis.computations.forEach(c => {
-              html += `<div class="stat-card"><div class="stat-value">${esc(c.value)}</div><div class="stat-label">${esc(c.label)}</div></div>`;
+              html += `<div class="stat-card"><div class="stat-value">${esc(String(c.value))}</div><div class="stat-label">${esc(c.label)}</div></div>`;
             });
             html += `</div>`;
           }
@@ -553,6 +856,21 @@
           html += `<details style="margin-top:0.5rem;"><summary style="cursor:pointer;font-size:0.7rem;color:var(--muted);">Show generated code</summary><div class="sql-block">${esc(d.python_analysis.code)}</div></details>`;
         }
         html += `</div>`;
+      }
+
+      // Manual chart builder
+      if (sqlResults.length && sqlResults.some(sr => sr.rows?.length)) {
+        const allRows = sqlResults.flatMap(sr => sr.rows || []);
+        if (allRows.length) {
+          const cols = Object.keys(allRows[0]);
+          html += `<div class="step"><div class="step-label">Chart Builder</div>`;
+          html += `<div class="chart-builder">`;
+          html += `<label>Type:</label><select id="cb-type"><option>bar</option><option>line</option><option>pie</option><option>scatter</option></select>`;
+          html += `<label>X:</label><select id="cb-x">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select>`;
+          html += `<label>Y:</label><select id="cb-y" multiple size="3">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select>`;
+          html += `<button class="btn-sm" onclick="buildCustomChart()">Build Chart</button>`;
+          html += `</div><div id="custom-chart-area"></div></div>`;
+        }
       }
 
       // CFO
@@ -569,20 +887,298 @@
       return html;
     }
 
-    function renderTable(rows) {
+    function renderTable(rows, maxRows) {
       if (!rows.length) return '';
       const keys = Object.keys(rows[0]);
-      let html = '<table class="data-table"><thead><tr>';
+      const show = maxRows ? rows.slice(0, maxRows) : rows;
+      let html = '<div style="overflow-x:auto;"><table class="data-table"><thead><tr>';
       keys.forEach(k => { html += `<th>${esc(k)}</th>`; });
       html += '</tr></thead><tbody>';
-      rows.slice(0, 20).forEach(row => {
+      show.forEach(row => {
         html += '<tr>';
         keys.forEach(k => { html += `<td>${esc(String(row[k] ?? ''))}</td>`; });
         html += '</tr>';
       });
-      html += '</tbody></table>';
-      if (rows.length > 20) html += `<p style="color:var(--muted);font-size:0.7rem;">Showing 20 of ${rows.length} rows</p>`;
+      html += '</tbody></table></div>';
+      if (maxRows && rows.length > maxRows) {
+        html += `<p style="color:var(--muted);font-size:0.7rem;">Showing ${maxRows} of ${rows.length} rows</p>`;
+      }
       return html;
+    }
+
+    // Data viewer modal
+    function openDataModal(queryIndex) {
+      if (!lastAnalysisData) return;
+      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
+      const sr = sqlResults[queryIndex];
+      if (!sr?.rows?.length) return;
+
+      const modal = document.getElementById('data-modal');
+      const title = document.getElementById('modal-title');
+      const body = document.getElementById('modal-body');
+
+      title.textContent = sr.task || `Query ${queryIndex + 1} Results`;
+
+      const pageSize = 50;
+      let page = 1;
+      const totalPages = Math.ceil(sr.rows.length / pageSize);
+
+      function renderPage() {
+        const start = (page - 1) * pageSize;
+        const pageRows = sr.rows.slice(start, start + pageSize);
+        const keys = Object.keys(sr.rows[0]);
+
+        let html = '<div style="overflow-x:auto;"><table class="data-table"><thead><tr>';
+        keys.forEach(k => { html += `<th>${esc(k)}</th>`; });
+        html += '</tr></thead><tbody>';
+        pageRows.forEach(row => {
+          html += '<tr>';
+          keys.forEach(k => { html += `<td>${esc(String(row[k] ?? ''))}</td>`; });
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+
+        html += `<div class="pagination">`;
+        html += `<button class="btn-sm btn-secondary" onclick="modalPrev()" ${page<=1?'disabled':''}>Prev</button>`;
+        html += `<span>Page ${page} of ${totalPages} (${sr.rows.length} rows)</span>`;
+        html += `<button class="btn-sm btn-secondary" onclick="modalNext()" ${page>=totalPages?'disabled':''}>Next</button>`;
+        html += `</div>`;
+
+        body.innerHTML = html;
+      }
+
+      window.modalPrev = () => { if (page > 1) { page--; renderPage(); } };
+      window.modalNext = () => { if (page < totalPages) { page++; renderPage(); } };
+
+      renderPage();
+      modal.classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('data-modal').classList.remove('active');
+    }
+
+    document.getElementById('data-modal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('data-modal')) closeModal();
+    });
+
+    // Server-side data viewer (for uploaded tables)
+    async function openTableViewer(tableName) {
+      const modal = document.getElementById('data-modal');
+      const title = document.getElementById('modal-title');
+      const body = document.getElementById('modal-body');
+
+      title.textContent = `Table: ${tableName}`;
+      body.innerHTML = '<p><span class="spinner"></span> Loading...</p>';
+      modal.classList.add('active');
+
+      let page = 1;
+      let sortBy = null;
+      let sortDir = 'asc';
+
+      async function loadPage() {
+        let url = `${API}/data/${tableName}?page=${page}&page_size=50`;
+        if (sortBy) url += `&sort_by=${sortBy}&sort_dir=${sortDir}`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.error) {
+          body.innerHTML = `<p style="color:var(--red)">${esc(data.error)}</p>`;
+          return;
+        }
+
+        const totalPages = Math.ceil(data.total / data.page_size);
+        const keys = data.columns.length ? data.columns : (data.rows.length ? Object.keys(data.rows[0]) : []);
+
+        let html = '<div style="overflow-x:auto;"><table class="data-table"><thead><tr>';
+        keys.forEach(k => {
+          const arrow = sortBy === k ? (sortDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+          html += `<th onclick="tableSort('${tableName}', '${k}')">${esc(k)}${arrow}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        data.rows.forEach(row => {
+          html += '<tr>';
+          keys.forEach((k, ci) => {
+            const val = String(row[k] ?? '');
+            const pkVal = row[keys[0]];
+            html += `<td class="editable" ondblclick="startEdit(this, '${tableName}', '${pkVal}', '${k}')">${esc(val)}</td>`;
+          });
+          html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+
+        html += `<div class="pagination">`;
+        html += `<button class="btn-sm btn-secondary" onclick="tvPrev()" ${page<=1?'disabled':''}>Prev</button>`;
+        html += `<span>Page ${page} of ${totalPages} (${data.total} rows)</span>`;
+        html += `<button class="btn-sm btn-secondary" onclick="tvNext()" ${page>=totalPages?'disabled':''}>Next</button>`;
+        html += `</div>`;
+
+        body.innerHTML = html;
+      }
+
+      window.tableSort = async (tn, col) => {
+        if (sortBy === col) {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortBy = col;
+          sortDir = 'asc';
+        }
+        await loadPage();
+      };
+
+      window.tvPrev = async () => { if (page > 1) { page--; await loadPage(); } };
+      window.tvNext = async () => { page++; await loadPage(); };
+
+      await loadPage();
+    }
+
+    // Inline cell editing
+    window.startEdit = function(td, tableName, rowId, column) {
+      if (td.classList.contains('editing')) return;
+      const oldVal = td.textContent;
+      td.classList.add('editing');
+      const input = document.createElement('input');
+      input.value = oldVal;
+      td.textContent = '';
+      td.appendChild(input);
+      input.focus();
+
+      async function save() {
+        const newVal = input.value;
+        td.classList.remove('editing');
+        td.textContent = newVal;
+        if (newVal !== oldVal) {
+          try {
+            const res = await fetch(`${API}/data/${tableName}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ row_id: rowId, column, value: newVal })
+            });
+            const data = await res.json();
+            if (data.error) {
+              td.textContent = oldVal;
+              toast('Save failed: ' + data.error);
+            } else {
+              td.classList.add('edited');
+              toast('Cell updated');
+            }
+          } catch (e) {
+            td.textContent = oldVal;
+            toast('Save failed');
+          }
+        }
+      }
+
+      input.addEventListener('blur', save);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') input.blur();
+        if (e.key === 'Escape') {
+          td.classList.remove('editing');
+          td.textContent = oldVal;
+        }
+      });
+    };
+
+    // Chart rendering
+    function destroyCharts() {
+      activeCharts.forEach(c => c.destroy());
+      activeCharts = [];
+    }
+
+    function renderSuggestedChart(index) {
+      if (!lastAnalysisData?.analysis?.chart_suggestions) return;
+      const cs = lastAnalysisData.analysis.chart_suggestions[index];
+      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
+      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+
+      const area = document.getElementById('chart-area');
+      const container = document.createElement('div');
+      container.className = 'chart-container';
+      const canvas = document.createElement('canvas');
+      container.appendChild(canvas);
+      area.appendChild(container);
+
+      const labels = allRows.map(r => String(r[cs.x] ?? ''));
+      const yColumns = Array.isArray(cs.y) ? cs.y : [cs.y];
+      const colors = ['#6c5ce7', '#00cec9', '#ff6b6b', '#feca57', '#a29bfe', '#55efc4'];
+
+      const datasets = yColumns.map((col, i) => ({
+        label: col,
+        data: allRows.map(r => {
+          const v = r[col];
+          return v != null ? parseFloat(v) || 0 : 0;
+        }),
+        backgroundColor: colors[i % colors.length],
+        borderColor: colors[i % colors.length],
+        borderWidth: 1,
+      }));
+
+      const chart = new Chart(canvas, {
+        type: cs.type || 'bar',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          plugins: { title: { display: true, text: cs.title || 'Chart', color: '#e2e2e8' } },
+          scales: cs.type !== 'pie' ? {
+            x: { ticks: { color: '#8888a0' }, grid: { color: '#1e1e2e' } },
+            y: { ticks: { color: '#8888a0' }, grid: { color: '#1e1e2e' } }
+          } : {}
+        }
+      });
+      activeCharts.push(chart);
+    }
+
+    function buildCustomChart() {
+      const type = document.getElementById('cb-type').value;
+      const xCol = document.getElementById('cb-x').value;
+      const ySelect = document.getElementById('cb-y');
+      const yCols = Array.from(ySelect.selectedOptions).map(o => o.value);
+
+      if (!yCols.length) { toast('Select at least one Y column'); return; }
+
+      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
+      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+
+      const area = document.getElementById('custom-chart-area');
+      area.innerHTML = '';
+      const container = document.createElement('div');
+      container.className = 'chart-container';
+      const canvas = document.createElement('canvas');
+      container.appendChild(canvas);
+      area.appendChild(container);
+
+      const labels = allRows.map(r => String(r[xCol] ?? ''));
+      const colors = ['#6c5ce7', '#00cec9', '#ff6b6b', '#feca57', '#a29bfe', '#55efc4'];
+
+      const datasets = yCols.map((col, i) => ({
+        label: col,
+        data: allRows.map(r => { const v = r[col]; return v != null ? parseFloat(v) || 0 : 0; }),
+        backgroundColor: colors[i % colors.length],
+        borderColor: colors[i % colors.length],
+        borderWidth: 1,
+      }));
+
+      const chart = new Chart(canvas, {
+        type,
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          plugins: { title: { display: true, text: `${yCols.join(', ')} by ${xCol}`, color: '#e2e2e8' } },
+          scales: type !== 'pie' ? {
+            x: { ticks: { color: '#8888a0' }, grid: { color: '#1e1e2e' } },
+            y: { ticks: { color: '#8888a0' }, grid: { color: '#1e1e2e' } }
+          } : {}
+        }
+      });
+      activeCharts.push(chart);
+    }
+
+    function renderChartSuggestions(data) {
+      // Auto-render first chart suggestion if available
+      if (data.analysis?.chart_suggestions?.length) {
+        // Don't auto-render, let user click the button
+      }
     }
 
     // Context
@@ -607,6 +1203,32 @@
       }
     }
 
+    // Context file upload
+    const ctxFileZone = document.getElementById('ctx-file-zone');
+    const ctxFileInput = document.getElementById('ctx-file-input');
+    ctxFileZone.addEventListener('click', () => ctxFileInput.click());
+    ctxFileInput.addEventListener('change', async () => {
+      if (!ctxFileInput.files.length) return;
+      const file = ctxFileInput.files[0];
+      const form = new FormData();
+      form.append('file', file);
+
+      try {
+        const res = await fetch(`${API}/context/file`, { method: 'POST', body: form });
+        const data = await res.json();
+        const body = document.getElementById('context-body');
+        if (data.error) {
+          body.innerHTML = `<p style="color:var(--red);">${esc(data.error)}</p>` + body.innerHTML;
+        } else {
+          body.innerHTML = `<p>Uploaded <strong>${esc(file.name)}</strong>: ${data.chunks} chunks stored (${data.text_length} chars) from <span class="badge badge-accent">${esc(data.source)}</span></p>` + body.innerHTML;
+          toast('Context file ingested');
+        }
+      } catch (e) {
+        toast('Error: ' + e.message);
+      }
+      ctxFileInput.value = '';
+    });
+
     // Schema
     async function loadSchema() {
       const body = document.getElementById('schema-body');
@@ -623,7 +1245,10 @@
 
         body.innerHTML = data.map(t => `
           <div class="meta-card">
-            <h3>${esc(t.table_name)}</h3>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <h3>${esc(t.table_name)}</h3>
+              <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(t.table_name)}')">View Data</button>
+            </div>
             <p>${esc(t.description || 'No description')}</p>
             <div class="col-list">
               ${(t.columns || []).map(c =>
@@ -697,8 +1322,8 @@
         <div class="stat-card"><div class="stat-value">${d.duplicates_removed}</div><div class="stat-label">Duplicates</div></div>
       </div>`;
 
-      // Table name
-      html += `<div class="report-section"><h4>Table</h4><p style="color:var(--accent);font-weight:500">${esc(d.table_name)}</p></div>`;
+      // Table name with view button
+      html += `<div class="report-section"><h4>Table</h4><p><span style="color:var(--accent);font-weight:500">${esc(d.table_name)}</span> <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(d.table_name)}')" style="margin-left:0.5rem;">View Data</button></p></div>`;
 
       // Issues
       if (d.issues && d.issues.length) {

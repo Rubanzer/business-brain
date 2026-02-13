@@ -11,7 +11,16 @@ from business_brain.ingestion.embeddings import embed_text
 logger = logging.getLogger(__name__)
 
 # Sentence-ending patterns used to find split points
-_SPLIT_RE = re.compile(r"(?<=\. )|(?<=\n\n)|(?<=\n)")
+_SPLIT_RE = re.compile(
+    r"(?<=\. )"        # period + space
+    r"|(?<=\? )"       # question mark + space
+    r"|(?<=! )"        # exclamation + space
+    r"|(?<=\n\n)"      # double newline (paragraph break)
+    r"|(?<=\n)(?=[-*])"  # newline before bullet (- or *)
+    r"|(?<=\n)(?=\d+\.)" # newline before numbered list item
+    r"|(?<=\n)"        # single newline
+    r"|(?<=: )"        # colon + space (before content)
+)
 
 
 def chunk_text(text: str, max_chars: int = 500, overlap: int = 50) -> list[str]:

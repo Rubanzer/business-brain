@@ -20,6 +20,10 @@ SAFE_MODULES = frozenset({
 CODE_GEN_PROMPT = """\
 You are a Python data analyst. Write Python code to analyze the data in `rows` (a list of dicts).
 
+When analyzing multi-query data, each row may include `_query_num` (int) and
+`_query_task` (str) metadata fields to indicate which query produced it.
+Use these to separate or compare datasets when present.
+
 Rules:
 - Only use stdlib: statistics, collections, math, itertools, datetime, re
 - No pandas, numpy, scipy, or any external libraries
@@ -214,8 +218,20 @@ class PythonAnalystAgent:
     """Two-phase Python analysis: generate code → execute → interpret results."""
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-        sql_result = state.get("sql_result", {})
-        rows = sql_result.get("rows", [])
+        # Combine rows from multi-query results, tagging each with metadata
+        sql_results = state.get("sql_results")
+        if sql_results:
+            rows = []
+            for i, res in enumerate(sql_results):
+                task = res.get("task", f"Query {i + 1}")
+                for row in res.get("rows", []):
+                    tagged = dict(row)
+                    tagged["_query_num"] = i + 1
+                    tagged["_query_task"] = task
+                    rows.append(tagged)
+        else:
+            sql_result = state.get("sql_result", {})
+            rows = sql_result.get("rows", [])
         question = state.get("question", "")
 
         if not rows:
@@ -257,8 +273,34 @@ class PythonAnalystAgent:
             }
             return state
 
-        # --- Phase 2: Execute ---
+        # --- Phase 2: Execute with retry ---
+        max_retries = 2
         exec_result = execute_sandboxed(code, rows)
+
+        for retry in range(max_retries):
+            if not exec_result["error"]:
+                break
+            logger.warning("Python exec failed (attempt %d): %s", retry, exec_result["error"])
+            # Ask Gemini to fix the code
+            fix_prompt = (
+                f"{CODE_GEN_PROMPT}\n\n"
+                f"Question: {question}\n"
+                f"Columns: {columns}\n"
+                f"Total rows: {len(rows)}\n\n"
+                f"The following code failed:\n```python\n{code}\n```\n\n"
+                f"Error: {exec_result['error']}\n\n"
+                f"Fix the code to resolve the error. Return ONLY corrected Python code."
+            )
+            try:
+                fix_response = client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=fix_prompt,
+                )
+                code = _extract_code(fix_response.text)
+                exec_result = execute_sandboxed(code, rows)
+            except Exception:
+                logger.exception("Code fix LLM call failed")
+                break
 
         if exec_result["error"]:
             state["python_analysis"] = {

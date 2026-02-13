@@ -14,8 +14,13 @@ async def retrieve_relevant_tables(
     session: AsyncSession,
     query: str,
     top_k: int = 5,
-) -> list[dict]:
-    """Given a natural language query, return the top-k most relevant table schemas.
+) -> tuple[list[dict], list[dict]]:
+    """Given a natural language query, return the top-k most relevant table schemas
+    and matching business context snippets.
+
+    Returns:
+        Tuple of (ranked_tables, business_contexts) where business_contexts is
+        a list of ``{"content": str, "source": str}`` dicts from the vector store.
 
     Strategy:
       1. Embed the query and search business_contexts for semantic matches.
@@ -23,6 +28,7 @@ async def retrieve_relevant_tables(
       3. Merge and return enriched schema info.
     """
     results: dict[str, dict] = {}
+    context_snippets: list[dict] = []
 
     # 1. Semantic search against business_contexts
     try:
@@ -30,6 +36,10 @@ async def retrieve_relevant_tables(
         context_hits = await vector_store.search(session, query_embedding, top_k=top_k)
         # Context hits give us hints about relevant tables via their content
         context_keywords = " ".join(hit.content for hit in context_hits).lower()
+        context_snippets = [
+            {"content": hit.content, "source": hit.source or "unknown"}
+            for hit in context_hits
+        ]
     except Exception:
         logger.exception("Vector search failed, falling back to keyword-only")
         context_keywords = ""
@@ -79,4 +89,5 @@ async def retrieve_relevant_tables(
     # Sort by score descending, return top_k
     ranked = sorted(results.values(), key=lambda r: r["score"], reverse=True)[:top_k]
     # Drop score from output
-    return [{"table_name": r["table_name"], "description": r["description"], "columns": r["columns"]} for r in ranked]
+    tables = [{"table_name": r["table_name"], "description": r["description"], "columns": r["columns"]} for r in ranked]
+    return tables, context_snippets

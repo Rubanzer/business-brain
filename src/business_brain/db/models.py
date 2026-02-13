@@ -33,3 +33,16 @@ class BusinessContext(Base):
     embedding = Column(Vector(3072), nullable=True)
     source = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatMessage(Base):
+    """Conversation message for session-based chat memory."""
+
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(64), nullable=False, index=True)
+    role = Column(String(16), nullable=False)  # "user" | "assistant"
+    content = Column(Text, nullable=False)
+    metadata_ = Column("metadata", JSON, nullable=True)  # sql_result, analysis, etc.
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

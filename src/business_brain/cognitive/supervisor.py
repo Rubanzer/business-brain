@@ -44,13 +44,25 @@ class SupervisorAgent:
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Produce an analysis plan from the user's business question."""
         question = state.get("question", "")
+        chat_history = state.get("chat_history", [])
         logger.info("Planning analysis for: %s", question)
+
+        # Build prompt with conversation history for context
+        prompt_parts = [SYSTEM_PROMPT]
+        if chat_history:
+            prompt_parts.append("\nRecent conversation history (for context):")
+            for msg in chat_history[-10:]:  # last 5 Q&A pairs = 10 messages
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                prompt_parts.append(f"  {role}: {content}")
+            prompt_parts.append("")
+        prompt_parts.append(f"Question: {question}")
 
         try:
             client = _get_client()
             response = client.models.generate_content(
                 model=settings.gemini_model,
-                contents=f"{SYSTEM_PROMPT}\n\nQuestion: {question}",
+                contents="\n".join(prompt_parts),
             )
             raw = response.text.strip()
             # Extract JSON from possible markdown fences

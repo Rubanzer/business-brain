@@ -33,9 +33,10 @@ async def test_keyword_match_on_table_name(mock_embed, mock_meta, mock_vs, mock_
         _make_entry("customers", "Customer information"),
     ])
 
-    results = await retrieve_relevant_tables(mock_session, "show me sales orders")
+    tables, contexts = await retrieve_relevant_tables(mock_session, "show me sales orders")
 
-    assert results[0]["table_name"] == "sales_orders"
+    assert tables[0]["table_name"] == "sales_orders"
+    assert isinstance(contexts, list)
 
 
 @pytest.mark.asyncio
@@ -50,10 +51,10 @@ async def test_fallback_returns_all(mock_embed, mock_meta, mock_vs, mock_session
         _make_entry("products", "Product catalog"),
     ])
 
-    results = await retrieve_relevant_tables(mock_session, "xyz unrelated query")
+    tables, contexts = await retrieve_relevant_tables(mock_session, "xyz unrelated query")
 
-    assert len(results) == 1
-    assert results[0]["table_name"] == "products"
+    assert len(tables) == 1
+    assert tables[0]["table_name"] == "products"
 
 
 @pytest.mark.asyncio
@@ -69,9 +70,9 @@ async def test_description_keyword_match(mock_embed, mock_meta, mock_vs, mock_se
         _make_entry("tbl_b", "Employee directory"),
     ])
 
-    results = await retrieve_relevant_tables(mock_session, "what is total revenue?")
+    tables, _ = await retrieve_relevant_tables(mock_session, "what is total revenue?")
 
-    assert results[0]["table_name"] == "tbl_a"
+    assert tables[0]["table_name"] == "tbl_a"
 
 
 @pytest.mark.asyncio
@@ -84,6 +85,7 @@ async def test_context_boost(mock_embed, mock_meta, mock_vs, mock_session):
 
     ctx_hit = MagicMock()
     ctx_hit.content = "The customers table tracks customer lifetime value"
+    ctx_hit.source = "manual"
     mock_vs.search = AsyncMock(return_value=[ctx_hit])
 
     mock_meta.get_all = AsyncMock(return_value=[
@@ -91,6 +93,9 @@ async def test_context_boost(mock_embed, mock_meta, mock_vs, mock_session):
         _make_entry("orders", "Order records"),
     ])
 
-    results = await retrieve_relevant_tables(mock_session, "lifetime value analysis")
+    tables, contexts = await retrieve_relevant_tables(mock_session, "lifetime value analysis")
 
-    assert results[0]["table_name"] == "customers"
+    assert tables[0]["table_name"] == "customers"
+    assert len(contexts) == 1
+    assert contexts[0]["content"] == "The customers table tracks customer lifetime value"
+    assert contexts[0]["source"] == "manual"

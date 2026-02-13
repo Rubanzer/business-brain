@@ -417,9 +417,14 @@ Sample rows (first 5-10):
 {sample_rows}
 
 Generate a JSON response with:
-1. "table_description": A clear 1-2 sentence description of what this table contains.
-2. "column_descriptions": An object mapping each column name to a 1-sentence description.
-3. "business_context": A 2-3 sentence paragraph describing the business relevance and potential analytical use of this data.
+1. "table_description": A clear 1-2 sentence description of what this table contains and its primary purpose.
+2. "column_descriptions": An object mapping each column name to a 1-sentence description of what values it holds.
+3. "business_context": A detailed 4-6 sentence paragraph covering ALL of the following:
+   - What business domain or department this data serves (e.g., sales, finance, HR, marketing)
+   - What KPIs or metrics can be calculated from these columns (name specific KPIs)
+   - What analytical questions a business analyst could answer with this data (give 2-3 examples)
+   - How this data could relate to or be joined with other common business data (e.g., "could be joined with customer data on customer_id")
+   - Specific examples of actionable insights this data could reveal (not generic statements)
 
 Return ONLY valid JSON, no markdown fences or explanation.
 """

@@ -12,10 +12,14 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are a CFO reviewing analysis findings. For each finding, assess:
+You are a CFO reviewing analysis findings and computational metrics. For each
+finding, assess:
 1. Expected revenue impact (positive/negative/neutral)
 2. Implementation cost (low/medium/high)
 3. Risk level (low/medium/high)
+
+Review both the analytical findings AND the computational analysis (metrics,
+statistical computations, and narrative interpretation) to make your decision.
 
 Return ONLY a JSON object:
 {
@@ -43,13 +47,27 @@ class CFOAgent:
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Evaluate whether the analysis findings are economically viable."""
         analysis = state.get("analysis", {})
+        python_analysis = state.get("python_analysis", {})
         question = state.get("question", "")
 
-        prompt = (
-            f"{SYSTEM_PROMPT}\n\n"
-            f"Original question: {question}\n"
-            f"Analysis findings:\n{json.dumps(analysis, default=str, indent=2)}"
-        )
+        prompt_parts = [
+            SYSTEM_PROMPT,
+            "",
+            f"Original question: {question}",
+            f"Analysis findings:\n{json.dumps(analysis, default=str, indent=2)}",
+        ]
+
+        # Include computational analysis if available
+        computations = python_analysis.get("computations", [])
+        narrative = python_analysis.get("narrative", "")
+        if computations or narrative:
+            prompt_parts.append("\nComputational Analysis:")
+            if computations:
+                prompt_parts.append(f"Metrics: {json.dumps(computations, default=str)}")
+            if narrative:
+                prompt_parts.append(f"Interpretation: {narrative}")
+
+        prompt = "\n".join(prompt_parts)
 
         try:
             client = _get_client()
