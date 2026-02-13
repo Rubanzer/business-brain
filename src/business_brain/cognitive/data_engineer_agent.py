@@ -339,23 +339,42 @@ def _sanitize_col_name(name: str) -> str:
     return sanitized or "col"
 
 
+def _has_unique_first_column(rows: list[dict]) -> bool:
+    """Check if the first column has all unique non-empty values."""
+    if not rows:
+        return False
+    first_col = list(rows[0].keys())[0]
+    values = [str(row.get(first_col, "")).strip() for row in rows]
+    non_empty = [v for v in values if v]
+    return len(non_empty) == len(set(non_empty)) and len(non_empty) == len(rows)
+
+
 async def create_table(
-    session: AsyncSession, table_name: str, col_types: dict[str, str]
+    session: AsyncSession, table_name: str, col_types: dict[str, str],
+    use_serial_pk: bool = False,
 ) -> None:
-    """CREATE TABLE IF NOT EXISTS with inferred PG types."""
+    """CREATE TABLE IF NOT EXISTS with inferred PG types.
+
+    If *use_serial_pk* is True, a synthetic ``_row_id SERIAL PRIMARY KEY``
+    column is added and no data column is marked as PK.
+    """
     safe_table = _sanitize_table_name(table_name)
     columns = list(col_types.items())
     if not columns:
         return
 
-    # First column as primary key
     col_defs = []
-    for i, (col, pg_type) in enumerate(columns):
-        safe_col = _sanitize_col_name(col)
-        if i == 0:
-            col_defs.append(f'"{safe_col}" {pg_type} PRIMARY KEY')
-        else:
-            col_defs.append(f'"{safe_col}" {pg_type}')
+    if use_serial_pk:
+        col_defs.append('"_row_id" SERIAL PRIMARY KEY')
+        for col, pg_type in columns:
+            col_defs.append(f'"{_sanitize_col_name(col)}" {pg_type}')
+    else:
+        for i, (col, pg_type) in enumerate(columns):
+            safe_col = _sanitize_col_name(col)
+            if i == 0:
+                col_defs.append(f'"{safe_col}" {pg_type} PRIMARY KEY')
+            else:
+                col_defs.append(f'"{safe_col}" {pg_type}')
 
     ddl = f'CREATE TABLE IF NOT EXISTS "{safe_table}" ({", ".join(col_defs)})'
     await session.execute(text(ddl))
@@ -363,41 +382,53 @@ async def create_table(
 
 
 async def insert_rows(
-    session: AsyncSession, table_name: str, rows: list[dict], col_types: dict[str, str]
+    session: AsyncSession, table_name: str, rows: list[dict], col_types: dict[str, str],
+    use_serial_pk: bool = False, batch_size: int = 200,
 ) -> int:
-    """Bulk INSERT rows into the table. Returns count of rows inserted."""
+    """Bulk INSERT rows into the table. Returns count of rows inserted.
+
+    When *use_serial_pk* is True the PK is auto-generated, so we use plain
+    INSERT without ON CONFLICT (every row is unique by serial id).
+    Rows are inserted in batches for performance.
+    """
     if not rows:
         return 0
 
     safe_table = _sanitize_table_name(table_name)
     columns = list(col_types.keys())
     safe_cols = [_sanitize_col_name(c) for c in columns]
-    pk_col = safe_cols[0]
 
     col_list = ", ".join(f'"{c}"' for c in safe_cols)
     param_list = ", ".join(f":p{i}" for i in range(len(safe_cols)))
 
-    # ON CONFLICT on PK → update all other columns
-    if len(safe_cols) > 1:
-        update_set = ", ".join(
-            f'"{c}" = EXCLUDED."{c}"' for c in safe_cols[1:]
-        )
-        conflict = f'ON CONFLICT ("{pk_col}") DO UPDATE SET {update_set}'
+    if use_serial_pk:
+        sql = f'INSERT INTO "{safe_table}" ({col_list}) VALUES ({param_list})'
     else:
-        conflict = f'ON CONFLICT ("{pk_col}") DO NOTHING'
-
-    sql = f'INSERT INTO "{safe_table}" ({col_list}) VALUES ({param_list}) {conflict}'
+        pk_col = safe_cols[0]
+        if len(safe_cols) > 1:
+            update_set = ", ".join(
+                f'"{c}" = EXCLUDED."{c}"' for c in safe_cols[1:]
+            )
+            conflict = f'ON CONFLICT ("{pk_col}") DO UPDATE SET {update_set}'
+        else:
+            conflict = f'ON CONFLICT ("{pk_col}") DO NOTHING'
+        sql = f'INSERT INTO "{safe_table}" ({col_list}) VALUES ({param_list}) {conflict}'
 
     inserted = 0
-    for row in rows:
-        params = {}
-        for i, col in enumerate(columns):
-            val = row.get(col)
-            if isinstance(val, str) and val.strip() == "":
-                val = None
-            params[f"p{i}"] = val
-        await session.execute(text(sql), params)
-        inserted += 1
+    # Batch inserts for performance
+    for batch_start in range(0, len(rows), batch_size):
+        batch = rows[batch_start:batch_start + batch_size]
+        batch_params = []
+        for row in batch:
+            params = {}
+            for i, col in enumerate(columns):
+                val = row.get(col)
+                if isinstance(val, str) and val.strip() == "":
+                    val = None
+                params[f"p{i}"] = val
+            batch_params.append(params)
+        await session.execute(text(sql), batch_params)
+        inserted += len(batch)
 
     await session.commit()
     return inserted
@@ -552,8 +583,12 @@ class DataEngineerAgent:
         cleaned, rows_dropped, duplicates_removed = clean_rows(rows, col_types)
 
         # --- DB load ---
-        await create_table(db_session, table_name, col_types)
-        rows_inserted = await insert_rows(db_session, table_name, cleaned, col_types)
+        # Use synthetic serial PK if first column has duplicate values
+        use_serial_pk = not _has_unique_first_column(cleaned)
+        if use_serial_pk:
+            logger.info("First column is not unique — using serial _row_id PK for %s", table_name)
+        await create_table(db_session, table_name, col_types, use_serial_pk=use_serial_pk)
+        rows_inserted = await insert_rows(db_session, table_name, cleaned, col_types, use_serial_pk=use_serial_pk)
 
         # --- Gemini metadata ---
         columns = list(col_types.keys())
@@ -561,14 +596,19 @@ class DataEngineerAgent:
 
         # Build column metadata for metadata_store
         col_descriptions = gemini_meta.get("column_descriptions", {})
-        columns_metadata = [
-            {
+        columns_metadata = []
+        if use_serial_pk:
+            columns_metadata.append({
+                "name": "_row_id",
+                "type": "SERIAL",
+                "description": "Auto-generated row identifier (primary key)",
+            })
+        for col, pg_type in col_types.items():
+            columns_metadata.append({
                 "name": _sanitize_col_name(col),
                 "type": pg_type,
                 "description": col_descriptions.get(col, ""),
-            }
-            for col, pg_type in col_types.items()
-        ]
+            })
 
         table_description = gemini_meta.get("table_description", f"Uploaded: {table_name}")
         business_context = gemini_meta.get("business_context", "")

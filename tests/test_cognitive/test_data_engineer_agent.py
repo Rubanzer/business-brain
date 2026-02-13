@@ -7,6 +7,7 @@ import pytest
 from business_brain.cognitive.data_engineer_agent import (
     DataEngineerAgent,
     _drop_empty_columns,
+    _has_unique_first_column,
     _sanitize_col_name,
     _sanitize_table_name,
     _try_parse_type,
@@ -404,3 +405,100 @@ class TestDataEngineerAgentInvoke:
         assert result["rows_dropped"] >= 1
         # Should have inserted only clean unique rows
         assert result["rows_inserted"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Serial PK detection tests
+# ---------------------------------------------------------------------------
+
+class TestHasUniqueFirstColumn:
+    def test_unique_first_column(self):
+        rows = [
+            {"id": "1", "name": "Alice"},
+            {"id": "2", "name": "Bob"},
+            {"id": "3", "name": "Carol"},
+        ]
+        assert _has_unique_first_column(rows) is True
+
+    def test_duplicate_first_column(self):
+        rows = [
+            {"category": "A", "name": "Alice"},
+            {"category": "A", "name": "Bob"},
+            {"category": "B", "name": "Carol"},
+        ]
+        assert _has_unique_first_column(rows) is False
+
+    def test_empty_first_column_values(self):
+        rows = [
+            {"id": "", "name": "Alice"},
+            {"id": "1", "name": "Bob"},
+        ]
+        assert _has_unique_first_column(rows) is False
+
+    def test_empty_rows(self):
+        assert _has_unique_first_column([]) is False
+
+    def test_single_row(self):
+        rows = [{"id": "1", "name": "Alice"}]
+        assert _has_unique_first_column(rows) is True
+
+
+class TestSerialPKUpload:
+    """Verify that files with non-unique first columns use serial PK."""
+
+    @pytest.mark.asyncio
+    @patch("business_brain.cognitive.data_engineer_agent.ingest_context", new_callable=AsyncMock)
+    @patch("business_brain.cognitive.data_engineer_agent.metadata_store")
+    @patch("business_brain.cognitive.data_engineer_agent._get_client")
+    async def test_duplicate_first_col_uses_serial_pk(self, mock_client, mock_meta, mock_ingest):
+        """When first column has duplicates, all rows should be inserted (not deduplicated by PK)."""
+        mock_response = MagicMock()
+        mock_response.text = '{"table_description": "Invoices", "column_descriptions": {}, "business_context": "Invoice data."}'
+        mock_client.return_value.models.generate_content.return_value = mock_response
+        mock_meta.upsert = AsyncMock()
+        mock_ingest.return_value = [1]
+
+        session = AsyncMock()
+
+        # First column "dept" has duplicates — should trigger serial PK
+        csv_bytes = b"dept,employee,salary\nSales,Alice,50000\nSales,Bob,55000\nEng,Carol,60000\nEng,Dave,65000"
+        agent = DataEngineerAgent()
+        result = await agent.invoke({
+            "file_bytes": csv_bytes,
+            "file_name": "employees.csv",
+            "db_session": session,
+        })
+
+        assert result["rows_total"] == 4
+        assert result["rows_inserted"] == 4  # ALL rows preserved, not deduplicated
+
+        # Verify _row_id column is in metadata
+        col_names = [c["name"] for c in result["metadata"]["columns"]]
+        assert "_row_id" in col_names
+
+    @pytest.mark.asyncio
+    @patch("business_brain.cognitive.data_engineer_agent.ingest_context", new_callable=AsyncMock)
+    @patch("business_brain.cognitive.data_engineer_agent.metadata_store")
+    @patch("business_brain.cognitive.data_engineer_agent._get_client")
+    async def test_unique_first_col_uses_natural_pk(self, mock_client, mock_meta, mock_ingest):
+        """When first column is unique, it should be used as PK (no serial)."""
+        mock_response = MagicMock()
+        mock_response.text = '{"table_description": "Products", "column_descriptions": {}, "business_context": "Product data."}'
+        mock_client.return_value.models.generate_content.return_value = mock_response
+        mock_meta.upsert = AsyncMock()
+        mock_ingest.return_value = [1]
+
+        session = AsyncMock()
+
+        csv_bytes = b"product_id,name,price\nP001,Widget,10\nP002,Gadget,20\nP003,Doohickey,30"
+        agent = DataEngineerAgent()
+        result = await agent.invoke({
+            "file_bytes": csv_bytes,
+            "file_name": "products.csv",
+            "db_session": session,
+        })
+
+        assert result["rows_inserted"] == 3
+        # No _row_id column in metadata
+        col_names = [c["name"] for c in result["metadata"]["columns"]]
+        assert "_row_id" not in col_names
