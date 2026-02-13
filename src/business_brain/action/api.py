@@ -118,6 +118,9 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
     # Strip non-serializable db_session from response
     result.pop("db_session", None)
     result.pop("chat_history", None)
+    result.pop("column_classification", None)  # internal, don't expose
+    result.setdefault("cfo_key_metrics", [])
+    result.setdefault("cfo_chart_suggestions", [])
     result["session_id"] = session_id
     return result
 

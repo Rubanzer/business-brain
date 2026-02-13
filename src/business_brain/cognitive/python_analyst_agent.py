@@ -18,36 +18,80 @@ SAFE_MODULES = frozenset({
 
 # Phase 1: Ask Gemini to write analysis code. No format constraints — just print.
 CODE_GEN_PROMPT = """\
-You are a Python data analyst. Write Python code to analyze the data in `rows` (a list of dicts).
+You are an expert Python data analyst. Write Python code to analyze the data in `rows`
+(a list of dicts).
+
+CRITICAL — the column names in the data are EXACTLY: {columns}
+Use ONLY these exact names (case-sensitive). Do NOT invent or rename columns.
 
 When analyzing multi-query data, each row may include `_query_num` (int) and
 `_query_task` (str) metadata fields to indicate which query produced it.
 Use these to separate or compare datasets when present.
 
+COLUMN CLASSIFICATION (auto-detected):
+{column_classification}
+
+ANALYST FINDINGS TO VERIFY/DEEPEN:
+{analyst_findings}
+
+ANALYSIS REQUIREMENTS — perform ALL applicable based on column types:
+
+1. GROUP-BY AGGREGATIONS (categorical + numeric columns):
+   For each categorical column, compute count/mean/median/min/max of each numeric column.
+   Print a ranked summary table.
+
+2. STATISTICAL DISTRIBUTIONS (numeric columns):
+   For each numeric column: mean, median, stdev, P25/P50/P75, min, max.
+   Use the `statistics` module.
+
+3. CORRELATIONS (2+ numeric columns):
+   Pearson r = (n*sum(xy) - sum(x)*sum(y)) / sqrt((n*sum(x²)-sum(x)²)*(n*sum(y²)-sum(y)²))
+   Print pairs with |r| > 0.3.
+
+4. PER-CATEGORY COMPARISONS (categorical + numeric):
+   Compare numeric distributions across categories.
+   Print which category has best/worst values.
+
+5. OUTLIER DETECTION (numeric columns):
+   Flag values > 2 std deviations from mean. Print count and values.
+
+6. TIME ANALYSIS (temporal + numeric columns):
+   Group by time period, compute period-over-period changes.
+
 Rules:
-- Only use stdlib: statistics, collections, math, itertools, datetime, re
-- No pandas, numpy, scipy, or any external libraries
-- Values may be None — always filter before math: [v for v in vals if v is not None]
-- Use print() to output every metric, insight, or finding you compute
-- Write flat top-level code, no functions or classes
-- Keep it under 50 lines
-- Return ONLY Python code, no markdown fences or explanation
+- Only use stdlib: statistics, collections, math, itertools, datetime, re, json
+- No pandas, numpy, scipy, or external libraries
+- Values may be None — ALWAYS filter: [v for v in vals if v is not None]
+- Use print() for every metric and finding
+- Flat top-level code, no functions or classes
+- Keep under 80 lines
+- Return ONLY Python code, no markdown fences
 """
 
 # Phase 2: Ask Gemini to structure the raw output into our format.
 INTERPRET_PROMPT = """\
-You are formatting raw analysis output into structured JSON.
+You are formatting raw analysis output into structured JSON for a business dashboard.
 
 Given the printed output from a Python analysis script, return ONLY a JSON object:
-{
-  "computations": [{"label": "metric name", "value": "metric value"}, ...],
-  "narrative": "2-3 sentence interpretation of the findings"
-}
+{{
+  "computations": [
+    {{
+      "label": "descriptive metric name",
+      "value": "formatted value with appropriate precision",
+      "unit": "%, Rs, Rs/ton, count, etc. or empty string",
+      "format": "number|currency|percentage|text",
+      "priority": 1-10
+    }}
+  ],
+  "narrative": "3-5 sentence executive interpretation connecting findings to business
+                 decisions. Reference specific names and numbers from the output.
+                 State what's good, what's concerning, and what to investigate further."
+}}
 
-Rules:
-- Extract every numeric finding into computations with a clear label
-- Write a concise narrative summarizing the key insights
-- Return ONLY valid JSON, no markdown fences or explanation
+Priority guide: key averages=6, per-group comparisons=8, outliers=9, correlations=7,
+distributions=5, time trends=8.
+Format guide: use "currency" for monetary values, "percentage" for rates/ratios/yields,
+"number" for counts/quantities.
 """
 
 _client: Optional[genai.Client] = None
@@ -214,8 +258,34 @@ def _interpret_output(
         }
 
 
+def _format_classification_summary(classification: dict) -> str:
+    """Build a short classification summary for the code gen prompt."""
+    if not classification:
+        return "No classification available."
+    cols = classification.get("columns", {})
+    lines = []
+    for name, info in cols.items():
+        sem = info.get("semantic_type", "unknown")
+        lines.append(f"  {name}: {sem}")
+    domain = classification.get("domain_hint", "general")
+    return f"Domain: {domain}\n" + "\n".join(lines)
+
+
+def _format_analyst_findings(analysis: dict) -> str:
+    """Build a summary of analyst findings for the code gen prompt."""
+    if not analysis:
+        return "No prior findings."
+    parts = []
+    summary = analysis.get("summary", "")
+    if summary:
+        parts.append(f"Summary: {summary}")
+    for f in analysis.get("findings", [])[:5]:
+        parts.append(f"- [{f.get('type', '?')}] {f.get('description', '')}")
+    return "\n".join(parts) if parts else "No prior findings."
+
+
 class PythonAnalystAgent:
-    """Two-phase Python analysis: generate code → execute → interpret results."""
+    """Two-phase Python analysis: generate code -> execute -> interpret results."""
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         # Combine rows from multi-query results, tagging each with metadata
@@ -243,14 +313,23 @@ class PythonAnalystAgent:
             }
             return state
 
+        # Get classification and analyst findings from state
+        classification = state.get("column_classification", {})
+        analysis = state.get("analysis", {})
+        classification_summary = _format_classification_summary(classification)
+        analyst_findings = _format_analyst_findings(analysis)
+
         # --- Phase 1: Generate code ---
         columns = list(rows[0].keys()) if rows else []
         sample = rows[:10]
 
         prompt = (
-            f"{CODE_GEN_PROMPT}\n\n"
+            CODE_GEN_PROMPT.format(
+                columns=columns,
+                column_classification=classification_summary,
+                analyst_findings=analyst_findings,
+            ) + "\n\n"
             f"Question: {question}\n"
-            f"Columns: {columns}\n"
             f"Total rows: {len(rows)}\n"
             f"Sample data ({len(sample)} rows):\n"
             f"{json.dumps(sample, default=str, indent=2)}"
@@ -283,9 +362,12 @@ class PythonAnalystAgent:
             logger.warning("Python exec failed (attempt %d): %s", retry, exec_result["error"])
             # Ask Gemini to fix the code
             fix_prompt = (
-                f"{CODE_GEN_PROMPT}\n\n"
+                CODE_GEN_PROMPT.format(
+                    columns=columns,
+                    column_classification=classification_summary,
+                    analyst_findings=analyst_findings,
+                ) + "\n\n"
                 f"Question: {question}\n"
-                f"Columns: {columns}\n"
                 f"Total rows: {len(rows)}\n\n"
                 f"The following code failed:\n```python\n{code}\n```\n\n"
                 f"Error: {exec_result['error']}\n\n"

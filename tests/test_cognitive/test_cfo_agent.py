@@ -9,7 +9,7 @@ class TestCFOAgent:
     @patch("business_brain.cognitive.cfo_agent._get_client")
     def test_includes_python_analysis(self, mock_client):
         response = MagicMock()
-        response.text = '{"approved": true, "reasoning": "Good ROI", "recommendations": ["Scale up"]}'
+        response.text = '{"approved": true, "reasoning": "Good ROI", "recommendations": ["Scale up"], "key_metrics": [{"label": "ROI", "value": "15%", "unit": "%", "verdict": "good"}], "chart_suggestions": [{"type": "bar", "x": "product", "y": ["revenue"], "title": "Revenue by Product", "x_label": "Product", "y_label": "Revenue", "number_format": "currency", "insight": "Top revenue driver"}]}'
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = CFOAgent()
@@ -20,10 +20,19 @@ class TestCFOAgent:
                 "computations": [{"label": "ROI", "value": "15%"}],
                 "narrative": "Strong return on investment.",
             },
+            "column_classification": {
+                "columns": {"product": {"semantic_type": "categorical"}, "revenue": {"semantic_type": "numeric_currency"}},
+                "domain_hint": "sales",
+            },
         }
         result = agent.invoke(state)
         assert result["approved"] is True
         assert result["cfo_notes"] == "Good ROI"
+        # Verify new fields
+        assert len(result["cfo_key_metrics"]) == 1
+        assert result["cfo_key_metrics"][0]["verdict"] == "good"
+        assert len(result["cfo_chart_suggestions"]) == 1
+        assert result["cfo_chart_suggestions"][0]["type"] == "bar"
 
         # Verify the prompt included python analysis
         call_kwargs = mock_client.return_value.models.generate_content.call_args
@@ -52,6 +61,8 @@ class TestCFOAgent:
         result = agent.invoke(state)
         assert result["approved"] is False
         assert "manual review" in result["cfo_notes"]
+        assert result["cfo_key_metrics"] == []
+        assert result["cfo_chart_suggestions"] == []
 
     # --- JSON parsing edge cases ---
 

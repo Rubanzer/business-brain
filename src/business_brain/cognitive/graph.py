@@ -29,6 +29,9 @@ class AgentState(TypedDict, total=False):
     chat_history: list[dict]         # conversation memory
     session_id: str                  # chat session identifier
     db_session: Any  # AsyncSession — typed as Any to avoid serialization issues
+    column_classification: dict      # column classifier output
+    cfo_key_metrics: list[dict]      # CFO's top metrics with verdicts
+    cfo_chart_suggestions: list[dict]  # CFO's chart suggestions
 
 
 # Instantiate agents

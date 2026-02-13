@@ -12,26 +12,67 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are a data scientist. Given SQL query results, perform analysis to identify:
-1. Key trends
-2. Anomalies or outliers
-3. Actionable insights
+You are a senior data analyst. Given SQL query results and a column classification
+report, perform RIGOROUS statistical analysis.
 
-Return ONLY a JSON object with this structure:
-{
+COLUMN CLASSIFICATION (auto-detected):
+{column_classification}
+
+REQUIRED ANALYSIS — perform ALL that apply based on column types present:
+
+1. DESCRIPTIVE STATISTICS (when numeric columns exist):
+   For each numeric column: mean, median, std deviation, min, max, P25/P75.
+   Report the coefficient of variation (std/mean) to indicate consistency.
+
+2. GROUP-BY COMPARISONS (when categorical + numeric columns exist):
+   For each categorical column, compute mean/median of each numeric column per group.
+   Rank groups. Identify the best and worst performers with specific values.
+   State the sample size (N) per group. Flag groups with N < 5 as unreliable.
+
+3. CORRELATIONS (when 2+ numeric columns exist):
+   State which numeric pairs are positively/negatively correlated.
+   Only report correlations with |r| > 0.3.
+
+4. TIME TRENDS (when temporal + numeric columns exist):
+   Describe the trend direction and magnitude.
+   Note period-over-period changes.
+
+5. OUTLIER FLAGGING (when numeric columns exist):
+   Identify values more than 2 standard deviations from mean.
+   Note which categories they belong to.
+
+6. DISTRIBUTION SHAPE (when numeric columns exist):
+   Is the data normally distributed, skewed, or multimodal?
+   Are there clusters?
+
+BUSINESS DOMAIN CONTEXT: {domain_hint}
+Use this to interpret findings (e.g., if procurement data, frame in terms of
+supplier value; if HR data, frame in terms of employee retention).
+
+Return ONLY a JSON object:
+{{
   "findings": [
-    {"type": "trend|anomaly|insight", "description": "...", "confidence": 0.0-1.0}
+    {{
+      "type": "trend|anomaly|insight|comparison|correlation",
+      "description": "Specific finding with actual numbers and names",
+      "confidence": 0.0-1.0,
+      "business_impact": "Why this matters for business decisions"
+    }}
   ],
-  "summary": "One paragraph executive summary",
+  "summary": "2-3 sentence executive summary — most important takeaway FIRST",
   "chart_suggestions": [
-    {"type": "bar|line|pie|scatter", "x": "column_name", "y": ["column_name"], "title": "Chart Title"}
+    {{
+      "type": "bar|line|pie|scatter",
+      "x": "exact_column_name",
+      "y": ["exact_column_name"],
+      "title": "Descriptive Title",
+      "x_label": "Axis Label (unit)",
+      "y_label": "Axis Label (unit)",
+      "number_format": "decimal|currency|percentage",
+      "insight": "What this chart reveals"
+    }}
   ]
-}
-
-For chart_suggestions:
-- Only suggest charts when the data has clear x/y relationships (numeric y values)
-- Use "line" for time series, "bar" for categorical comparisons, "pie" for proportions, "scatter" for correlations
-- Suggest 1-3 charts maximum. Omit chart_suggestions if the data is not suitable for visualization.
+}}
 """
 
 _client: genai.Client | None = None
@@ -77,11 +118,28 @@ def _build_data_section(state: dict[str, Any]) -> tuple[str, int]:
     return "\n\n".join(parts), total_rows
 
 
+def _get_all_rows(state: dict[str, Any]) -> list[dict]:
+    """Collect all rows from single or multi-query results."""
+    sql_results = state.get("sql_results")
+    if sql_results:
+        rows = []
+        for res in sql_results:
+            rows.extend(res.get("rows", []))
+        return rows
+    single = state.get("sql_result", {})
+    return single.get("rows", [])
+
+
 class AnalystAgent:
     """Performs analysis on query results using Gemini."""
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Analyse the SQL result set(s)."""
+        from business_brain.cognitive.column_classifier import (
+            classify_columns,
+            format_classification_for_prompt,
+        )
+
         question = state.get("question", "")
         data_section, total_rows = _build_data_section(state)
 
@@ -93,8 +151,22 @@ class AnalystAgent:
             }
             return state
 
+        # Run column classifier on actual data
+        all_rows = _get_all_rows(state)
+        columns = list(all_rows[0].keys()) if all_rows else []
+        classification = classify_columns(columns, all_rows[:100])
+        state["column_classification"] = classification
+
+        classification_text = format_classification_for_prompt(classification)
+        domain_hint = classification.get("domain_hint", "general")
+
+        system = SYSTEM_PROMPT.format(
+            column_classification=classification_text,
+            domain_hint=domain_hint,
+        )
+
         prompt = (
-            f"{SYSTEM_PROMPT}\n\n"
+            f"{system}\n\n"
             f"Original question: {question}\n\n"
             f"{data_section}"
         )
@@ -104,7 +176,7 @@ class AnalystAgent:
             try:
                 client = _get_client()
                 use_prompt = prompt if attempt == 0 else (
-                    f"{SYSTEM_PROMPT}\n\n"
+                    f"{system}\n\n"
                     f"Original question: {question}\n\n"
                     f"Previous analysis attempt returned invalid or empty results. "
                     f"Please provide a simpler analysis focusing on basic statistics.\n\n"

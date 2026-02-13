@@ -417,6 +417,15 @@ print(f'Median: {statistics.median(values)}')
                 "query": "SELECT amount FROM sales",
             },
             "question": "What is the average?",
+            "column_classification": {
+                "columns": {"amount": {"semantic_type": "numeric_currency"}},
+                "domain_hint": "finance",
+                "analysis_plan": ["descriptive_statistics"],
+            },
+            "analysis": {
+                "findings": [{"type": "insight", "description": "Avg is 20"}],
+                "summary": "Amount averages 20.",
+            },
         }
         result = agent.invoke(state)
 
@@ -426,6 +435,41 @@ print(f'Median: {statistics.median(values)}')
         assert pa["narrative"] == "The average amount is 20."
         assert pa["code"] != ""
         assert mock_client.return_value.models.generate_content.call_count == 2
+
+    @patch("business_brain.cognitive.python_analyst_agent._get_client")
+    def test_classification_and_findings_in_prompt(self, mock_client):
+        """Verify column_classification and analyst findings appear in the code gen prompt."""
+        code_response = MagicMock()
+        code_response.text = "print('hello')"
+        interpret_response = MagicMock()
+        interpret_response.text = '{"computations": [], "narrative": "Done."}'
+
+        mock_client.return_value.models.generate_content.side_effect = [
+            code_response,
+            interpret_response,
+        ]
+
+        agent = PythonAnalystAgent()
+        state = {
+            "sql_result": {"rows": [{"val": 1}], "query": "Q"},
+            "question": "test",
+            "column_classification": {
+                "columns": {"val": {"semantic_type": "numeric_metric"}},
+                "domain_hint": "general",
+                "analysis_plan": ["descriptive_statistics"],
+            },
+            "analysis": {
+                "findings": [{"type": "insight", "description": "Value is 1"}],
+                "summary": "Single value.",
+            },
+        }
+        result = agent.invoke(state)
+
+        # Verify the prompt included classification and findings
+        call_args = mock_client.return_value.models.generate_content.call_args_list[0]
+        prompt = call_args.kwargs.get("contents", call_args.args[0] if call_args.args else "")
+        assert "numeric_metric" in prompt
+        assert "Value is 1" in prompt
 
     @patch("business_brain.cognitive.python_analyst_agent._get_client")
     def test_code_gen_failure(self, mock_client):

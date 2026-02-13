@@ -154,7 +154,7 @@
       padding: 1rem;
       font-size: 0.8rem;
       line-height: 1.6;
-      max-height: 600px;
+      max-height: none;
       overflow-y: auto;
     }
 
@@ -368,6 +368,149 @@
     }
     .stat-card .stat-value { font-size: 1.2rem; font-weight: 600; color: var(--accent); }
     .stat-card .stat-label { font-size: 0.65rem; color: var(--muted); margin-top: 0.1rem; }
+    .stat-card .stat-unit { font-size: 0.6rem; color: var(--muted); }
+
+    /* Hero stat cards (CFO key metrics) */
+    .stat-card-hero {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      text-align: center;
+    }
+    .stat-card-hero .stat-value { font-size: 1.4rem; font-weight: 700; }
+    .stat-card-hero .stat-label { font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
+    .stat-card-hero .stat-unit { font-size: 0.65rem; color: var(--muted); }
+
+    .stat-good { border-color: var(--green); }
+    .stat-good .stat-value { color: var(--green); }
+    .stat-warning { border-color: var(--yellow); }
+    .stat-warning .stat-value { color: var(--yellow); }
+    .stat-critical { border-color: var(--red); }
+    .stat-critical .stat-value { color: var(--red); }
+
+    /* CFO verdict card */
+    .cfo-verdict {
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 0.75rem;
+      border: 1px solid var(--border);
+    }
+    .cfo-approved {
+      background: rgba(0,206,201,0.08);
+      border-color: var(--green);
+    }
+    .cfo-rejected {
+      background: rgba(255,107,107,0.08);
+      border-color: var(--red);
+    }
+    .cfo-verdict h3 {
+      font-size: 0.9rem;
+      margin-bottom: 0.3rem;
+    }
+    .cfo-verdict p {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* Recommendation cards */
+    .recommendation-card {
+      display: flex;
+      gap: 0.6rem;
+      align-items: flex-start;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 0.8rem;
+      margin-bottom: 0.4rem;
+      font-size: 0.8rem;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .rec-number {
+      background: var(--accent);
+      color: #fff;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* Finding cards */
+    .finding-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 0.8rem;
+      margin-bottom: 0.4rem;
+    }
+    .finding-card .finding-desc {
+      font-size: 0.8rem;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .finding-impact {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+      font-style: italic;
+    }
+
+    /* Insight summary */
+    .insight-summary {
+      border-left: 3px solid var(--accent);
+      padding: 0.6rem 0.8rem;
+      background: rgba(108,92,231,0.05);
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 0.75rem;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      color: var(--text);
+    }
+
+    /* Details/accordion */
+    .details-section {
+      margin-top: 0.5rem;
+    }
+    .details-toggle {
+      cursor: pointer;
+      font-size: 0.72rem;
+      color: var(--muted);
+      padding: 0.4rem 0;
+      user-select: none;
+    }
+    .details-toggle:hover { color: var(--accent); }
+
+    /* Chart */
+    .chart-insight {
+      font-size: 0.72rem;
+      font-style: italic;
+      color: var(--muted);
+      margin-top: 0.3rem;
+      padding: 0 0.5rem;
+    }
+
+    .chart-container {
+      margin: 0.75rem 0;
+      padding: 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      position: relative;
+      max-width: 100%;
+      min-height: 300px;
+    }
+
+    .chart-container canvas {
+      max-height: 400px;
+    }
 
     .issue-table {
       width: 100%;
@@ -515,21 +658,6 @@
     }
 
     .modal-close:hover { color: var(--text); }
-
-    /* Chart container */
-    .chart-container {
-      margin: 1rem 0;
-      padding: 1rem;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      position: relative;
-      max-width: 100%;
-    }
-
-    .chart-container canvas {
-      max-height: 350px;
-    }
 
     .chart-builder {
       display: flex;
@@ -720,7 +848,50 @@
       thread.scrollTop = thread.scrollHeight;
     }
 
+    // ---------------------------------------------------------------------------
+    // Number formatting helper
+    // ---------------------------------------------------------------------------
+    function formatCompValue(comp) {
+      const raw = comp.value;
+      const fmt = comp.format || '';
+      const unit = comp.unit || '';
+      let val = typeof raw === 'string' ? parseFloat(raw.replace(/[^0-9.\-]/g, '')) : raw;
+
+      if (isNaN(val)) return raw; // not a number, return as-is
+
+      if (fmt === 'currency' || unit.toLowerCase().includes('rs')) {
+        try {
+          return 'Rs ' + val.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+        } catch(e) { return 'Rs ' + val.toFixed(2); }
+      }
+      if (fmt === 'percentage' || unit === '%') {
+        return val.toFixed(2) + '%';
+      }
+      if (fmt === 'number' || fmt === 'decimal') {
+        try {
+          return val.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+        } catch(e) { return val.toFixed(2); }
+      }
+      return String(raw);
+    }
+
+    function fmtTick(value, numberFormat) {
+      if (numberFormat === 'currency') {
+        try {
+          return 'Rs ' + value.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        } catch(e) { return 'Rs ' + Math.round(value); }
+      }
+      if (numberFormat === 'percentage') return value.toFixed(1) + '%';
+      if (typeof value === 'number' && Math.abs(value) >= 1000) {
+        try { return value.toLocaleString('en-IN', { maximumFractionDigits: 1 }); }
+        catch(e) { return value.toFixed(1); }
+      }
+      return value;
+    }
+
+    // ---------------------------------------------------------------------------
     // Analyze
+    // ---------------------------------------------------------------------------
     async function runAnalysis() {
       const q = document.getElementById('question').value.trim();
       if (!q) return;
@@ -732,6 +903,7 @@
       btn.disabled = true;
       status.innerHTML = '<span class="spinner"></span> Running...';
       body.innerHTML = '';
+      destroyCharts();
 
       addChatMessage('user', q);
 
@@ -761,8 +933,8 @@
         const summary = data.analysis?.summary || 'Analysis completed.';
         addChatMessage('assistant', summary);
 
-        // Render suggested charts
-        renderChartSuggestions(data);
+        // Auto-render charts
+        autoRenderCharts(data);
 
         document.getElementById('question').value = '';
       } catch (e) {
@@ -776,22 +948,125 @@
       if (e.key === 'Enter') runAnalysis();
     });
 
+    // ---------------------------------------------------------------------------
+    // Insight-first layout
+    // ---------------------------------------------------------------------------
     function renderAnalysis(d) {
       let html = '';
+
+      // 1. CFO Key Metrics — Hero stat cards
+      if (d.cfo_key_metrics?.length) {
+        html += `<div class="step"><div class="step-label">Key Metrics</div>`;
+        html += `<div class="stat-grid">`;
+        d.cfo_key_metrics.forEach(m => {
+          const verdict = m.verdict || 'good';
+          const cls = `stat-card-hero stat-${verdict}`;
+          html += `<div class="${cls}">`;
+          html += `<div class="stat-value">${esc(String(m.value))}</div>`;
+          html += `<div class="stat-label">${esc(m.label)}</div>`;
+          if (m.unit) html += `<div class="stat-unit">${esc(m.unit)}</div>`;
+          html += `</div>`;
+        });
+        html += `</div></div>`;
+      }
+
+      // 2. Auto-rendered charts area (analyst + CFO)
+      html += `<div id="chart-area"></div>`;
+      html += `<div id="cfo-chart-area"></div>`;
+
+      // 3. CFO Assessment — verdict + recommendations
+      html += `<div class="step">`;
+      html += `<div class="step-label">CFO Assessment</div>`;
+      const verdictClass = d.approved ? 'cfo-approved' : 'cfo-rejected';
+      html += `<div class="cfo-verdict ${verdictClass}">`;
+      html += `<h3>${d.approved ? '&#10003; Approved' : '&#10007; Needs Attention'}</h3>`;
+      if (d.cfo_notes) html += `<p>${esc(d.cfo_notes)}</p>`;
+      html += `</div>`;
+      if (d.recommendations?.length) {
+        d.recommendations.forEach((r, i) => {
+          html += `<div class="recommendation-card">`;
+          html += `<div class="rec-number">${i + 1}</div>`;
+          html += `<div>${esc(r)}</div>`;
+          html += `</div>`;
+        });
+      }
+      html += `</div>`;
+
+      // 4. Analyst Findings
+      if (d.analysis) {
+        html += `<div class="step"><div class="step-label">Analyst Findings</div>`;
+        if (d.analysis.summary) {
+          html += `<div class="insight-summary">${esc(d.analysis.summary)}</div>`;
+        }
+        if (d.analysis.findings?.length) {
+          d.analysis.findings.forEach(f => {
+            const badge = f.type === 'trend' ? 'badge-yellow'
+              : f.type === 'anomaly' ? 'badge-red'
+              : f.type === 'correlation' ? 'badge-accent'
+              : f.type === 'comparison' ? 'badge-accent'
+              : 'badge-green';
+            html += `<div class="finding-card">`;
+            html += `<div class="finding-desc"><span class="badge ${badge}" style="margin-right:0.4rem;">${esc(f.type)}</span>${esc(f.description)}</div>`;
+            if (f.business_impact) {
+              html += `<div class="finding-impact">${esc(f.business_impact)}</div>`;
+            }
+            html += `</div>`;
+          });
+        }
+        // Extra chart suggestion buttons (beyond the 2 auto-rendered)
+        if (d.analysis.chart_suggestions?.length > 2) {
+          html += `<div style="margin-top:0.5rem;">`;
+          d.analysis.chart_suggestions.slice(2).forEach((cs, ci) => {
+            html += `<button class="btn-sm" style="margin-right:0.3rem;margin-bottom:0.3rem;" onclick="renderSuggestedChart(${ci + 2}, 'analyst')">Generate: ${esc(cs.title || cs.type + ' chart')}</button>`;
+          });
+          html += `</div>`;
+        }
+        html += `</div>`;
+      }
+
+      // 5. Python Computations — priority-sorted
+      if (d.python_analysis) {
+        html += `<div class="step"><div class="step-label">Computational Analysis</div>`;
+        if (d.python_analysis.error) {
+          html += `<p style="color:var(--red);">${esc(d.python_analysis.error)}</p>`;
+        } else {
+          if (d.python_analysis.computations?.length) {
+            // Sort by priority (higher first)
+            const sorted = [...d.python_analysis.computations].sort((a, b) => (b.priority || 5) - (a.priority || 5));
+            html += `<div class="stat-grid">`;
+            sorted.forEach(c => {
+              const fmtVal = formatCompValue(c);
+              html += `<div class="stat-card"><div class="stat-value">${esc(String(fmtVal))}</div><div class="stat-label">${esc(c.label)}</div>`;
+              if (c.unit) html += `<div class="stat-unit">${esc(c.unit)}</div>`;
+              html += `</div>`;
+            });
+            html += `</div>`;
+          }
+          if (d.python_analysis.narrative) {
+            html += `<p style="color:var(--muted);font-size:0.8rem;line-height:1.5;">${esc(d.python_analysis.narrative)}</p>`;
+          }
+        }
+        html += `</div>`;
+      }
+
+      // 6. Collapsible Details — SQL, plan, raw data, code
+      html += `<div class="details-section">`;
+      html += `<details><summary class="details-toggle">Show Details (SQL, Plan, Raw Data, Code)</summary>`;
+      html += `<div style="padding-top:0.5rem;">`;
 
       // Plan
       if (d.plan?.length) {
         html += `<div class="step"><div class="step-label">Supervisor Plan</div><ul>`;
         d.plan.forEach(s => {
-          html += `<li><span class="badge badge-accent">${s.agent}</span> ${esc(s.task)}</li>`;
+          html += `<li><span class="badge badge-accent">${esc(s.agent)}</span> ${esc(s.task)}</li>`;
         });
         html += `</ul></div>`;
       }
 
-      // SQL Results (support multi-query)
+      // SQL Results
       const sqlResults = d.sql_results || (d.sql_result ? [d.sql_result] : []);
       sqlResults.forEach((sr, i) => {
-        html += `<div class="step"><div class="step-label">SQL Agent${sqlResults.length > 1 ? ` (Query ${i+1})` : ''}</div>`;
+        html += `<div class="step"><div class="step-label">SQL${sqlResults.length > 1 ? ` (Query ${i+1})` : ''}</div>`;
         if (sr.task) {
           html += `<p style="margin-bottom:0.3rem;font-size:0.75rem;color:var(--accent);">${esc(sr.task)}</p>`;
         }
@@ -802,61 +1077,22 @@
           html += `<p style="color:var(--red);">${esc(sr.error)}</p>`;
         }
         if (sr.rows?.length) {
-          html += renderTable(sr.rows, 20);
-          if (sr.rows.length > 20) {
-            const btnId = `view-full-${i}`;
-            html += `<button class="btn-sm btn-secondary" id="${btnId}" onclick="openDataModal(${i})">View Full Data (${sr.rows.length} rows)</button>`;
+          html += renderTable(sr.rows, 10);
+          if (sr.rows.length > 10) {
+            html += `<button class="btn-sm btn-secondary" onclick="openDataModal(${i})">View Full Data (${sr.rows.length} rows)</button>`;
           }
         }
         html += `</div>`;
       });
 
-      // Analysis
-      if (d.analysis) {
-        html += `<div class="step"><div class="step-label">Analyst Findings</div>`;
-        if (d.analysis.summary) {
-          html += `<p>${esc(d.analysis.summary)}</p>`;
-        }
-        if (d.analysis.findings?.length) {
-          d.analysis.findings.forEach(f => {
-            const badge = f.type === 'trend' ? 'badge-yellow' : f.type === 'anomaly' ? 'badge-red' : 'badge-green';
-            html += `<div class="finding"><span class="badge ${badge}">${f.type}</span><span>${esc(f.description)}</span></div>`;
-          });
-        }
-        // Chart suggestions
-        if (d.analysis.chart_suggestions?.length) {
-          html += `<div style="margin-top:0.5rem;">`;
-          d.analysis.chart_suggestions.forEach((cs, ci) => {
-            html += `<button class="btn-sm" style="margin-right:0.3rem;margin-bottom:0.3rem;" onclick="renderSuggestedChart(${ci})">Generate: ${esc(cs.title || cs.type + ' chart')}</button>`;
-          });
-          html += `</div>`;
-        }
-        html += `<div id="chart-area"></div>`;
+      // Python code
+      if (d.python_analysis?.code) {
+        html += `<div class="step"><div class="step-label">Generated Python Code</div>`;
+        html += `<div class="sql-block">${esc(d.python_analysis.code)}</div>`;
         html += `</div>`;
       }
 
-      // Python Analysis
-      if (d.python_analysis) {
-        html += `<div class="step"><div class="step-label">Python Analysis</div>`;
-        if (d.python_analysis.error) {
-          html += `<p style="color:var(--red);">${esc(d.python_analysis.error)}</p>`;
-        } else {
-          if (d.python_analysis.computations?.length) {
-            html += `<div class="stat-grid">`;
-            d.python_analysis.computations.forEach(c => {
-              html += `<div class="stat-card"><div class="stat-value">${esc(String(c.value))}</div><div class="stat-label">${esc(c.label)}</div></div>`;
-            });
-            html += `</div>`;
-          }
-          if (d.python_analysis.narrative) {
-            html += `<p>${esc(d.python_analysis.narrative)}</p>`;
-          }
-        }
-        if (d.python_analysis.code) {
-          html += `<details style="margin-top:0.5rem;"><summary style="cursor:pointer;font-size:0.7rem;color:var(--muted);">Show generated code</summary><div class="sql-block">${esc(d.python_analysis.code)}</div></details>`;
-        }
-        html += `</div>`;
-      }
+      html += `</div></details></div>`;
 
       // Manual chart builder
       if (sqlResults.length && sqlResults.some(sr => sr.rows?.length)) {
@@ -872,17 +1108,6 @@
           html += `</div><div id="custom-chart-area"></div></div>`;
         }
       }
-
-      // CFO
-      html += `<div class="step"><div class="step-label">CFO Review</div>`;
-      html += `<h3>${d.approved ? '&#10003; Approved' : '&#10007; Rejected'}</h3>`;
-      if (d.cfo_notes) html += `<p>${esc(d.cfo_notes)}</p>`;
-      if (d.recommendations?.length) {
-        html += `<ul>`;
-        d.recommendations.forEach(r => { html += `<li>${esc(r)}</li>`; });
-        html += `</ul>`;
-      }
-      html += `</div>`;
 
       return html;
     }
@@ -906,7 +1131,205 @@
       return html;
     }
 
+    // ---------------------------------------------------------------------------
+    // Chart rendering (improved)
+    // ---------------------------------------------------------------------------
+    function destroyCharts() {
+      activeCharts.forEach(c => c.destroy());
+      activeCharts = [];
+    }
+
+    function renderSuggestedChart(index, source) {
+      const suggestions = source === 'cfo'
+        ? lastAnalysisData?.cfo_chart_suggestions
+        : lastAnalysisData?.analysis?.chart_suggestions;
+      if (!suggestions || !suggestions[index]) return;
+
+      const cs = suggestions[index];
+      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
+      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+
+      const areaId = source === 'cfo' ? 'cfo-chart-area' : 'chart-area';
+      const area = document.getElementById(areaId);
+      if (!area) return;
+
+      _renderChart(area, cs, allRows);
+    }
+
+    function _renderChart(container, cs, allRows) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'chart-container';
+      const canvas = document.createElement('canvas');
+      wrapper.appendChild(canvas);
+      container.appendChild(wrapper);
+
+      const labels = allRows.map(r => String(r[cs.x] ?? ''));
+      const yColumns = Array.isArray(cs.y) ? cs.y : [cs.y];
+      const colors = ['#6c5ce7', '#00cec9', '#ff6b6b', '#feca57', '#a29bfe', '#55efc4'];
+      const numberFormat = cs.number_format || 'decimal';
+
+      const datasets = yColumns.filter(Boolean).map((col, i) => {
+        const data = allRows.map(r => {
+          const v = r[col];
+          return v != null ? parseFloat(v) || 0 : 0;
+        });
+
+        const baseConfig = {
+          label: col,
+          data: data,
+          backgroundColor: cs.type === 'scatter'
+            ? colors[i % colors.length] + '66'
+            : colors[i % colors.length],
+          borderColor: colors[i % colors.length],
+          borderWidth: cs.type === 'line' ? 2 : 1,
+        };
+
+        if (cs.type === 'scatter') {
+          baseConfig.pointRadius = 4;
+          baseConfig.data = allRows.map(r => ({
+            x: parseFloat(r[cs.x]) || 0,
+            y: parseFloat(r[col]) || 0,
+          }));
+        }
+        if (cs.type === 'line') {
+          baseConfig.fill = false;
+          baseConfig.tension = 0.3;
+        }
+        return baseConfig;
+      });
+
+      const isPie = cs.type === 'pie';
+
+      const chartConfig = {
+        type: cs.type || 'bar',
+        data: cs.type === 'scatter'
+          ? { datasets }
+          : { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          aspectRatio: 1.8,
+          plugins: {
+            title: {
+              display: true,
+              text: cs.title || 'Chart',
+              color: '#e2e2e8',
+              font: { size: 13, weight: '600' },
+            },
+            tooltip: {
+              backgroundColor: '#1e1e2e',
+              titleColor: '#e2e2e8',
+              bodyColor: '#e2e2e8',
+              borderColor: '#333',
+              borderWidth: 1,
+              callbacks: {
+                label: function(ctx) {
+                  const v = ctx.parsed?.y ?? ctx.parsed ?? ctx.raw;
+                  const val = typeof v === 'object' ? v.y : v;
+                  return ctx.dataset.label + ': ' + fmtTick(val, numberFormat);
+                }
+              }
+            },
+            legend: {
+              labels: { color: '#8888a0', font: { size: 11 } }
+            }
+          },
+        }
+      };
+
+      if (!isPie) {
+        chartConfig.options.scales = {
+          x: {
+            ticks: {
+              color: '#8888a0',
+              maxRotation: 45,
+              autoSkip: true,
+            },
+            grid: { color: '#1e1e2e' },
+            title: {
+              display: !!(cs.x_label),
+              text: cs.x_label || '',
+              color: '#8888a0',
+              font: { size: 11 },
+            }
+          },
+          y: {
+            beginAtZero: cs.type !== 'scatter',
+            ticks: {
+              color: '#8888a0',
+              callback: function(value) { return fmtTick(value, numberFormat); }
+            },
+            grid: { color: '#1e1e2e' },
+            title: {
+              display: !!(cs.y_label),
+              text: cs.y_label || '',
+              color: '#8888a0',
+              font: { size: 11 },
+            }
+          }
+        };
+      }
+
+      const chart = new Chart(canvas, chartConfig);
+      activeCharts.push(chart);
+
+      // Add insight caption
+      if (cs.insight) {
+        const caption = document.createElement('div');
+        caption.className = 'chart-insight';
+        caption.textContent = cs.insight;
+        wrapper.appendChild(caption);
+      }
+    }
+
+    function autoRenderCharts(data) {
+      // Auto-render top 2 analyst chart suggestions
+      const analystCharts = data.analysis?.chart_suggestions || [];
+      analystCharts.slice(0, 2).forEach((cs, i) => {
+        const area = document.getElementById('chart-area');
+        if (!area) return;
+        const sqlResults = data.sql_results || [data.sql_result];
+        const allRows = sqlResults.flatMap(sr => sr.rows || []);
+        if (allRows.length) _renderChart(area, cs, allRows);
+      });
+
+      // Auto-render all CFO chart suggestions
+      const cfoCharts = data.cfo_chart_suggestions || [];
+      cfoCharts.forEach((cs, i) => {
+        const area = document.getElementById('cfo-chart-area');
+        if (!area) return;
+        const sqlResults = data.sql_results || [data.sql_result];
+        const allRows = sqlResults.flatMap(sr => sr.rows || []);
+        if (allRows.length) _renderChart(area, cs, allRows);
+      });
+    }
+
+    function buildCustomChart() {
+      const type = document.getElementById('cb-type').value;
+      const xCol = document.getElementById('cb-x').value;
+      const ySelect = document.getElementById('cb-y');
+      const yCols = Array.from(ySelect.selectedOptions).map(o => o.value);
+
+      if (!yCols.length) { toast('Select at least one Y column'); return; }
+
+      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
+      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+
+      const area = document.getElementById('custom-chart-area');
+      area.innerHTML = '';
+
+      _renderChart(area, {
+        type,
+        x: xCol,
+        y: yCols,
+        title: `${yCols.join(', ')} by ${xCol}`,
+        number_format: 'decimal',
+      }, allRows);
+    }
+
+    // ---------------------------------------------------------------------------
     // Data viewer modal
+    // ---------------------------------------------------------------------------
     function openDataModal(queryIndex) {
       if (!lastAnalysisData) return;
       const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
@@ -1080,108 +1503,9 @@
       });
     };
 
-    // Chart rendering
-    function destroyCharts() {
-      activeCharts.forEach(c => c.destroy());
-      activeCharts = [];
-    }
-
-    function renderSuggestedChart(index) {
-      if (!lastAnalysisData?.analysis?.chart_suggestions) return;
-      const cs = lastAnalysisData.analysis.chart_suggestions[index];
-      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
-      const allRows = sqlResults.flatMap(sr => sr.rows || []);
-
-      const area = document.getElementById('chart-area');
-      const container = document.createElement('div');
-      container.className = 'chart-container';
-      const canvas = document.createElement('canvas');
-      container.appendChild(canvas);
-      area.appendChild(container);
-
-      const labels = allRows.map(r => String(r[cs.x] ?? ''));
-      const yColumns = Array.isArray(cs.y) ? cs.y : [cs.y];
-      const colors = ['#6c5ce7', '#00cec9', '#ff6b6b', '#feca57', '#a29bfe', '#55efc4'];
-
-      const datasets = yColumns.map((col, i) => ({
-        label: col,
-        data: allRows.map(r => {
-          const v = r[col];
-          return v != null ? parseFloat(v) || 0 : 0;
-        }),
-        backgroundColor: colors[i % colors.length],
-        borderColor: colors[i % colors.length],
-        borderWidth: 1,
-      }));
-
-      const chart = new Chart(canvas, {
-        type: cs.type || 'bar',
-        data: { labels, datasets },
-        options: {
-          responsive: true,
-          plugins: { title: { display: true, text: cs.title || 'Chart', color: '#e2e2e8' } },
-          scales: cs.type !== 'pie' ? {
-            x: { ticks: { color: '#8888a0' }, grid: { color: '#1e1e2e' } },
-            y: { ticks: { color: '#8888a0' }, grid: { color: '#1e1e2e' } }
-          } : {}
-        }
-      });
-      activeCharts.push(chart);
-    }
-
-    function buildCustomChart() {
-      const type = document.getElementById('cb-type').value;
-      const xCol = document.getElementById('cb-x').value;
-      const ySelect = document.getElementById('cb-y');
-      const yCols = Array.from(ySelect.selectedOptions).map(o => o.value);
-
-      if (!yCols.length) { toast('Select at least one Y column'); return; }
-
-      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
-      const allRows = sqlResults.flatMap(sr => sr.rows || []);
-
-      const area = document.getElementById('custom-chart-area');
-      area.innerHTML = '';
-      const container = document.createElement('div');
-      container.className = 'chart-container';
-      const canvas = document.createElement('canvas');
-      container.appendChild(canvas);
-      area.appendChild(container);
-
-      const labels = allRows.map(r => String(r[xCol] ?? ''));
-      const colors = ['#6c5ce7', '#00cec9', '#ff6b6b', '#feca57', '#a29bfe', '#55efc4'];
-
-      const datasets = yCols.map((col, i) => ({
-        label: col,
-        data: allRows.map(r => { const v = r[col]; return v != null ? parseFloat(v) || 0 : 0; }),
-        backgroundColor: colors[i % colors.length],
-        borderColor: colors[i % colors.length],
-        borderWidth: 1,
-      }));
-
-      const chart = new Chart(canvas, {
-        type,
-        data: { labels, datasets },
-        options: {
-          responsive: true,
-          plugins: { title: { display: true, text: `${yCols.join(', ')} by ${xCol}`, color: '#e2e2e8' } },
-          scales: type !== 'pie' ? {
-            x: { ticks: { color: '#8888a0' }, grid: { color: '#1e1e2e' } },
-            y: { ticks: { color: '#8888a0' }, grid: { color: '#1e1e2e' } }
-          } : {}
-        }
-      });
-      activeCharts.push(chart);
-    }
-
-    function renderChartSuggestions(data) {
-      // Auto-render first chart suggestion if available
-      if (data.analysis?.chart_suggestions?.length) {
-        // Don't auto-render, let user click the button
-      }
-    }
-
+    // ---------------------------------------------------------------------------
     // Context
+    // ---------------------------------------------------------------------------
     async function submitContext() {
       const text = document.getElementById('ctx-text').value.trim();
       const source = document.getElementById('ctx-source').value.trim() || 'manual';
@@ -1229,7 +1553,9 @@
       ctxFileInput.value = '';
     });
 
+    // ---------------------------------------------------------------------------
     // Schema
+    // ---------------------------------------------------------------------------
     async function loadSchema() {
       const body = document.getElementById('schema-body');
       body.innerHTML = '<p style="color:var(--muted)"><span class="spinner"></span> Loading...</p>';
@@ -1262,7 +1588,9 @@
       }
     }
 
+    // ---------------------------------------------------------------------------
     // Upload
+    // ---------------------------------------------------------------------------
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
 

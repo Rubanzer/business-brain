@@ -134,7 +134,7 @@ class TestAnalystAgent:
     @patch("business_brain.cognitive.analyst_agent._get_client")
     def test_analysis_with_chart_suggestions(self, mock_client):
         response = MagicMock()
-        response.text = '{"findings": [{"type": "trend", "description": "Rising sales", "confidence": 0.9}], "summary": "Sales are rising.", "chart_suggestions": [{"type": "bar", "x": "month", "y": ["sales"], "title": "Monthly Sales"}]}'
+        response.text = '{"findings": [{"type": "trend", "description": "Rising sales", "confidence": 0.9, "business_impact": "Revenue growing"}], "summary": "Sales are rising.", "chart_suggestions": [{"type": "bar", "x": "month", "y": ["sales"], "title": "Monthly Sales", "x_label": "Month", "y_label": "Sales ($)", "number_format": "currency", "insight": "Monthly revenue trend"}]}'
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = AnalystAgent()
@@ -145,6 +145,11 @@ class TestAnalystAgent:
         result = agent.invoke(state)
         assert result["analysis"]["chart_suggestions"][0]["type"] == "bar"
         assert result["analysis"]["chart_suggestions"][0]["x"] == "month"
+        assert result["analysis"]["chart_suggestions"][0]["x_label"] == "Month"
+        assert result["analysis"]["chart_suggestions"][0]["number_format"] == "currency"
+        assert result["analysis"]["findings"][0]["business_impact"] == "Revenue growing"
+        # Verify column_classification was set
+        assert "column_classification" in result
 
     @patch("business_brain.cognitive.analyst_agent._get_client")
     def test_retry_on_empty_findings(self, mock_client):
