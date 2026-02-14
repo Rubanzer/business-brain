@@ -196,18 +196,22 @@ async def upload_csv(file: UploadFile = File(...), session: AsyncSession = Depen
     import pandas as pd
     from business_brain.ingestion.csv_loader import upsert_dataframe
 
-    contents = await file.read()
-    file_name = file.filename or "upload.csv"
-    table_name = file_name.rsplit(".", 1)[0].replace("-", "_").replace(" ", "_")
-    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "csv"
+    try:
+        contents = await file.read()
+        file_name = file.filename or "upload.csv"
+        table_name = file_name.rsplit(".", 1)[0].replace("-", "_").replace(" ", "_")
+        ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "csv"
 
-    if ext in ("xlsx", "xls"):
-        df = pd.read_excel(BytesIO(contents))
-    else:
-        df = pd.read_csv(StringIO(contents.decode("utf-8")))
+        if ext in ("xlsx", "xls"):
+            df = pd.read_excel(BytesIO(contents))
+        else:
+            df = pd.read_csv(StringIO(contents.decode("utf-8")))
 
-    rows = await upsert_dataframe(df, session, table_name)
-    return {"status": "loaded", "table": table_name, "rows": rows}
+        rows = await upsert_dataframe(df, session, table_name)
+        return {"status": "loaded", "table": table_name, "rows": rows}
+    except Exception as exc:
+        logger.exception("CSV upload failed")
+        return {"error": str(exc)}
 
 
 @app.post("/upload")
