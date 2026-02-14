@@ -386,6 +386,113 @@ async def delete_table_metadata(table: str, session: AsyncSession = Depends(get_
     return {"status": "deleted", "table": table}
 
 
+@app.delete("/tables/{table_name}")
+async def drop_table_cascade(table_name: str, session: AsyncSession = Depends(get_session)) -> dict:
+    """Drop a table and remove all dependent metadata, vectors, profiles, insights, etc."""
+    import re
+    from sqlalchemy import delete as sa_delete, text as sql_text
+
+    from business_brain.db.discovery_models import (
+        DiscoveredRelationship,
+        Insight,
+        DeployedReport,
+        TableProfile,
+    )
+    from business_brain.db.models import BusinessContext, MetadataEntry
+    from business_brain.db.v3_models import (
+        DataChangeLog,
+        DataSource,
+        FormatFingerprint,
+        MetricThreshold,
+        SanctityIssue,
+        SourceMapping,
+    )
+
+    safe = re.sub(r"[^a-zA-Z0-9_]", "", table_name)
+    if not safe:
+        return {"error": "Invalid table name"}
+
+    removed = {}
+
+    # 1. Drop the actual data table
+    try:
+        await session.execute(sql_text(f'DROP TABLE IF EXISTS "{safe}" CASCADE'))
+        removed["data_table"] = True
+    except Exception as exc:
+        logger.warning("Could not drop table %s: %s", safe, exc)
+        removed["data_table"] = False
+
+    # 2. Metadata
+    r = await session.execute(sa_delete(MetadataEntry).where(MetadataEntry.table_name == table_name))
+    removed["metadata"] = r.rowcount
+
+    # 3. Business context vectors that reference this table
+    r = await session.execute(
+        sa_delete(BusinessContext).where(BusinessContext.source.ilike(f"%{safe}%"))
+    )
+    removed["business_context"] = r.rowcount
+
+    # 4. Table profile
+    r = await session.execute(sa_delete(TableProfile).where(TableProfile.table_name == table_name))
+    removed["table_profile"] = r.rowcount
+
+    # 5. Relationships (either side)
+    r = await session.execute(
+        sa_delete(DiscoveredRelationship).where(
+            (DiscoveredRelationship.table_a == table_name)
+            | (DiscoveredRelationship.table_b == table_name)
+        )
+    )
+    removed["relationships"] = r.rowcount
+
+    # 6. Insights referencing this table + their deployed reports
+    from sqlalchemy import select as sa_select, cast, String as SAString
+
+    insight_rows = (
+        await session.execute(sa_select(Insight.id).where(Insight.source_tables.cast(SAString).contains(table_name)))
+    ).scalars().all()
+    if insight_rows:
+        r = await session.execute(sa_delete(DeployedReport).where(DeployedReport.insight_id.in_(insight_rows)))
+        removed["deployed_reports"] = r.rowcount
+        r = await session.execute(sa_delete(Insight).where(Insight.id.in_(insight_rows)))
+        removed["insights"] = r.rowcount
+    else:
+        removed["deployed_reports"] = 0
+        removed["insights"] = 0
+
+    # 7. Data sources
+    r = await session.execute(sa_delete(DataSource).where(DataSource.table_name == table_name))
+    removed["data_sources"] = r.rowcount
+
+    # 8. Change log
+    r = await session.execute(sa_delete(DataChangeLog).where(DataChangeLog.table_name == table_name))
+    removed["change_log"] = r.rowcount
+
+    # 9. Sanctity issues
+    r = await session.execute(sa_delete(SanctityIssue).where(SanctityIssue.table_name == table_name))
+    removed["sanctity_issues"] = r.rowcount
+
+    # 10. Format fingerprints
+    r = await session.execute(sa_delete(FormatFingerprint).where(FormatFingerprint.table_name == table_name))
+    removed["fingerprints"] = r.rowcount
+
+    # 11. Source mappings (either side)
+    r = await session.execute(
+        sa_delete(SourceMapping).where(
+            (SourceMapping.source_a_table == table_name) | (SourceMapping.source_b_table == table_name)
+        )
+    )
+    removed["source_mappings"] = r.rowcount
+
+    # 12. Metric thresholds
+    r = await session.execute(sa_delete(MetricThreshold).where(MetricThreshold.table_name == table_name))
+    removed["thresholds"] = r.rowcount
+
+    await session.commit()
+
+    return {"status": "deleted", "table": table_name, "removed": removed}
+
+
 @app.get("/data/{table}")
 async def get_table_data(
     table: str,

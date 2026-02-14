@@ -2524,7 +2524,10 @@
           <div class="meta-card">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <h3>${esc(t.table_name)}</h3>
-              <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(t.table_name)}')">View Data</button>
+              <div style="display:flex;gap:0.4rem;">
+                <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(t.table_name)}')">View Data</button>
+                <button class="btn-sm" onclick="deleteTable('${esc(t.table_name)}')" style="background:var(--red);color:#fff;font-size:0.68rem;">Delete</button>
+              </div>
             </div>
             <p>${esc(t.description || 'No description')}</p>
             <div class="col-list">
@@ -2644,6 +2647,29 @@
       const d = document.createElement('div');
       d.textContent = s;
       return d.innerHTML;
+    }
+
+    async function deleteTable(tableName) {
+      if (!confirm(`Delete table "${tableName}" and ALL its dependent data (metadata, vectors, insights, profiles, alerts, reports)?\n\nThis cannot be undone.`)) return;
+      try {
+        const res = await fetch(`${API}/tables/${encodeURIComponent(tableName)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.error) {
+          toast('Delete failed: ' + data.error);
+        } else {
+          const r = data.removed || {};
+          const parts = [];
+          if (r.insights) parts.push(r.insights + ' insights');
+          if (r.deployed_reports) parts.push(r.deployed_reports + ' reports');
+          if (r.relationships) parts.push(r.relationships + ' relationships');
+          if (r.data_sources) parts.push(r.data_sources + ' sources');
+          const extra = parts.length ? ' (' + parts.join(', ') + ')' : '';
+          toast('Deleted ' + tableName + extra);
+          loadSchema();
+        }
+      } catch (e) {
+        toast('Delete failed: ' + e.message);
+      }
     }
 
     // Auto-load schema on tab click
