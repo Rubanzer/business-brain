@@ -16,7 +16,9 @@ from typing import Any
 
 _ID_PATTERNS = re.compile(
     r"(^id$|_id$|^key$|_key$|^code$|_code$|_no$|_number$|^number$"
-    r"|^invoice|^order_id|^employee_id|^customer_id|_row_id$)",
+    r"|^invoice|^order_id|^employee_id|^customer_id|_row_id$"
+    r"|^heat_no|^machine_id|^batch_id|^lot_no|^wo_id|^asset_code"
+    r"|^challan|^vehicle_no|^truck_no|^serial_no|^equipment_id)",
     re.IGNORECASE,
 )
 
@@ -49,6 +51,17 @@ _BOOLEAN_VALUES = frozenset({
 # ---------------------------------------------------------------------------
 
 _DOMAIN_KEYWORDS: dict[str, list[str]] = {
+    "manufacturing": [
+        "furnace", "heat", "billet", "rolling", "tmt", "scada",
+        "kva", "power_factor", "temperature", "pressure", "rpm",
+        "machine", "breakdown", "downtime", "shift", "production",
+        "tonnage", "output", "casting", "melt", "scrap",
+    ],
+    "quality": [
+        "rejection", "defect", "inspection", "grade", "yield",
+        "rework", "scrap_rate", "specification", "tolerance",
+        "sample", "lab", "fe", "carbon", "test_result",
+    ],
     "sales": [
         "customer", "order", "revenue", "sales", "product", "region",
         "discount", "quantity", "channel", "deal",
@@ -64,6 +77,14 @@ _DOMAIN_KEYWORDS: dict[str, list[str]] = {
     "procurement": [
         "supplier", "material", "rate", "quality", "yield", "grade",
         "vendor", "purchase", "tender", "party", "fe",
+    ],
+    "logistics": [
+        "truck", "gate", "vehicle", "dispatch", "delivery", "freight",
+        "challan", "weighbridge", "transporter", "loading",
+    ],
+    "energy": [
+        "power", "kva", "kwh", "voltage", "current", "consumption",
+        "unit_consumption", "electricity", "energy", "meter",
     ],
     "marketing": [
         "campaign", "channel", "impression", "click", "conversion",

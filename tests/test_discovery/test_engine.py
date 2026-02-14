@@ -45,6 +45,36 @@ class TestApplyScoring:
         # severity_score = 40 + cross_table = 30 + magnitude = 30 = 100
         assert insight.impact_score <= 100
 
+    def test_zero_impact(self):
+        insight = self._make_insight("info", ["t1"], 0)
+        _apply_scoring(insight)
+        # severity_score = 0.3 * 40 = 12, cross=0, magnitude=0
+        assert insight.impact_score == 12
+
+    def test_empty_source_tables(self):
+        insight = self._make_insight("warning", [], 50)
+        _apply_scoring(insight)
+        # severity = 0.6*40=24, cross=0 (empty list), magnitude=50/100*30=15
+        assert insight.impact_score == 39
+
+    def test_none_source_tables(self):
+        insight = self._make_insight("info", None, 30)
+        _apply_scoring(insight)
+        # severity = 0.3*40=12, cross=0 (None -> []), magnitude=30/100*30=9
+        assert insight.impact_score == 21
+
+    def test_unknown_severity_defaults(self):
+        insight = self._make_insight("unknown_sev", ["t1"], 50)
+        _apply_scoring(insight)
+        # Unknown severity defaults to 0.3: 0.3*40=12, cross=0, magnitude=15
+        assert insight.impact_score == 27
+
+    def test_three_tables_still_cross_bonus(self):
+        insight = self._make_insight("info", ["t1", "t2", "t3"], 50)
+        _apply_scoring(insight)
+        # severity=12, cross=30 (>1 table), magnitude=15
+        assert insight.impact_score == 57
+
 
 class TestAnomalyDetection:
     """Test anomaly detection from profiles."""

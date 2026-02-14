@@ -18,15 +18,29 @@ from business_brain.db.discovery_models import (
 logger = logging.getLogger(__name__)
 
 
+def filter_by_confidence(
+    relationships: list[DiscoveredRelationship],
+    min_confidence: float = 0.5,
+) -> list[DiscoveredRelationship]:
+    """Filter relationships by minimum confidence threshold."""
+    return [r for r in relationships if (r.confidence or 0) >= min_confidence]
+
+
 async def find_cross_events(
     session: AsyncSession,
     profiles: list[TableProfile],
     relationships: list[DiscoveredRelationship],
+    min_confidence: float = 0.5,
 ) -> list[Insight]:
     """Find cases where events in one table correlate with metrics in another."""
     insights: list[Insight] = []
 
     if len(profiles) < 2 or not relationships:
+        return insights
+
+    # Filter by confidence
+    relationships = filter_by_confidence(relationships, min_confidence)
+    if not relationships:
         return insights
 
     # Build lookup

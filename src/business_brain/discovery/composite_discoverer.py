@@ -88,6 +88,71 @@ TEMPLATES: list[CompositeTemplate] = [
         description="RFM-based churn prediction from recency and frequency",
         formula_hint="NORMALIZE(days_since_last_order)*0.5 + (1-NORMALIZE(order_count))*0.5",
     ),
+    # --- Manufacturing-specific templates ---
+    CompositeTemplate(
+        name="Furnace Efficiency Score",
+        required_signals=["kva", "output", "temperature"],
+        entity_keywords=["furnace", "heat", "melt", "casting"],
+        description="Furnace efficiency combining power consumption, output tonnage, and operating temperature",
+        formula_hint="output_tonnage / (kva * hours) — lower kWh/ton = higher efficiency",
+    ),
+    CompositeTemplate(
+        name="Material Yield Tracker",
+        required_signals=["input", "output"],
+        entity_keywords=["furnace", "heat", "production", "melt", "rolling"],
+        description="Tracks material yield ratio from input to output weight",
+        formula_hint="(output_weight / input_weight) * 100 — target > 90%",
+    ),
+    CompositeTemplate(
+        name="Equipment Health Index",
+        required_signals=["breakdown", "runtime"],
+        entity_keywords=["machine", "equipment", "furnace", "rolling"],
+        description="Equipment health from breakdown frequency vs runtime hours",
+        formula_hint="runtime_hours / (runtime_hours + breakdown_hours) * 100 — OEE component",
+    ),
+    CompositeTemplate(
+        name="Power Consumption per Ton",
+        required_signals=["power", "tonnage"],
+        entity_keywords=["production", "furnace", "plant", "mill"],
+        description="Specific energy consumption metric — kWh per ton of output",
+        formula_hint="total_power_kwh / total_tonnage — lower is better",
+    ),
+    CompositeTemplate(
+        name="Supplier Quality Score",
+        required_signals=["fe", "rejection"],
+        entity_keywords=["supplier", "vendor", "party", "material"],
+        description="Supplier quality assessment from Fe content and rejection rates",
+        formula_hint="NORMALIZE(fe_content)*0.6 + (1-NORMALIZE(rejection_rate))*0.4",
+    ),
+    # --- Heat-level tracking templates ---
+    CompositeTemplate(
+        name="Heat Cycle Time",
+        required_signals=["tap", "charge"],
+        entity_keywords=["heat", "furnace", "melt", "casting"],
+        description="Tap-to-tap cycle time tracking per heat — measures furnace turnaround",
+        formula_hint="tap_time - charge_time — lower cycle time = higher throughput",
+    ),
+    CompositeTemplate(
+        name="Alloy Addition Efficiency",
+        required_signals=["alloy", "grade"],
+        entity_keywords=["heat", "furnace", "melt", "ladle"],
+        description="Alloy addition efficiency — input alloys vs achieved grade",
+        formula_hint="grade_achieved / target_grade * 100 — higher = less rework",
+    ),
+    CompositeTemplate(
+        name="Slag Rate Monitor",
+        required_signals=["slag", "metal"],
+        entity_keywords=["heat", "furnace", "melt", "casting"],
+        description="Slag-to-metal ratio monitoring per heat — critical for quality",
+        formula_hint="slag_weight / metal_weight * 100 — target < 5%",
+    ),
+    CompositeTemplate(
+        name="Electrode Consumption Tracker",
+        required_signals=["electrode", "tonnage"],
+        entity_keywords=["furnace", "heat", "eaf", "melt"],
+        description="Electrode consumption per ton of steel produced",
+        formula_hint="electrode_kg / tonnage — lower is better, typical: 1.5-3.0 kg/ton",
+    ),
 ]
 
 

@@ -11,3 +11,5 @@ google-genai>=1.0
 python-multipart>=0.0.7
 openpyxl>=3.1
 PyPDF2>=3.0
+gspread>=6.0
+pandas>=2.0

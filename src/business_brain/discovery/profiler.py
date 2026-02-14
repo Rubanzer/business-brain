@@ -134,9 +134,31 @@ def generate_suggestions(profiles: list[TableProfile]) -> list[str]:
         if len(num_cols) >= 2:
             suggestions.append(f"Correlation between {num_cols[0]} and {num_cols[1]}?")
 
+        # Shift-specific suggestions (shift column + numeric)
+        shift_cols = [c for c in cat_cols if "shift" in c.lower()]
+        if shift_cols and num_cols:
+            suggestions.append(f"Compare {num_cols[0]} across {shift_cols[0]}s")
+            if len(num_cols) >= 2:
+                suggestions.append(f"Which {shift_cols[0]} has the best {num_cols[0]} to {num_cols[1]} ratio?")
+
         # domain-specific
         domain = profile.domain_hint or "general"
-        if domain == "procurement":
+        if domain == "manufacturing":
+            if shift_cols:
+                suggestions.append(f"What is the shift-wise production output by {shift_cols[0]}?")
+            else:
+                suggestions.append("What is the shift-wise production output?")
+            if any("power" in c.lower() or "kva" in c.lower() for c in num_cols):
+                suggestions.append("Show power consumption trend and anomalies")
+            if any("heat" in c.lower() for c in cols):
+                suggestions.append("What is the average heat cycle time?")
+        elif domain == "quality":
+            suggestions.append("What is the rejection rate by grade?")
+        elif domain == "logistics":
+            suggestions.append("How many trucks arrived today vs yesterday?")
+        elif domain == "energy":
+            suggestions.append("What is the unit power consumption trend?")
+        elif domain == "procurement":
             suggestions.append("Which supplier offers the best value?")
         elif domain == "sales":
             suggestions.append("What are the top-performing products by revenue?")
@@ -160,3 +182,88 @@ def generate_suggestions(profiles: list[TableProfile]) -> list[str]:
             break
 
     return unique
+
+
+def compute_data_quality_score(profile: TableProfile) -> dict:
+    """Compute a data quality score (0-100) for a profiled table.
+
+    Returns dict with:
+        score: int (0-100)
+        breakdown: dict of individual metric scores
+        issues: list of quality issue descriptions
+    """
+    cls = profile.column_classification
+    if not cls or "columns" not in cls:
+        return {"score": 0, "breakdown": {}, "issues": ["No column classification available"]}
+
+    cols = cls["columns"]
+    row_count = profile.row_count or 0
+
+    if not cols or row_count == 0:
+        return {"score": 0, "breakdown": {}, "issues": ["Empty table"]}
+
+    issues: list[str] = []
+    n_cols = len(cols)
+
+    # 1. Completeness score (based on null rates) — 30% weight
+    null_penalties = []
+    for col_name, info in cols.items():
+        null_count = info.get("null_count", 0)
+        if row_count > 0:
+            null_pct = null_count / row_count
+            null_penalties.append(null_pct)
+            if null_pct > 0.20:
+                issues.append(f"{col_name} has {null_pct*100:.0f}% missing values")
+
+    avg_null_rate = sum(null_penalties) / len(null_penalties) if null_penalties else 0
+    completeness_score = max(0, 100 - int(avg_null_rate * 200))  # 50% nulls → 0 score
+
+    # 2. Uniqueness score (no constant columns) — 20% weight
+    constant_cols = sum(1 for info in cols.values() if info.get("cardinality", 0) == 1)
+    if constant_cols and row_count > 1:
+        uniqueness_score = max(0, 100 - int(constant_cols / n_cols * 100))
+        if constant_cols > 0:
+            issues.append(f"{constant_cols} constant column(s) provide no analytical value")
+    else:
+        uniqueness_score = 100
+
+    # 3. Validity score (no impossible values) — 30% weight
+    validity_deductions = 0
+    for col_name, info in cols.items():
+        sem_type = info.get("semantic_type", "")
+        stats = info.get("stats")
+        if not stats:
+            continue
+
+        if sem_type == "numeric_currency" and stats.get("min", 0) < 0:
+            validity_deductions += 1
+            issues.append(f"{col_name}: negative values in currency column")
+        if sem_type == "numeric_percentage":
+            if stats.get("max", 0) > 100 or stats.get("min", 0) < 0:
+                validity_deductions += 1
+                issues.append(f"{col_name}: percentage values outside 0-100")
+
+    validity_score = max(0, 100 - validity_deductions * 30)
+
+    # 4. Diversity score (mix of column types) — 20% weight
+    types_present = {info.get("semantic_type") for info in cols.values()}
+    diversity_score = min(100, len(types_present) * 25)
+
+    # Weighted total
+    total = int(
+        completeness_score * 0.30
+        + uniqueness_score * 0.20
+        + validity_score * 0.30
+        + diversity_score * 0.20
+    )
+
+    return {
+        "score": min(total, 100),
+        "breakdown": {
+            "completeness": completeness_score,
+            "uniqueness": uniqueness_score,
+            "validity": validity_score,
+            "diversity": diversity_score,
+        },
+        "issues": issues,
+    }

@@ -14,12 +14,12 @@ logger = logging.getLogger(__name__)
 async def build_narratives(insights: list[Insight]) -> list[Insight]:
     """Use Gemini LLM to connect related insights into narrative stories.
 
-    Only runs when there are 3+ non-story insights.
+    Only runs when there are 2+ non-story insights.
     Groups insights by shared tables/entities before sending to LLM.
     """
     # Filter out existing stories
     non_stories = [i for i in insights if i.insight_type != "story"]
-    if len(non_stories) < 3:
+    if len(non_stories) < 2:
         return []
 
     # Group by shared tables

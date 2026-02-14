@@ -223,4 +223,121 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
             ],
         ))
 
+    # 8. Domain-specific anomalies for manufacturing
+    domain = (profile.domain_hint or "general").lower()
+    if domain in ("manufacturing", "energy"):
+        results.extend(_manufacturing_anomalies(profile, cols))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Manufacturing-specific anomaly checks
+# ---------------------------------------------------------------------------
+
+# Known manufacturing column patterns and their expected ranges
+_MANUFACTURING_RANGES: list[dict] = [
+    {
+        "keywords": ["temperature", "temp"],
+        "name": "Furnace Temperature",
+        "min": 1400,
+        "max": 1700,
+        "unit": "°C",
+        "context": "steelmaking furnace operating range",
+    },
+    {
+        "keywords": ["power_factor", "pf"],
+        "name": "Power Factor",
+        "min": 0.80,
+        "max": 1.0,
+        "unit": "",
+        "context": "electrical power factor should be ≥ 0.85",
+    },
+    {
+        "keywords": ["kva", "power_kva"],
+        "name": "KVA Rating",
+        "min": 0,
+        "max": 2000,
+        "unit": "kVA",
+        "context": "furnace power consumption",
+    },
+]
+
+
+def _manufacturing_anomalies(
+    profile: TableProfile,
+    cols: dict,
+) -> list[Insight]:
+    """Check for manufacturing-specific anomalies based on column names and values."""
+    results: list[Insight] = []
+
+    for col_name, info in cols.items():
+        stats = info.get("stats")
+        if not stats:
+            continue
+
+        col_lower = col_name.lower()
+        for rule in _MANUFACTURING_RANGES:
+            matched = any(kw in col_lower for kw in rule["keywords"])
+            if not matched:
+                continue
+
+            val_min = stats.get("min")
+            val_max = stats.get("max")
+
+            if val_min is not None and val_min < rule["min"]:
+                results.append(Insight(
+                    id=str(uuid.uuid4()),
+                    insight_type="anomaly",
+                    severity="warning",
+                    impact_score=55,
+                    title=f"{rule['name']} below expected range in {profile.table_name}.{col_name}",
+                    description=(
+                        f"{col_name} has minimum value {val_min}{rule['unit']} "
+                        f"which is below the expected range "
+                        f"({rule['min']}-{rule['max']}{rule['unit']}). "
+                        f"Context: {rule['context']}."
+                    ),
+                    source_tables=[profile.table_name],
+                    source_columns=[col_name],
+                    evidence={
+                        "value": val_min,
+                        "expected_min": rule["min"],
+                        "expected_max": rule["max"],
+                        "rule": rule["name"],
+                    },
+                    suggested_actions=[
+                        f"Check if {col_name} readings below {rule['min']}{rule['unit']} are measurement errors",
+                        f"Investigate operating conditions during low {rule['name']} readings",
+                    ],
+                ))
+
+            if val_max is not None and val_max > rule["max"]:
+                results.append(Insight(
+                    id=str(uuid.uuid4()),
+                    insight_type="anomaly",
+                    severity="warning",
+                    impact_score=55,
+                    title=f"{rule['name']} above expected range in {profile.table_name}.{col_name}",
+                    description=(
+                        f"{col_name} has maximum value {val_max}{rule['unit']} "
+                        f"which is above the expected range "
+                        f"({rule['min']}-{rule['max']}{rule['unit']}). "
+                        f"Context: {rule['context']}."
+                    ),
+                    source_tables=[profile.table_name],
+                    source_columns=[col_name],
+                    evidence={
+                        "value": val_max,
+                        "expected_min": rule["min"],
+                        "expected_max": rule["max"],
+                        "rule": rule["name"],
+                    },
+                    suggested_actions=[
+                        f"Check if {col_name} readings above {rule['max']}{rule['unit']} indicate equipment issues",
+                        f"Review safety limits for {rule['name']}",
+                    ],
+                ))
+            break  # Only match first rule per column
+
     return results

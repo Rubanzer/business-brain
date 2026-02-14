@@ -3,9 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
-
-from business_brain.action.api import app
 from business_brain.db.connection import get_session
 
 
@@ -15,19 +12,40 @@ def _mock_session_override():
     yield session
 
 
-app.dependency_overrides[get_session] = _mock_session_override
+@pytest.fixture()
+def client():
+    """Create a TestClient that skips real DB startup events and background discovery."""
+    with patch("business_brain.action.api._run_discovery_background", new_callable=AsyncMock):
+        from business_brain.action.api import app
 
-client = TestClient(app)
+        # Neutralise startup/shutdown handlers that need a live database
+        original_startup = list(app.router.on_startup)
+        original_shutdown = list(app.router.on_shutdown)
+        app.router.on_startup.clear()
+        app.router.on_shutdown.clear()
+
+        app.dependency_overrides[get_session] = _mock_session_override
+
+        from fastapi.testclient import TestClient
+
+        with TestClient(app) as c:
+            yield c
+
+        app.dependency_overrides.clear()
+        app.router.on_startup = original_startup
+        app.router.on_shutdown = original_shutdown
 
 
-def test_health():
+def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["version"] == "3.0.0"
 
 
 @patch("business_brain.action.api.build_graph")
-def test_analyze(mock_build):
+def test_analyze(mock_build, client):
     mock_graph = MagicMock()
     mock_graph.ainvoke = AsyncMock(return_value={
         "question": "revenue trends?",
@@ -48,7 +66,7 @@ def test_analyze(mock_build):
 
 
 @patch("business_brain.action.api.ingest_context", new_callable=AsyncMock)
-def test_context(mock_ingest):
+def test_context(mock_ingest, client):
     mock_ingest.return_value = [7]
 
     resp = client.post("/context", json={"text": "We sell widgets", "source": "test"})
@@ -60,7 +78,7 @@ def test_context(mock_ingest):
 
 
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
-def test_upload_csv(mock_upsert):
+def test_upload_csv(mock_upsert, client):
     mock_upsert.return_value = 3
 
     csv_content = b"id,name,value\n1,alpha,10\n2,beta,20\n3,gamma,30"
@@ -74,7 +92,7 @@ def test_upload_csv(mock_upsert):
 
 
 @patch("business_brain.cognitive.data_engineer_agent.DataEngineerAgent.invoke")
-def test_upload_file(mock_invoke):
+def test_upload_file(mock_invoke, client):
     mock_invoke.return_value = {
         "table_name": "sales",
         "file_type": "csv",
@@ -98,7 +116,7 @@ def test_upload_file(mock_invoke):
 
 
 @patch("business_brain.action.api.metadata_store")
-def test_list_metadata(mock_store):
+def test_list_metadata(mock_store, client):
     entry = MagicMock()
     entry.table_name = "sales"
     entry.description = "Sales data"
@@ -113,7 +131,7 @@ def test_list_metadata(mock_store):
 
 
 @patch("business_brain.action.api.metadata_store")
-def test_get_table_metadata(mock_store):
+def test_get_table_metadata(mock_store, client):
     entry = MagicMock()
     entry.table_name = "orders"
     entry.description = "Order records"
@@ -126,7 +144,7 @@ def test_get_table_metadata(mock_store):
 
 
 @patch("business_brain.action.api.metadata_store")
-def test_get_table_metadata_not_found(mock_store):
+def test_get_table_metadata_not_found(mock_store, client):
     mock_store.get_by_table = AsyncMock(return_value=None)
 
     resp = client.get("/metadata/nonexistent")

@@ -23,5 +23,11 @@ class Settings(BaseSettings):
     slack_webhook_url: str = ""
     whatsapp_webhook_url: str = ""
 
+    # Google Sheets
+    google_service_account_json: str = ""
+
+    # Telegram
+    telegram_bot_token: str = ""
+
 
 settings = Settings()
