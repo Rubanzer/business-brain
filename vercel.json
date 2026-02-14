@@ -42,6 +42,15 @@
     { "src": "/data/(.*)", "dest": "api/index.py" },
     { "src": "/metadata/(.*)", "dest": "api/index.py" },
     { "src": "/metadata", "dest": "api/index.py" },
+    { "src": "/relationships", "dest": "api/index.py" },
+    { "src": "/data-quality", "dest": "api/index.py" },
+    { "src": "/lineage/(.*)", "dest": "api/index.py" },
+    { "src": "/lineage", "dest": "api/index.py" },
+    { "src": "/tables/(.*)", "dest": "api/index.py" },
+    { "src": "/recommendations", "dest": "api/index.py" },
+    { "src": "/scenarios/(.*)", "dest": "api/index.py" },
+    { "src": "/goals/(.*)", "dest": "api/index.py" },
+    { "src": "/goals", "dest": "api/index.py" },
     { "src": "/(.*)", "dest": "public/$1" }
   ]
 }
