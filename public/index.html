@@ -1574,6 +1574,25 @@
   <script>
     const API = window.location.origin;
 
+    // Safe JSON fetch — handles non-JSON error responses (e.g. Vercel 500 HTML pages)
+    async function apiFetch(url, options) {
+      const res = await fetch(url, options);
+      const ct = (res.headers.get('content-type') || '');
+      if (!res.ok) {
+        if (ct.includes('application/json')) {
+          const d = await res.json();
+          throw new Error(d.detail || d.error || 'Server error ' + res.status);
+        }
+        throw new Error('Server error (' + res.status + ')');
+      }
+      if (ct.includes('application/json')) return res.json();
+      // Some endpoints return JSON without proper content-type
+      const text = await res.text();
+      try { return JSON.parse(text); } catch (_) {
+        throw new Error('Invalid response from server');
+      }
+    }
+
     // Session management
     let sessionId = localStorage.getItem('bb_session_id');
     if (!sessionId) {
@@ -1728,12 +1747,11 @@
         const payload = { question: q, session_id: sessionId };
         if (parentFinding) payload.parent_finding = parentFinding;
 
-        const res = await fetch(`${API}/analyze`, {
+        const data = await apiFetch(`${API}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        const data = await res.json();
 
         // Update session_id if server returns one
         if (data.session_id) {
@@ -2178,12 +2196,11 @@
           session_id: sessionId,
           parent_finding: finding,
         };
-        const res = await fetch(`${API}/analyze`, {
+        const data = await apiFetch(`${API}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const data = await res.json();
 
         if (data.session_id) {
           sessionId = data.session_id;
@@ -2354,8 +2371,7 @@
         let url = `${API}/data/${tableName}?page=${page}&page_size=50`;
         if (sortBy) url += `&sort_by=${sortBy}&sort_dir=${sortDir}`;
 
-        const res = await fetch(url);
-        const data = await res.json();
+        const data = await apiFetch(url);
 
         if (data.error) {
           body.innerHTML = `<p style="color:var(--red)">${esc(data.error)}</p>`;
@@ -2424,12 +2440,11 @@
         td.textContent = newVal;
         if (newVal !== oldVal) {
           try {
-            const res = await fetch(`${API}/data/${tableName}`, {
+            const data = await apiFetch(`${API}/data/${tableName}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ row_id: rowId, column, value: newVal })
             });
-            const data = await res.json();
             if (data.error) {
               td.textContent = oldVal;
               toast('Save failed: ' + data.error);
@@ -2463,12 +2478,11 @@
       if (!text) return;
 
       try {
-        const res = await fetch(`${API}/context`, {
+        const data = await apiFetch(`${API}/context`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, source })
         });
-        const data = await res.json();
         const body = document.getElementById('context-body');
         body.innerHTML = `<p>Stored context <strong>${data.chunks} chunk${data.chunks !== 1 ? 's' : ''}</strong> (ids: ${data.ids.join(', ')}) from source <span class="badge badge-accent">${esc(data.source)}</span></p>` + body.innerHTML;
         document.getElementById('ctx-text').value = '';
@@ -2489,8 +2503,7 @@
       form.append('file', file);
 
       try {
-        const res = await fetch(`${API}/context/file`, { method: 'POST', body: form });
-        const data = await res.json();
+        const data = await apiFetch(`${API}/context/file`, { method: 'POST', body: form });
         const body = document.getElementById('context-body');
         if (data.error) {
           body.innerHTML = `<p style="color:var(--red);">${esc(data.error)}</p>` + body.innerHTML;
@@ -2512,8 +2525,7 @@
       body.innerHTML = '<p style="color:var(--muted)"><span class="spinner"></span> Loading...</p>';
 
       try {
-        const res = await fetch(`${API}/metadata`);
-        const data = await res.json();
+        const data = await apiFetch(`${API}/metadata`);
 
         if (!data.length) {
           body.innerHTML = '<p style="color:var(--muted)">No metadata found. Seed some data first.</p>';
@@ -2573,8 +2585,7 @@
       form.append('file', file);
 
       try {
-        const res = await fetch(`${API}/upload`, { method: 'POST', body: form });
-        const data = await res.json();
+        const data = await apiFetch(`${API}/upload`, { method: 'POST', body: form });
 
         if (data.detail || data.error) {
           status.innerHTML = '<span class="badge badge-red">ERROR</span>';
@@ -2652,8 +2663,7 @@
     async function deleteTable(tableName) {
       if (!confirm(`Delete table "${tableName}" and ALL its dependent data (metadata, vectors, insights, profiles, alerts, reports)?\n\nThis cannot be undone.`)) return;
       try {
-        const res = await fetch(`${API}/tables/${encodeURIComponent(tableName)}`, { method: 'DELETE' });
-        const data = await res.json();
+        const data = await apiFetch(`${API}/tables/${encodeURIComponent(tableName)}`, { method: 'DELETE' });
         if (data.error) {
           toast('Delete failed: ' + data.error);
         } else {
@@ -2686,8 +2696,7 @@
 
       try {
         // Load discovery status
-        const statusRes = await fetch(`${API}/discovery/status`);
-        const statusData = await statusRes.json();
+        const statusData = await apiFetch(`${API}/discovery/status`);
         const statsEl = document.getElementById('disc-stats');
 
         if (statusData.status !== 'no_runs') {
@@ -2703,8 +2712,7 @@
 
         // Load discovery history (last 5 runs)
         try {
-          const histRes = await fetch(`${API}/discovery/history?limit=5`);
-          const history = await histRes.json();
+          const history = await apiFetch(`${API}/discovery/history?limit=5`);
           if (history.length > 1) {
             let histHtml = '<div style="font-size:0.65rem;color:var(--muted);margin-top:4px;display:flex;gap:0.5rem;flex-wrap:wrap;">';
             for (const run of history.slice(1)) {
@@ -2724,8 +2732,7 @@
         loadRecommendations().catch(() => {});
 
         // Load feed
-        const feedRes = await fetch(`${API}/feed`);
-        const insights = await feedRes.json();
+        const insights = await apiFetch(`${API}/feed`);
         feedInsights = insights;
 
         if (!insights.length) {
@@ -2975,8 +2982,7 @@
     async function loadRecommendations() {
       const container = document.getElementById('recommendations-bar');
       try {
-        const resp = await fetch(API + '/recommendations');
-        const data = await resp.json();
+        const data = await apiFetch(API + '/recommendations');
         if (!data.recommendations || data.recommendations.length === 0) {
           container.style.display = 'none';
           return;
@@ -3015,8 +3021,7 @@
         const poll = setInterval(async () => {
           attempts++;
           try {
-            const res = await fetch(`${API}/discovery/status`);
-            const data = await res.json();
+            const data = await apiFetch(`${API}/discovery/status`);
             if (data.status === 'completed' || data.status === 'failed' || attempts > 60) {
               clearInterval(poll);
               btn.disabled = false;
@@ -3082,12 +3087,11 @@
       if (!name) { toast('Enter a report name'); return; }
 
       try {
-        const res = await fetch(`${API}/feed/${_deployInsightId}/deploy`, {
+        const data = await apiFetch(`${API}/feed/${_deployInsightId}/deploy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name }),
         });
-        const data = await res.json();
         if (data.error) {
           toast('Deploy failed: ' + data.error);
         } else {
@@ -3107,8 +3111,7 @@
       body.innerHTML = '<p style="color:var(--muted)"><span class="spinner"></span> Loading...</p>';
 
       try {
-        const res = await fetch(`${API}/reports`);
-        const reports = await res.json();
+        const reports = await apiFetch(`${API}/reports`);
 
         if (!reports.length) {
           body.innerHTML = '<div class="feed-empty">No deployed reports yet. Deploy insights from the Feed tab.</div>';
@@ -3152,8 +3155,7 @@
       modal.classList.add('active');
 
       try {
-        const res = await fetch(`${API}/reports/${reportId}`);
-        const report = await res.json();
+        const report = await apiFetch(`${API}/reports/${reportId}`);
 
         if (report.error) {
           body.innerHTML = `<p style="color:var(--red);">${esc(report.error)}</p>`;
@@ -3201,8 +3203,7 @@
       btn.disabled = true;
       btn.textContent = 'Refreshing...';
       try {
-        const res = await fetch(`${API}/reports/${reportId}/refresh`, { method: 'POST' });
-        const data = await res.json();
+        const data = await apiFetch(`${API}/reports/${reportId}/refresh`, { method: 'POST' });
         if (data.error) {
           toast('Refresh failed: ' + data.error);
         } else {
@@ -3251,8 +3252,7 @@
     // ---------------------------------------------------------------------------
     async function loadSuggestions() {
       try {
-        const res = await fetch(`${API}/suggestions`);
-        const data = await res.json();
+        const data = await apiFetch(`${API}/suggestions`);
         const pills = document.getElementById('suggestion-pills');
 
         if (data.suggestions?.length) {
@@ -3429,8 +3429,7 @@
       body.innerHTML = '<div class="feed-empty">Loading quality scores...</div>';
 
       try {
-        const resp = await fetch(API + '/data-quality');
-        const scores = await resp.json();
+        const scores = await apiFetch(API + '/data-quality');
 
         if (!scores.length || scores.error) {
           body.innerHTML = '<div class="feed-empty">No profiled tables found. Upload data and run a discovery scan first.</div>';
@@ -3586,8 +3585,7 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/time-analysis`, {method: 'POST'});
-        const data = await resp.json();
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/time-analysis`, {method: 'POST'});
 
         if (!data.analysis || data.analysis.length === 0) {
           body.innerHTML = `<div class="feed-empty">${esc(data.message || 'No temporal+numeric column pairs found for time analysis.')}</div>`;
@@ -3652,8 +3650,7 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const data = await resp.json();
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
 
         if (!data.columns || data.columns.length === 0) {
           body.innerHTML = '<div class="feed-empty">No column data available.</div>';
@@ -3695,8 +3692,7 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/forecast`, {method: 'POST'});
-        const data = await resp.json();
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/forecast`, {method: 'POST'});
 
         if (data.error || !data.forecasts || data.forecasts.length === 0) {
           body.innerHTML = `<div class="feed-empty">${esc(data.error || 'No forecast data available.')}</div>`;
@@ -3741,8 +3737,7 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/correlations`, {method: 'POST'});
-        const data = await resp.json();
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/correlations`, {method: 'POST'});
 
         if (data.error) {
           body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`;
@@ -3815,8 +3810,7 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/distribution`, {method: 'POST'});
-        const data = await resp.json();
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/distribution`, {method: 'POST'});
 
         if (data.error || !data.distributions || data.distributions.length === 0) {
           body.innerHTML = `<div class="feed-empty">${esc(data.error || 'No distribution data.')}</div>`;
@@ -3893,8 +3887,7 @@
 
       try {
         // First get columns to find numeric ones
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const numericCols = (colData.columns || []).filter(c =>
           c.semantic_type && (c.semantic_type.startsWith('numeric') || c.semantic_type === 'identifier')
         ).map(c => c.name);
@@ -3906,12 +3899,11 @@
 
         let html = '';
         for (const col of numericCols.slice(0, 5)) {
-          const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/classify-anomalies`, {
+          const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/classify-anomalies`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({column: col, threshold_std: 2.0}),
           });
-          const data = await resp.json();
 
           html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.8rem;margin-bottom:0.6rem;">`;
           html += `<div style="font-weight:600;font-size:0.8rem;margin-bottom:0.3rem;">${esc(col)}</div>`;
@@ -3959,8 +3951,7 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/profile-report`);
-        const data = await resp.json();
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/profile-report`);
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
         let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">`;
@@ -4006,8 +3997,7 @@
 
       try {
         // Get columns to find categorical + numeric pairs
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const catCols = (colData.columns || []).filter(c => c.semantic_type === 'categorical').map(c => c.name);
         const numCols = (colData.columns || []).filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
 
@@ -4019,12 +4009,11 @@
         // Run benchmark for first cat × first num pair
         const groupCol = catCols[0];
         const metricCol = numCols[0];
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/benchmark`, {
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/benchmark`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({group_column: groupCol, metric_column: metricCol}),
         });
-        const data = await resp.json();
 
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
@@ -4071,8 +4060,7 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/validate`, {method: 'POST'});
-        const data = await resp.json();
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/validate`, {method: 'POST'});
         if (data.error || data.message) {
           body.innerHTML = `<div class="feed-empty">${esc(data.error || data.message)}</div>`;
           return;
@@ -4119,8 +4107,7 @@
       overlay.style.display = 'block';
 
       try {
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const numCols = (colData.columns || []).filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
 
         if (numCols.length === 0) {
@@ -4130,12 +4117,11 @@
 
         let html = '';
         for (const col of numCols.slice(0, 4)) {
-          const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/kpis`, {
+          const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/kpis`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({column: col}),
           });
-          const data = await resp.json();
           if (data.error) continue;
 
           html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
@@ -4174,8 +4160,7 @@
       overlay.style.display = 'block';
 
       try {
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const cols = colData.columns || [];
         const catCols = cols.filter(c => c.semantic_type && (c.semantic_type.startsWith('categorical') || c.semantic_type === 'identifier')).map(c => c.name);
         const numCols = cols.filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
@@ -4190,12 +4175,11 @@
         const metricCol = numCols[0];
 
         body.innerHTML = '<div class="feed-empty">Computing Pareto...</div>';
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/pareto`, {
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/pareto`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({group_column: groupCol, metric_column: metricCol}),
         });
-        const data = await resp.json();
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
         let html = '';
@@ -4259,8 +4243,7 @@
       overlay.style.display = 'block';
 
       try {
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const numCols = (colData.columns || []).filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
 
         if (numCols.length === 0) {
@@ -4271,12 +4254,11 @@
         let html = '';
         for (const col of numCols.slice(0, 5)) {
           body.innerHTML = `<div class="feed-empty">Computing stats for ${col}...</div>` + html;
-          const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/stats`, {
+          const s = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/stats`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({column: col}),
           });
-          const s = await resp.json();
           if (s.error) continue;
 
           const normalityColor = s.normality === 'normal' ? 'var(--green)' : s.normality === 'approximately_normal' ? 'var(--yellow)' : 'var(--red)';
@@ -4349,12 +4331,11 @@
       body.innerHTML = '<div class="feed-empty">Evaluating scenarios...</div>';
 
       try {
-        const resp = await fetch(API + '/scenarios/evaluate', {
+        const data = await apiFetch(API + '/scenarios/evaluate', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({scenarios, formula, base_values: Object.keys(base).length > 0 ? base : null}),
         });
-        const data = await resp.json();
 
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
@@ -4422,12 +4403,11 @@
       body.innerHTML = `<div class="feed-empty">Finding breakeven for ${variable}...</div>`;
 
       try {
-        const resp = await fetch(API + '/scenarios/breakeven', {
+        const data = await apiFetch(API + '/scenarios/breakeven', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({formula, variable, base_values: base, target: 0, search_range: [-10000, 10000]}),
         });
-        const data = await resp.json();
 
         let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;">`;
         html += `<div style="font-weight:700;font-size:0.85rem;margin-bottom:0.3rem;">Breakeven Analysis</div>`;
@@ -4455,12 +4435,11 @@
       body.innerHTML = `<div class="feed-empty">Computing sensitivity for ${variable}...</div>`;
 
       try {
-        const resp = await fetch(API + '/scenarios/sensitivity', {
+        const data = await apiFetch(API + '/scenarios/sensitivity', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({formula, variable, base_values: base}),
         });
-        const data = await resp.json();
 
         let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
         html += `<div style="font-weight:700;font-size:0.85rem;margin-bottom:0.3rem;">Sensitivity: ${esc(data.variable)}</div>`;
@@ -4504,8 +4483,7 @@
       overlay.style.display = 'block';
 
       try {
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const numCols = (colData.columns || []).filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
 
         if (numCols.length < 1) {
@@ -4514,12 +4492,11 @@
         }
 
         body.innerHTML = '<div class="feed-empty">Clustering rows...</div>';
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/segment`, {
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/segment`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({features: numCols.slice(0, 5), n_segments: 3}),
         });
-        const data = await resp.json();
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
         let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
@@ -4565,8 +4542,7 @@
       overlay.style.display = 'block';
 
       try {
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const numCols = (colData.columns || []).filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
 
         if (numCols.length === 0) {
@@ -4577,12 +4553,11 @@
         let html = '';
         for (const col of numCols.slice(0, 3)) {
           body.innerHTML = `<div class="feed-empty">Decomposing ${col}...</div>` + html;
-          const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/decompose`, {
+          const d = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/decompose`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({column: col}),
           });
-          const d = await resp.json();
           if (d.error) continue;
 
           const dirColor = d.trend_direction === 'increasing' ? 'var(--green)' : d.trend_direction === 'decreasing' ? 'var(--red)' : 'var(--muted)';
@@ -4619,8 +4594,7 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/dictionary`);
-        const data = await resp.json();
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/dictionary`);
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
         let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
@@ -4668,12 +4642,11 @@
       overlay.style.display = 'block';
 
       try {
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/quality-score`, {
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/quality-score`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: '{}',
         });
-        const data = await resp.json();
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
         const gradeColor = {'A': 'var(--green)', 'B': '#4caf50', 'C': 'var(--yellow)', 'D': '#ff9800', 'F': 'var(--red)'}[data.grade] || 'var(--muted)';
@@ -4737,8 +4710,7 @@
       overlay.style.display = 'block';
 
       try {
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const cols = colData.columns || [];
         const catCols = cols.filter(c => c.semantic_type && (c.semantic_type.startsWith('categorical') || c.semantic_type === 'identifier')).map(c => c.name);
         const numCols = cols.filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
@@ -4749,12 +4721,11 @@
         }
 
         body.innerHTML = '<div class="feed-empty">Computing ABC classification...</div>';
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/abc`, {
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/abc`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({name_column: catCols[0], value_column: numCols[0]}),
         });
-        const data = await resp.json();
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
         const catColors = {'A': 'var(--red)', 'B': 'var(--yellow)', 'C': 'var(--green)'};
@@ -4802,8 +4773,7 @@
       overlay.style.display = 'block';
 
       try {
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const numCols = (colData.columns || []).filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
 
         if (numCols.length === 0) {
@@ -4814,12 +4784,11 @@
         let html = '';
         for (const col of numCols.slice(0, 3)) {
           body.innerHTML = `<div class="feed-empty">Computing rolling stats for ${col}...</div>` + html;
-          const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/rolling`, {
+          const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/rolling`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({column: col, window: 5}),
           });
-          const data = await resp.json();
           if (data.error) continue;
 
           html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
@@ -4854,8 +4823,7 @@
       overlay.style.display = 'block';
 
       try {
-        const colRes = await fetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
-        const colData = await colRes.json();
+        const colData = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/columns`);
         const cols = colData.columns || [];
         const catCols = cols.filter(c => c.semantic_type && (c.semantic_type.startsWith('categorical') || c.semantic_type === 'identifier')).map(c => c.name);
         const numCols = cols.filter(c => c.semantic_type && c.semantic_type.startsWith('numeric')).map(c => c.name);
@@ -4866,12 +4834,11 @@
         }
 
         body.innerHTML = '<div class="feed-empty">Building pivot table...</div>';
-        const resp = await fetch(API + `/tables/${encodeURIComponent(tableName)}/pivot`, {
+        const data = await apiFetch(API + `/tables/${encodeURIComponent(tableName)}/pivot`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({row_field: catCols[0], col_field: catCols[1], value_field: numCols[0], agg_func: 'sum'}),
         });
-        const data = await resp.json();
         if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
 
         let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
@@ -4923,8 +4890,7 @@
       body.innerHTML = '<div class="feed-empty">Loading audit log...</div>';
 
       try {
-        const resp = await fetch(API + '/changes');
-        const changes = await resp.json();
+        const changes = await apiFetch(API + '/changes');
 
         if (!changes.length || changes.error) {
           body.innerHTML = '<div class="feed-empty">No data changes recorded yet.</div>';
@@ -4965,8 +4931,7 @@
       body.innerHTML = '<div class="feed-empty">Loading relationships...</div>';
 
       try {
-        const resp = await fetch(API + '/relationships');
-        const rels = await resp.json();
+        const rels = await apiFetch(API + '/relationships');
 
         if (!rels.length) {
           body.innerHTML = '<div class="feed-empty">No cross-table relationships discovered yet. Run a discovery scan first.</div>';
@@ -5012,8 +4977,7 @@
       body.innerHTML = '<div class="feed-empty">Loading lineage data...</div>';
 
       try {
-        const resp = await fetch(API + '/lineage');
-        const data = await resp.json();
+        const data = await apiFetch(API + '/lineage');
 
         let html = `<div style="font-size:0.75rem;color:var(--muted);margin-bottom:0.6rem;">`;
         html += `${data.table_count || 0} tables | ${data.insight_count || 0} insights | ${data.report_count || 0} reports | ${data.edge_count || 0} edges`;
@@ -5108,8 +5072,7 @@
       // Try to get current values from the data quality endpoint
       let currentValues = {};
       try {
-        const qRes = await fetch(API + '/data-quality');
-        const qData = await qRes.json();
+        const qData = await apiFetch(API + '/data-quality');
         if (qData.tables) {
           for (const t of qData.tables) {
             if (t.stats) {
@@ -5125,12 +5088,11 @@
       } catch (e) { /* optional */ }
 
       try {
-        const resp = await fetch(API + '/goals/evaluate', {
+        const data = await apiFetch(API + '/goals/evaluate', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ goals: savedGoals, current_values: currentValues }),
         });
-        const data = await resp.json();
 
         // Health bar
         if (data.health) {
@@ -5191,11 +5153,10 @@
       const amt = cols.find(c => /cost|amount|spend|value|total/i.test(c)) || cols[1];
       if (!cat || !amt) return toast('Need category + amount columns');
       try {
-        const resp = await fetch(API + '/tables/' + tableName + '/cost-breakdown', {
+        const data = await apiFetch(API + '/tables/' + tableName + '/cost-breakdown', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({category_column: cat, amount_column: amt})
         });
-        const data = await resp.json();
         if (data.error) return toast(data.error);
         let html = `<h3>Cost Breakdown — ${esc(tableName)}</h3>`;
         html += `<p>${esc(data.summary)}</p>`;
@@ -5215,11 +5176,10 @@
       const reason = cols.find(c => /reason|cause|fault|failure/i.test(c));
       if (!machine || !duration) return toast('Need machine + duration columns');
       try {
-        const resp = await fetch(API + '/tables/' + tableName + '/downtime', {
+        const data = await apiFetch(API + '/tables/' + tableName + '/downtime', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({machine_column: machine, duration_column: duration, reason_column: reason})
         });
-        const data = await resp.json();
         if (data.error) return toast(data.error);
         let html = `<h3>Downtime Analysis — ${esc(tableName)}</h3>`;
         html += `<p>${esc(data.summary)}</p>`;
@@ -5235,11 +5195,10 @@
       const capacity = cols.find(c => /capacity|max|target|limit/i.test(c)) || cols[2];
       if (!entity || !actual || !capacity) return toast('Need entity + actual + capacity columns');
       try {
-        const resp = await fetch(API + '/tables/' + tableName + '/capacity', {
+        const data = await apiFetch(API + '/tables/' + tableName + '/capacity', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({entity_column: entity, actual_column: actual, capacity_column: capacity})
         });
-        const data = await resp.json();
         if (data.error) return toast(data.error);
         let html = `<h3>Capacity Utilization — ${esc(tableName)}</h3>`;
         html += `<p>${esc(data.summary)}</p>`;
@@ -5261,11 +5220,10 @@
       const qual = cols.find(c => /qual/i.test(c));
       if (!entity || !avail || !perf || !qual) return toast('Need entity + availability + performance + quality columns');
       try {
-        const resp = await fetch(API + '/tables/' + tableName + '/oee', {
+        const data = await apiFetch(API + '/tables/' + tableName + '/oee', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({entity_column: entity, availability_column: avail, performance_column: perf, quality_column: qual})
         });
-        const data = await resp.json();
         if (data.error) return toast(data.error);
         let html = `<h3>OEE Analysis — ${esc(tableName)}</h3>`;
         html += `<p>${esc(data.summary)}</p>`;
@@ -5285,11 +5243,10 @@
       const target = cols.find(c => /target|plan/i.test(c));
       if (!shift || !output) return toast('Need shift + output columns');
       try {
-        const resp = await fetch(API + '/tables/' + tableName + '/shift-performance', {
+        const data = await apiFetch(API + '/tables/' + tableName + '/shift-performance', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({shift_column: shift, output_column: output, target_column: target})
         });
-        const data = await resp.json();
         if (data.error) return toast(data.error);
         let html = `<h3>Shift Performance — ${esc(tableName)}</h3>`;
         html += `<p>${esc(data.summary)}</p>`;
@@ -5311,11 +5268,10 @@
       const rop = cols.find(c => /reorder|rop/i.test(c));
       if (!item || !qty) return toast('Need item + quantity columns');
       try {
-        const resp = await fetch(API + '/tables/' + tableName + '/inventory-health', {
+        const data = await apiFetch(API + '/tables/' + tableName + '/inventory-health', {
           method: 'POST', headers: {'Content-Type':'application/json'},
           body: JSON.stringify({item_column: item, quantity_column: qty, min_column: min_c, max_column: max_c, reorder_column: rop})
         });
-        const data = await resp.json();
         if (data.error) return toast(data.error);
         let html = `<h3>Inventory Health — ${esc(tableName)}</h3>`;
         html += `<p>${esc(data.summary)}</p>`;
@@ -5337,8 +5293,7 @@
 
     async function _getColumns(tableName) {
       try {
-        const resp = await fetch(API + '/tables/' + tableName + '/columns');
-        const data = await resp.json();
+        const data = await apiFetch(API + '/tables/' + tableName + '/columns');
         return data.columns || [];
       } catch { return []; }
     }
@@ -5350,8 +5305,7 @@
 
     async function loadAlerts() {
       try {
-        const resp = await fetch(API + '/alerts');
-        const rules = await resp.json();
+        const rules = await apiFetch(API + '/alerts');
         const body = document.getElementById('alerts-body');
 
         if (!rules.length || rules.error) {
@@ -5394,12 +5348,11 @@
 
       // Step 1: Parse the alert (don't deploy yet)
       try {
-        const resp = await fetch(API + '/alerts/parse', {
+        const data = await apiFetch(API + '/alerts/parse', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ text }),
         });
-        const data = await resp.json();
         if (data.error) return toast('Error: ' + data.error);
 
         // Store parsed rule for confirmation step
@@ -5416,12 +5369,11 @@
       if (!pendingAlertRule) return;
 
       try {
-        const resp = await fetch(API + '/alerts/deploy', {
+        const data = await apiFetch(API + '/alerts/deploy', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(pendingAlertRule),
         });
-        const data = await resp.json();
         if (data.error) return toast('Error: ' + data.error);
 
         toast('Alert deployed: ' + (data.parsed_rule?.name || ''));
@@ -5457,8 +5409,7 @@
 
     async function previewAlert(id) {
       try {
-        const resp = await fetch(API + '/alerts/' + id + '/preview');
-        const preview = await resp.json();
+        const preview = await apiFetch(API + '/alerts/' + id + '/preview');
         if (preview.error) { toast(preview.error); return; }
 
         const trigger = preview.would_trigger ? 'YES - would trigger' : 'No - would not trigger';
@@ -5496,8 +5447,7 @@
     // -----------------------------------------------------------------------
     async function loadSources() {
       try {
-        const resp = await fetch(API + '/sources');
-        const sources = await resp.json();
+        const sources = await apiFetch(API + '/sources');
         const body = document.getElementById('sources-body');
 
         if (!sources.length || sources.error) {
@@ -5561,7 +5511,7 @@
       if (!url) return toast('Enter a Google Sheets URL');
 
       try {
-        const resp = await fetch(API + '/sources/google-sheet', {
+        const data = await apiFetch(API + '/sources/google-sheet', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
@@ -5572,12 +5522,11 @@
             sync_frequency_minutes: parseInt(document.getElementById('src-freq').value) || 5,
           }),
         });
-        const data = await resp.json();
         if (data.error) return toast('Error: ' + data.error);
         toast('Sheet connected: ' + (data.table_name || ''));
         closeSourceModal();
         loadSources();
-      } catch (e) { toast('Failed to connect sheet'); }
+      } catch (e) { toast('Failed to connect sheet: ' + e.message); }
     }
 
     async function submitApiSource() {
@@ -5587,7 +5536,7 @@
       if (!url || !name || !table) return toast('Fill in all fields');
 
       try {
-        const resp = await fetch(API + '/sources/api', {
+        const data = await apiFetch(API + '/sources/api', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
@@ -5595,7 +5544,6 @@
             sync_frequency_minutes: parseInt(document.getElementById('src-api-freq').value) || 0,
           }),
         });
-        const data = await resp.json();
         if (data.error) return toast('Error: ' + data.error);
         toast('API source connected');
         closeSourceModal();
@@ -5605,8 +5553,7 @@
 
     async function syncSource(id) {
       toast('Syncing...');
-      const resp = await fetch(API + '/sources/' + id + '/sync', { method: 'POST' });
-      const data = await resp.json();
+      const data = await apiFetch(API + '/sources/' + id + '/sync', { method: 'POST' });
       toast(data.error ? 'Sync error: ' + data.error : 'Synced successfully');
       loadSources();
     }
@@ -5634,8 +5581,7 @@
     // -----------------------------------------------------------------------
     async function loadOnboarding() {
       try {
-        const resp = await fetch(API + '/company');
-        const data = await resp.json();
+        const data = await apiFetch(API + '/company');
 
         if (data.exists) {
           document.getElementById('ob-name').value = data.name || '';
@@ -5668,7 +5614,7 @@
         .split(',').map(p => p.trim()).filter(Boolean);
 
       try {
-        const resp = await fetch(API + '/company/onboard', {
+        const data = await apiFetch(API + '/company/onboard', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
@@ -5679,7 +5625,6 @@
             systems,
           }),
         });
-        const data = await resp.json();
         if (data.error) return toast('Error: ' + data.error);
         const pct = data.completeness || 0;
         document.getElementById('setup-completeness').textContent = pct + '% complete';
@@ -5690,8 +5635,7 @@
 
     async function loadThresholds() {
       try {
-        const resp = await fetch(API + '/thresholds');
-        const thresholds = await resp.json();
+        const thresholds = await apiFetch(API + '/thresholds');
         const body = document.getElementById('thresholds-body');
 
         if (!thresholds.length || thresholds.error) {
@@ -5732,7 +5676,7 @@
       const getNum = id => { const v = document.getElementById(id).value; return v ? parseFloat(v) : null; };
 
       try {
-        const resp = await fetch(API + '/thresholds', {
+        const data = await apiFetch(API + '/thresholds', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
@@ -5748,7 +5692,6 @@
             critical_max: getNum('th-critical-max'),
           }),
         });
-        const data = await resp.json();
         if (data.error) return toast('Error: ' + data.error);
         toast('Threshold saved');
         document.getElementById('threshold-modal').classList.remove('active');
@@ -5768,8 +5711,7 @@
     async function loadDataHealth() {
       const el = document.getElementById('data-health-global');
       try {
-        const resp = await fetch(API + '/sanctity/summary');
-        const data = await resp.json();
+        const data = await apiFetch(API + '/sanctity/summary');
         const sev = data.by_severity || {};
         const critical = sev.critical || 0;
         const warning = sev.warning || 0;
@@ -5831,10 +5773,10 @@
         const heatCol = cols.find(c => /heat|batch|lot/i.test(c)) || cols[0];
         const weightCol = cols.find(c => /weight|wt|qty|quantity|tonnage/i.test(c)) || cols[1];
         const gradeCol = cols.find(c => /grade|quality|type/i.test(c)) || null;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/heat-analysis`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/heat-analysis`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({heat_column: heatCol, weight_column: weightCol, grade_column: gradeCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Heat Analysis</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Heat Analysis — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Heats:</b> ${res.total_heats} | <b>Total Weight:</b> ${fmt(res.total_weight)} | <b>Avg:</b> ${fmt(res.avg_weight)}</p>`;
@@ -5854,10 +5796,10 @@
         const heatCol = cols.find(c => /heat|batch|lot/i.test(c)) || cols[0];
         const elemCols = cols.filter(c => /^(C|Mn|Si|S|P|Cr|Ni|Mo|V|Ti|Al|Cu|Nb|Fe|Mg)$/i.test(c));
         if (elemCols.length === 0) { _showOverlay(`<h3>Chemistry</h3><p>No element columns found</p>`); return; }
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/chemistry-analysis`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/chemistry-analysis`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({heat_column: heatCol, element_columns: elemCols})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Chemistry</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Chemistry Analysis — ${esc(tableName)}</h3>`;
         html += `<p><b>Heats Analyzed:</b> ${res.total_heats}</p>`;
@@ -5880,10 +5822,10 @@
         const timeCol = cols.find(c => /time|hour|shift|date|period/i.test(c)) || cols[0];
         const vehicleCol = cols.find(c => /vehicle|truck|lorry|reg/i.test(c)) || null;
         const dirCol = cols.find(c => /direction|dir|in.?out|type/i.test(c)) || null;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/gate-traffic`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/gate-traffic`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({time_column: timeCol, vehicle_column: vehicleCol, direction_column: dirCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Gate Traffic</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Gate Traffic — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Vehicles:</b> ${res.total_vehicles} | <b>Peak:</b> ${esc(res.peak_period)} | <b>Off-peak:</b> ${esc(res.off_peak_period)}</p>`;
@@ -5905,10 +5847,10 @@
         const grossCol = cols.find(c => /gross/i.test(c)) || cols[1];
         const tareCol = cols.find(c => /tare/i.test(c)) || cols[2];
         const matCol = cols.find(c => /material|product|item|commodity/i.test(c)) || null;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/weighbridge`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/weighbridge`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({vehicle_column: vehicleCol, gross_column: grossCol, tare_column: tareCol, material_column: matCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Weighbridge</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Weighbridge — ${esc(tableName)}</h3>`;
         html += `<p><b>Vehicles:</b> ${res.total_vehicles} | <b>Total Net:</b> ${fmt(res.total_net_weight)} | <b>Avg Net:</b> ${fmt(res.avg_net_weight)}</p>`;
@@ -5932,10 +5874,10 @@
         const pollCol = cols.find(c => /pollutant|parameter|emission|gas/i.test(c)) || cols[1];
         const valCol = cols.find(c => /value|reading|concentration|level/i.test(c)) || cols[2];
         const limCol = cols.find(c => /limit|standard|threshold/i.test(c)) || null;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/emissions`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/emissions`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({source_column: srcCol, pollutant_column: pollCol, value_column: valCol, limit_column: limCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Emissions</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Emissions Analysis — ${esc(tableName)}</h3>`;
         html += `<p><b>Readings:</b> ${res.total_readings} | <b>Compliance:</b> ${res.overall_compliance_pct != null ? res.overall_compliance_pct+'%' : 'N/A'}</p>`;
@@ -5964,10 +5906,10 @@
         const typeCol = cols.find(c => /type|category|kind|maint/i.test(c)) || cols[2];
         const durCol = cols.find(c => /duration|hours|time_taken|downtime/i.test(c)) || null;
         const costCol = cols.find(c => /cost|expense|amount/i.test(c)) || null;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/maintenance-history`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/maintenance-history`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({equipment_column: equipCol, date_column: dateCol, type_column: typeCol, duration_column: durCol, cost_column: costCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Maintenance</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Maintenance History — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Events:</b> ${res.total_events} | <b>Corrective Ratio:</b> ${(res.overall_corrective_ratio*100).toFixed(1)}%</p>`;
@@ -5990,10 +5932,10 @@
         const valueCol = cols.find(c => /value|amount|cost|price/i.test(c)) || cols[2];
         const startCol = cols.find(c => /start|begin|from/i.test(c)) || null;
         const endCol = cols.find(c => /end|expir|to|till/i.test(c)) || null;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/contracts`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/contracts`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({contract_column: contractCol, vendor_column: vendorCol, value_column: valueCol, start_column: startCol, end_column: endCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Contracts</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Contract Analysis — ${esc(tableName)}</h3>`;
         html += `<p><b>Contracts:</b> ${res.total_contracts} | <b>Total Value:</b> ${fmt(res.total_value)} | <b>Vendors:</b> ${res.vendor_count}</p>`;
@@ -6015,10 +5957,10 @@
         const budCol = cols.find(c => /budget|planned|estimate/i.test(c)) || cols[1];
         const actCol = cols.find(c => /actual|spent|real/i.test(c)) || cols[2];
         const perCol = cols.find(c => /period|month|quarter|date/i.test(c)) || null;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/budget-vs-actual`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/budget-vs-actual`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({category_column: catCol, budget_column: budCol, actual_column: actCol, period_column: perCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Budget</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Budget vs Actual — ${esc(tableName)}</h3>`;
         html += `<p><b>Budget:</b> ${fmt(res.total_budget)} | <b>Actual:</b> ${fmt(res.total_actual)} | <b>Variance:</b> ${res.overall_variance_pct}%</p>`;
@@ -6035,10 +5977,10 @@
         const cols = await _getColumns(tableName);
         const amtCol = cols.find(c => /amount|spend|cost|expense|value/i.test(c)) || cols[0];
         const dateCol = cols.find(c => /date|time|period|month/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/burn-rate`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/burn-rate`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({amount_column: amtCol, date_column: dateCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Burn Rate</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Burn Rate — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Spent:</b> ${fmt(res.total_spent)} | <b>Days:</b> ${res.days_elapsed}</p>`;
@@ -6059,10 +6001,10 @@
         const prodCol = cols.find(c => /product|item|sku|material|name/i.test(c)) || cols[0];
         const qtyCol = cols.find(c => /quantity|qty|demand|units|volume/i.test(c)) || cols[1];
         const dateCol = cols.find(c => /date|period|month|time/i.test(c)) || cols[2];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/demand-pattern`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/demand-pattern`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({product_column: prodCol, quantity_column: qtyCol, date_column: dateCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Demand</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Demand Pattern — ${esc(tableName)}</h3>`;
         html += `<table class="ov-table"><tr><th>Product</th><th>Total</th><th>Avg</th><th>CV</th><th>Pattern</th><th>Trend</th></tr>`;
@@ -6078,10 +6020,10 @@
         const cols = await _getColumns(tableName);
         const qtyCol = cols.find(c => /quantity|qty|demand|units|volume/i.test(c)) || cols[0];
         const dateCol = cols.find(c => /date|period|month|time/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/demand-seasonality`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/demand-seasonality`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({quantity_column: qtyCol, date_column: dateCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Seasonality</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Demand Seasonality — ${esc(tableName)}</h3>`;
         html += `<p><b>Seasonal:</b> ${res.is_seasonal ? 'Yes' : 'No'} | <b>Peak:</b> ${(res.peak_seasons||[]).join(', ')||'None'} | <b>Low:</b> ${(res.low_seasons||[]).join(', ')||'None'}</p>`;
@@ -6102,10 +6044,10 @@
         const poCol = cols.find(c => /po|order|purchase/i.test(c)) || cols[0];
         const vendorCol = cols.find(c => /vendor|supplier|party/i.test(c)) || cols[1];
         const amtCol = cols.find(c => /amount|value|total|cost|price/i.test(c)) || cols[2];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/purchase-orders`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/purchase-orders`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({po_column: poCol, vendor_column: vendorCol, amount_column: amtCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Purchase Orders</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Purchase Orders — ${esc(tableName)}</h3>`;
         html += `<p><b>Total POs:</b> ${fmt(res.total_pos)} | <b>Total Value:</b> ${fmt(res.total_value)} | <b>Avg PO Value:</b> ${fmt(res.avg_po_value)}</p>`;
@@ -6125,10 +6067,10 @@
         const itemCol = cols.find(c => /item|material|product|sku/i.test(c)) || cols[0];
         const qtyCol = cols.find(c => /qty|quantity|units/i.test(c)) || cols[1];
         const actualCol = cols.find(c => /actual|price|rate|cost/i.test(c)) || cols[2];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/purchase-price-variance`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/purchase-price-variance`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({item_column: itemCol, quantity_column: qtyCol, actual_price_column: actualCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Price Variance</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Purchase Price Variance — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Variance:</b> ${fmt(res.total_variance)}</p>`;
@@ -6148,10 +6090,10 @@
         const vendorCol = cols.find(c => /vendor|supplier/i.test(c)) || cols[0];
         const deliveryCol = cols.find(c => /delivery|received|actual/i.test(c)) || cols[1];
         const promisedCol = cols.find(c => /promised|due|expected|planned/i.test(c)) || cols[2];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/vendor-performance`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/vendor-performance`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({vendor_column: vendorCol, delivery_date_column: deliveryCol, promised_date_column: promisedCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Vendor Performance</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Vendor Performance — ${esc(tableName)}</h3>`;
         html += `<p><b>On-Time Rate:</b> ${res.on_time_rate != null ? res.on_time_rate+'%' : '-'} | <b>Avg Delay:</b> ${res.avg_delay != null ? res.avg_delay+' days' : '-'}</p>`;
@@ -6170,10 +6112,10 @@
         const cols = await _getColumns(tableName);
         const revCol = cols.find(c => /revenue|sales|income/i.test(c)) || cols[0];
         const costCol = cols.find(c => /cost|expense|cogs/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/profitability-ratios`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/profitability-ratios`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({revenue_column: revCol, cost_column: costCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Profitability</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Profitability — ${esc(tableName)}</h3>`;
         html += `<p><b>Overall Margin:</b> ${res.overall_margin != null ? res.overall_margin+'%' : '-'}</p>`;
@@ -6192,10 +6134,10 @@
         const cols = await _getColumns(tableName);
         const projCol = cols.find(c => /project|name|title/i.test(c)) || cols[0];
         const statusCol = cols.find(c => /status|state|phase/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/project-status`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/project-status`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({project_column: projCol, status_column: statusCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Project Status</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Project Status — ${esc(tableName)}</h3>`;
         if (res.status_breakdown) {
@@ -6220,10 +6162,10 @@
         const projCol = cols.find(c => /project|name|title/i.test(c)) || cols[0];
         const plannedCol = cols.find(c => /planned|budget|estimate/i.test(c)) || cols[1];
         const actualCol = cols.find(c => /actual|spent|real/i.test(c)) || cols[2];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/project-health`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/project-health`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({project_column: projCol, planned_column: plannedCol, actual_column: actualCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Project Health</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Project Health — ${esc(tableName)}</h3>`;
         html += `<p><b>On-Track:</b> ${res.on_track_count ?? '-'} | <b>At-Risk:</b> ${res.at_risk_count ?? '-'} | <b>Over-Budget:</b> ${res.over_budget_count ?? '-'}</p>`;
@@ -6245,10 +6187,10 @@
         const cols = await _getColumns(tableName);
         const sensorCol = cols.find(c => /sensor|tag|instrument|device/i.test(c)) || cols[0];
         const valueCol = cols.find(c => /value|reading|measurement|temp|pressure/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/sensor-readings`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/sensor-readings`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({sensor_column: sensorCol, value_column: valueCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Sensor Readings</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Sensor Readings — ${esc(tableName)}</h3>`;
         html += `<p><b>Sensors:</b> ${res.sensor_count ?? '-'} | <b>Total Readings:</b> ${fmt(res.total_readings)}</p>`;
@@ -6266,10 +6208,10 @@
       try {
         const cols = await _getColumns(tableName);
         const alarmCol = cols.find(c => /alarm|alert|event|fault/i.test(c)) || cols[0];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/alarm-frequency`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/alarm-frequency`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({alarm_column: alarmCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Alarms</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Alarm Frequency — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Alarms:</b> ${fmt(res.total_alarms)}</p>`;
@@ -6288,10 +6230,10 @@
         const cols = await _getColumns(tableName);
         const custCol = cols.find(c => /customer|client|buyer|account/i.test(c)) || cols[0];
         const revCol = cols.find(c => /revenue|amount|sales|value|spend/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/customer-segments`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/customer-segments`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({customer_column: custCol, revenue_column: revCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Customer Segments</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Customer Segments — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Customers:</b> ${res.total_customers ?? '-'} | <b>Total Revenue:</b> ${fmt(res.total_revenue)}</p>`;
@@ -6310,10 +6252,10 @@
         const cols = await _getColumns(tableName);
         const custCol = cols.find(c => /customer|client|buyer|account/i.test(c)) || cols[0];
         const dateCol = cols.find(c => /date|timestamp|time|last/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/churn-risk`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/churn-risk`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({customer_column: custCol, date_column: dateCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Churn Risk</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Churn Risk — ${esc(tableName)}</h3>`;
         html += `<p><b>Churn Rate:</b> ${res.churn_rate != null ? res.churn_rate+'%' : '-'} | <b>At-Risk Rate:</b> ${res.at_risk_rate != null ? res.at_risk_rate+'%' : '-'}</p>`;
@@ -6332,10 +6274,10 @@
         const cols = await _getColumns(tableName);
         const amtCol = cols.find(c => /amount|revenue|sales|value|total/i.test(c)) || cols[0];
         const dateCol = cols.find(c => /date|period|month|quarter|year/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/sales-performance`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/sales-performance`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({amount_column: amtCol, date_column: dateCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Sales Performance</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Sales Performance — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Sales:</b> ${fmt(res.total_sales)} | <b>Growth Rate:</b> ${res.growth_rate != null ? res.growth_rate+'%' : '-'}</p>`;
@@ -6354,10 +6296,10 @@
         const cols = await _getColumns(tableName);
         const prodCol = cols.find(c => /product|item|sku|service/i.test(c)) || cols[0];
         const amtCol = cols.find(c => /amount|revenue|sales|value|total/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/product-mix`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/product-mix`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({product_column: prodCol, amount_column: amtCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Product Mix</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Product Mix — ${esc(tableName)}</h3>`;
         html += `<p><b>Products:</b> ${res.product_count ?? '-'} | <b>Concentration Risk:</b> ${res.concentration_risk ?? '-'}</p>`;
@@ -6376,10 +6318,10 @@
         const cols = await _getColumns(tableName);
         const amtCol = cols.find(c => /amount|revenue|sales|value|total/i.test(c)) || cols[0];
         const discCol = cols.find(c => /discount|disc|rebate|reduction/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/discount-impact`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/discount-impact`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({amount_column: amtCol, discount_column: discCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Discount Impact</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Discount Impact — ${esc(tableName)}</h3>`;
         html += `<p><b>Avg Discount:</b> ${res.avg_discount != null ? res.avg_discount+'%' : '-'} | <b>Revenue Impact:</b> ${fmt(res.revenue_impact)}</p>`;
@@ -6401,9 +6343,9 @@
         const dateCol = cols.find(c => /date|period|month|year/i.test(c));
         const body = {inflow_column: inflowCol, outflow_column: outflowCol};
         if (dateCol) body.date_column = dateCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/cash-flow`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/cash-flow`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Cash Flow</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Cash Flow — ${esc(tableName)}</h3>`;
         html += `<p><b>Net:</b> ${fmt(res.net_cash_flow)} | <b>Inflow:</b> ${fmt(res.total_inflow)} | <b>Outflow:</b> ${fmt(res.total_outflow)}</p>`;
@@ -6425,9 +6367,9 @@
         const invCol = cols.find(c => /inventory|stock/i.test(c));
         const body = {receivables_column: recCol, payables_column: payCol};
         if (invCol) body.inventory_column = invCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/working-capital`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/working-capital`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Working Capital</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Working Capital — ${esc(tableName)}</h3>`;
         html += `<p><b>Working Capital:</b> ${fmt(res.working_capital)} | <b>Current Ratio:</b> ${res.current_ratio} | <b>Receivables:</b> ${fmt(res.receivables_total)} | <b>Payables:</b> ${fmt(res.payables_total)}</p>`;
@@ -6450,9 +6392,9 @@
         const catCol = cols.find(c => /category|type|area/i.test(c));
         const body = {risk_column: riskCol, likelihood_column: likCol, impact_column: impCol};
         if (catCol) body.category_column = catCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/risk-assessment`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/risk-assessment`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Risk Assessment</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Risk Assessment — ${esc(tableName)}</h3>`;
         html += `<p><b>Total:</b> ${res.total_risks} | <b>Critical:</b> ${res.critical_count} | <b>High:</b> ${res.high_count} | <b>Medium:</b> ${res.medium_count} | <b>Low:</b> ${res.low_count}</p>`;
@@ -6474,9 +6416,9 @@
         const catCol = cols.find(c => /category|area|domain|type/i.test(c));
         const body = {requirement_column: reqCol, status_column: statCol};
         if (catCol) body.category_column = catCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/compliance-status`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/compliance-status`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Compliance</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Compliance Status — ${esc(tableName)}</h3>`;
         html += `<p><b>Total:</b> ${res.total_requirements} | <b>Compliant:</b> ${res.compliant_count} | <b>Non-Compliant:</b> ${res.non_compliant_count} | <b>Rate:</b> ${res.compliance_rate}%</p>`;
@@ -6500,9 +6442,9 @@
         const body = {asset_column: assetCol, purchase_date_column: dateCol};
         if (catCol) body.category_column = catCol;
         if (costCol) body.cost_column = costCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/asset-age`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/asset-age`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Asset Age</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Asset Age Analysis — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Assets:</b> ${res.total_assets} | <b>Avg Age:</b> ${res.avg_age_years} yrs | <b>Oldest:</b> ${res.oldest_age} yrs</p>`;
@@ -6525,9 +6467,9 @@
         const body = {price_column: priceCol};
         if (prodCol) body.product_column = prodCol;
         if (catCol) body.category_column = catCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/price-distribution`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/price-distribution`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Price Distribution</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Price Distribution — ${esc(tableName)}</h3>`;
         html += `<p><b>Mean:</b> ${fmt(res.mean_price)} | <b>Median:</b> ${fmt(res.median_price)} | <b>Std Dev:</b> ${fmt(res.std_dev)} | <b>Range:</b> ${fmt(res.min_price)} – ${fmt(res.max_price)}</p>`;
@@ -6551,9 +6493,9 @@
         const body = {employee_column: empCol, status_column: statCol};
         if (dateCol) body.date_column = dateCol;
         if (deptCol) body.department_column = deptCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/attrition-rate`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/attrition-rate`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Attrition Rate</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Attrition Rate — ${esc(tableName)}</h3>`;
         html += `<p><b>Total:</b> ${res.total_employees} | <b>Active:</b> ${res.active_count} | <b>Left:</b> ${res.left_count} | <b>Rate:</b> ${res.attrition_rate}%</p>`;
@@ -6576,9 +6518,9 @@
         const factorCols = cols.filter(c => c !== empCol && c !== statCol);
         if (!factorCols.length) { _showOverlay(`<h3>Attrition Drivers</h3><p>Need more columns to analyze drivers</p>`); return; }
         const body = {employee_column: empCol, status_column: statCol, factor_columns: factorCols};
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/attrition-drivers`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/attrition-drivers`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Attrition Drivers</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Attrition Drivers — ${esc(tableName)}</h3>`;
         if (res.top_driver) html += `<p><b>Top Driver:</b> ${esc(res.top_driver)}</p>`;
@@ -6597,10 +6539,10 @@
         const cols = await _getColumns(tableName);
         const revCol = cols.find(c => /revenue|sales|income|amount/i.test(c)) || cols[0];
         const dateCol = cols.find(c => /date|period|month|year/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/revenue-forecast`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/revenue-forecast`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({revenue_column: revCol, date_column: dateCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Revenue Forecast</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Revenue Forecast — ${esc(tableName)}</h3>`;
         html += `<p><b>Trend:</b> ${esc(res.trend || '-')} | <b>Avg Growth:</b> ${res.avg_growth_rate != null ? res.avg_growth_rate+'%' : '-'} | <b>Total Historical:</b> ${fmt(res.total_historical)}</p>`;
@@ -6628,9 +6570,9 @@
         const dueCol = cols.find(c => /due.*date|payment.*date|maturity/i.test(c));
         const body = {customer_column: custCol, amount_column: amtCol, invoice_date_column: dateCol};
         if (dueCol) body.due_date_column = dueCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/receivables-aging`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/receivables-aging`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>AR Aging</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Receivables Aging — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Outstanding:</b> ${fmt(res.total_outstanding)} | <b>Total Overdue:</b> ${fmt(res.total_overdue)} | <b>Avg Days:</b> ${res.avg_days_outstanding}</p>`;
@@ -6650,10 +6592,10 @@
         const dealCol = cols.find(c => /deal|opportunity|lead|name/i.test(c)) || cols[0];
         const stageCol = cols.find(c => /stage|status|phase|step/i.test(c)) || cols[1];
         const valCol = cols.find(c => /value|amount|revenue|price/i.test(c)) || cols[2];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/pipeline-stages`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/pipeline-stages`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({deal_column: dealCol, stage_column: stageCol, value_column: valCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Pipeline</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Pipeline Stages — ${esc(tableName)}</h3>`;
         html += `<p><b>Total Deals:</b> ${res.total_deals} | <b>Total Value:</b> ${fmt(res.total_value)} | <b>Weighted:</b> ${fmt(res.weighted_value)}</p>`;
@@ -6677,9 +6619,9 @@
         const body = {deal_column: dealCol, stage_column: stageCol};
         if (valCol) body.value_column = valCol;
         if (ownerCol) body.owner_column = ownerCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/win-rate`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/win-rate`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Win Rate</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Win Rate — ${esc(tableName)}</h3>`;
         html += `<p><b>Win Rate:</b> ${res.overall_win_rate}% | <b>Won:</b> ${res.total_won} | <b>Lost:</b> ${res.total_lost} | <b>Won Value:</b> ${fmt(res.won_value)}</p>`;
@@ -6698,10 +6640,10 @@
         const cols = await _getColumns(tableName);
         const txnCol = cols.find(c => /transaction|order|invoice|basket|receipt/i.test(c)) || cols[0];
         const prodCol = cols.find(c => /product|item|sku|name/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/product-associations`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/product-associations`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({transaction_column: txnCol, product_column: prodCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Market Basket</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Product Associations — ${esc(tableName)}</h3>`;
         html += `<p><b>Transactions:</b> ${res.total_transactions} | <b>Products:</b> ${res.unique_products} | <b>Avg Basket:</b> ${res.avg_basket_size}</p>`;
@@ -6724,9 +6666,9 @@
         const catCol = cols.find(c => /category|type|priority/i.test(c));
         const body = {ticket_column: ticketCol, sla_target_column: targetCol, actual_column: actualCol};
         if (catCol) body.category_column = catCol;
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/sla-compliance`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/sla-compliance`, {
           method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>SLA Compliance</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>SLA Compliance — ${esc(tableName)}</h3>`;
         html += `<p><b>Total:</b> ${res.total_tickets} | <b>Met:</b> ${res.met_count} | <b>Breached:</b> ${res.breached_count} | <b>Rate:</b> ${res.compliance_rate}%</p>`;
@@ -6745,10 +6687,10 @@
         const cols = await _getColumns(tableName);
         const regCol = cols.find(c => /region|state|city|country|area|zone|location/i.test(c)) || cols[0];
         const valCol = cols.find(c => /revenue|sales|amount|value/i.test(c)) || cols[1];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/regional-distribution`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/regional-distribution`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({region_column: regCol, value_column: valCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Regional Distribution</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Regional Distribution — ${esc(tableName)}</h3>`;
         html += `<p><b>Total:</b> ${fmt(res.total_value)} | <b>Top Region:</b> ${esc(res.top_region || '-')} | <b>HHI:</b> ${res.hhi_index}</p>`;
@@ -6768,10 +6710,10 @@
         const regCol = cols.find(c => /region|state|city|country|area|zone|location/i.test(c)) || cols[0];
         const valCol = cols.find(c => /revenue|sales|amount|value/i.test(c)) || cols[1];
         const dateCol = cols.find(c => /date|period|month|year/i.test(c)) || cols[2];
-        const res = await fetch(`/tables/${encodeURIComponent(tableName)}/geographic-growth`, {
+        const res = await apiFetch(`/tables/${encodeURIComponent(tableName)}/geographic-growth`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({region_column: regCol, value_column: valCol, date_column: dateCol})
-        }).then(r=>r.json());
+        });
         if (res.error) { _showOverlay(`<h3>Geo Growth</h3><p>${esc(res.error)}</p>`); return; }
         let html = `<h3>Geographic Growth — ${esc(tableName)}</h3>`;
         html += `<p><b>Fastest:</b> ${esc(res.fastest_growing || '-')} | <b>Slowest:</b> ${esc(res.slowest_growing || '-')} | <b>Avg Growth:</b> ${res.avg_growth}%</p>`;
