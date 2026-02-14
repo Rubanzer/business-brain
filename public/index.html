@@ -57,13 +57,15 @@
 
     .tabs {
       display: flex;
+      align-items: center;
       gap: 0.25rem;
       margin-bottom: 1.5rem;
       border-bottom: 1px solid var(--border);
+      flex-wrap: nowrap;
     }
 
     .tab {
-      padding: 0.6rem 1.2rem;
+      padding: 0.6rem 1rem;
       background: none;
       border: none;
       color: var(--muted);
@@ -72,10 +74,60 @@
       cursor: pointer;
       border-bottom: 2px solid transparent;
       transition: all 0.2s;
+      white-space: nowrap;
     }
 
     .tab:hover { color: var(--text); }
     .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* "More" dropdown for overflow tabs */
+    .tab-more-wrap {
+      position: relative;
+      margin-left: auto;
+    }
+    .tab-more-btn {
+      padding: 0.6rem 1rem;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.8rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .tab-more-btn:hover { color: var(--text); }
+    .tab-more-btn.has-active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-more-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 1px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-width: 160px;
+      padding: 0.4rem 0;
+      z-index: 100;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .tab-more-menu.open { display: block; }
+    .tab-more-menu .tab-menu-item {
+      display: block;
+      width: 100%;
+      padding: 0.5rem 1rem;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 0.78rem;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab-more-menu .tab-menu-item:hover { background: var(--border); color: var(--text); }
+    .tab-more-menu .tab-menu-item.active { color: var(--accent); }
 
     .panel { display: none; }
     .panel.active { display: block; }
@@ -1109,14 +1161,19 @@
       <button class="tab" data-panel="alerts">Alerts</button>
       <button class="tab" data-panel="sources">Sources</button>
       <button class="tab" data-panel="setup">Setup</button>
-      <button class="tab" data-panel="quality">Quality</button>
-      <button class="tab" data-panel="relationships">Relationships</button>
-      <button class="tab" data-panel="goals">Goals</button>
-      <button class="tab" data-panel="whatif">What-If</button>
-      <button class="tab" data-panel="changelog">Audit Log</button>
-      <button class="tab" data-panel="context">Context</button>
-      <button class="tab" data-panel="upload">Upload</button>
-      <button class="tab" data-panel="schema">Schema</button>
+      <div class="tab-more-wrap">
+        <button class="tab-more-btn" id="tab-more-btn">More &#x25BE;</button>
+        <div class="tab-more-menu" id="tab-more-menu">
+          <button class="tab-menu-item" data-panel="quality">Quality</button>
+          <button class="tab-menu-item" data-panel="relationships">Relationships</button>
+          <button class="tab-menu-item" data-panel="goals">Goals</button>
+          <button class="tab-menu-item" data-panel="whatif">What-If</button>
+          <button class="tab-menu-item" data-panel="changelog">Audit Log</button>
+          <button class="tab-menu-item" data-panel="context">Context</button>
+          <button class="tab-menu-item" data-panel="upload">Upload</button>
+          <button class="tab-menu-item" data-panel="schema">Schema</button>
+        </div>
+      </div>
       <span class="data-health-global" id="data-health-global" title="Data health status"></span>
     </div>
 
@@ -1551,13 +1608,37 @@
       toast('New chat started');
     }
 
-    // Tabs
-    document.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.panel).classList.add('active');
+    // Tabs — primary bar + "More" dropdown
+    function switchToPanel(panelId, source) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-menu-item').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.getElementById(panelId).classList.add('active');
+      if (source) source.classList.add('active');
+      // Highlight "More" button when a dropdown panel is active
+      const moreBtn = document.getElementById('tab-more-btn');
+      const isDropdownPanel = !!document.querySelector(`.tab-menu-item[data-panel="${panelId}"]`);
+      moreBtn.classList.toggle('has-active', isDropdownPanel);
+    }
+
+    document.querySelectorAll('.tabs > .tab').forEach(tab => {
+      tab.addEventListener('click', () => switchToPanel(tab.dataset.panel, tab));
+    });
+
+    // "More" dropdown toggle
+    const moreBtn = document.getElementById('tab-more-btn');
+    const moreMenu = document.getElementById('tab-more-menu');
+    moreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      moreMenu.classList.toggle('open');
+    });
+    document.addEventListener('click', () => moreMenu.classList.remove('open'));
+
+    document.querySelectorAll('.tab-menu-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        switchToPanel(item.dataset.panel, item);
+        moreMenu.classList.remove('open');
       });
     });
 
@@ -2700,10 +2781,7 @@
       } catch(e) {}
 
       // Switch to analyze tab
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      document.querySelector('[data-panel="analyze"]').classList.add('active');
-      document.getElementById('analyze').classList.add('active');
+      switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
 
       // Set question and run analysis with insight as parent finding
       const q = `Investigate: ${ins.title} — ${ins.description}`;
@@ -2990,10 +3068,7 @@
           toast('Report deployed: ' + name);
           closeDeployModal();
           // Switch to reports tab
-          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-          document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-          document.querySelector('[data-panel="reports"]').classList.add('active');
-          document.getElementById('reports').classList.add('active');
+          switchToPanel('reports', document.querySelector('.tabs > .tab[data-panel="reports"]'));
           loadReports();
         }
       } catch (e) {
