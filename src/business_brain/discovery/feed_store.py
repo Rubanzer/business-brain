@@ -43,6 +43,19 @@ async def update_status(session: AsyncSession, insight_id: str, status: str) -> 
         await session.commit()
 
 
+async def dismiss_all(session: AsyncSession) -> int:
+    """Dismiss all non-dismissed insights. Returns count dismissed."""
+    from sqlalchemy import update
+
+    result = await session.execute(
+        update(Insight)
+        .where(Insight.status != "dismissed")
+        .values(status="dismissed")
+    )
+    await session.commit()
+    return result.rowcount
+
+
 async def deploy_insight(session: AsyncSession, insight_id: str, name: str) -> DeployedReport:
     """Create a deployed report from an insight."""
     result = await session.execute(select(Insight).where(Insight.id == insight_id))

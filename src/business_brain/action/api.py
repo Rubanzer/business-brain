@@ -191,6 +191,7 @@ async def submit_context(req: ContextRequest, session: AsyncSession = Depends(ge
 @app.post("/csv")
 async def upload_csv(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)) -> dict:
     """Upload a CSV or Excel file for quick ingestion into the database."""
+    import gzip
     from io import BytesIO
 
     import pandas as pd
@@ -199,6 +200,12 @@ async def upload_csv(file: UploadFile = File(...), session: AsyncSession = Depen
     try:
         contents = await file.read()
         file_name = file.filename or "upload.csv"
+
+        # Decompress if client sent gzipped file
+        if file_name.endswith(".gz"):
+            contents = gzip.decompress(contents)
+            file_name = file_name[:-3]  # strip .gz suffix
+
         table_name = file_name.rsplit(".", 1)[0].replace("-", "_").replace(" ", "_")
         ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "csv"
 
@@ -226,6 +233,7 @@ async def upload_file(
     matches a known format, data is routed to the existing table instead
     of creating a new one.
     """
+    import gzip
     from io import BytesIO
 
     import pandas as pd
@@ -237,6 +245,12 @@ async def upload_file(
 
     file_bytes = await file.read()
     file_name = file.filename or "upload.csv"
+
+    # Decompress if client sent gzipped file
+    if file_name.endswith(".gz"):
+        file_bytes = gzip.decompress(file_bytes)
+        file_name = file_name[:-3]  # strip .gz suffix
+
     ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
 
     def _read_df_preview(raw: bytes, extension: str) -> pd.DataFrame:
@@ -326,11 +340,19 @@ async def upload_context_file(
     file: UploadFile = File(...), session: AsyncSession = Depends(get_session)
 ) -> dict:
     """Upload a document (.txt, .md, .pdf) as business context."""
+    import gzip
+
     from business_brain.cognitive.data_engineer_agent import parse_pdf
     from business_brain.ingestion.context_ingestor import chunk_text
 
     file_bytes = await file.read()
     file_name = file.filename or "context.txt"
+
+    # Decompress if client sent gzipped file
+    if file_name.endswith(".gz"):
+        file_bytes = gzip.decompress(file_bytes)
+        file_name = file_name[:-3]
+
     ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
 
     if ext == "pdf":
@@ -687,6 +709,15 @@ async def get_feed(session: AsyncSession = Depends(get_session)) -> list[dict]:
         }
         for i in insights
     ]
+
+
+@app.post("/feed/dismiss-all")
+async def dismiss_all_insights(session: AsyncSession = Depends(get_session)) -> dict:
+    """Dismiss all active insights."""
+    from business_brain.discovery.feed_store import dismiss_all
+
+    count = await dismiss_all(session)
+    return {"status": "ok", "dismissed": count}
 
 
 @app.post("/feed/{insight_id}/status")

@@ -1185,6 +1185,7 @@
         </div>
         <button class="btn-export btn-sm" onclick="exportFeed('json')" title="Export insights as JSON">Export JSON</button>
         <button class="btn-export btn-sm" onclick="exportFeed('csv')" title="Export insights as CSV">Export CSV</button>
+        <button class="btn-sm btn-secondary" onclick="dismissAllInsights()" id="dismiss-all-btn">Dismiss All</button>
         <button class="btn-sm" onclick="triggerDiscovery()" id="scan-btn">Scan Now</button>
       </div>
       <div id="dashboard-kpis" style="display:none;margin-bottom:0.75rem;"></div>
@@ -2510,6 +2511,7 @@
         } else {
           body.innerHTML = `<p>Uploaded <strong>${esc(file.name)}</strong>: ${data.chunks} chunks stored (${data.text_length} chars) from <span class="badge badge-accent">${esc(data.source)}</span></p>` + body.innerHTML;
           toast('Context file ingested');
+          markFeedDirty();
         }
       } catch (e) {
         toast('Error: ' + e.message);
@@ -2572,6 +2574,20 @@
       if (fileInput.files.length) handleUpload(fileInput.files[0]);
     });
 
+    async function gzipBlob(blob) {
+      const cs = new CompressionStream('gzip');
+      const writer = cs.writable.getWriter();
+      const reader = blob.stream().getReader();
+      (async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { writer.close(); break; }
+          writer.write(value);
+        }
+      })();
+      return new Response(cs.readable).blob();
+    }
+
     async function handleUpload(file) {
       const resultEl = document.getElementById('upload-result');
       const status = document.getElementById('upload-status');
@@ -2581,8 +2597,45 @@
       status.innerHTML = '<span class="spinner"></span> Processing...';
       body.innerHTML = '';
 
+      const MAX_RAW = 100 * 1024 * 1024;  // 100 MB raw limit
+      if (file.size > MAX_RAW) {
+        status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+        body.textContent = `File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum size is 100 MB.`;
+        return;
+      }
+
       const form = new FormData();
-      form.append('file', file);
+
+      // Gzip compress to stay under Vercel's 4.5 MB body limit
+      const MAX_VERCEL = 4 * 1024 * 1024;  // 4 MB threshold (leave margin)
+      if (file.size > MAX_VERCEL && typeof CompressionStream !== 'undefined') {
+        status.innerHTML = '<span class="spinner"></span> Compressing & uploading...';
+        const compressed = await gzipBlob(file);
+        if (compressed.size >= file.size) {
+          // Compression didn't help (e.g. already compressed file)
+          if (file.size > 4.5 * 1024 * 1024) {
+            status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+            body.textContent = `File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). The upload limit is 4.5 MB and this file could not be compressed further.`;
+            return;
+          }
+          form.append('file', file);
+        } else {
+          if (compressed.size > 4.5 * 1024 * 1024) {
+            status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+            body.textContent = `File is too large even after compression (${(compressed.size / 1024 / 1024).toFixed(1)} MB compressed from ${(file.size / 1024 / 1024).toFixed(1)} MB). Try splitting into smaller files.`;
+            return;
+          }
+          // Send compressed blob with .gz suffix so server knows to decompress
+          form.append('file', compressed, file.name + '.gz');
+        }
+      } else {
+        if (file.size > 4.5 * 1024 * 1024 && typeof CompressionStream === 'undefined') {
+          status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+          body.textContent = `File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). The upload limit is 4.5 MB. Try a smaller file or use a modern browser that supports compression.`;
+          return;
+        }
+        form.append('file', file);
+      }
 
       try {
         const data = await apiFetch(`${API}/upload`, { method: 'POST', body: form });
@@ -2596,6 +2649,7 @@
         status.innerHTML = `<span class="badge badge-green">${esc(data.file_type.toUpperCase())}</span>`;
         body.innerHTML = renderUploadReport(data);
         toast('File processed successfully');
+        markFeedDirty();
       } catch (e) {
         status.innerHTML = '<span class="badge badge-red">ERROR</span>';
         body.textContent = e.message;
@@ -2842,6 +2896,25 @@
       }
     }
 
+    async function dismissAllInsights() {
+      const cards = document.querySelectorAll('.feed-card');
+      if (!cards.length) { toast('No insights to dismiss'); return; }
+      const btn = document.getElementById('dismiss-all-btn');
+      btn.disabled = true;
+      btn.textContent = 'Dismissing...';
+      try {
+        await apiFetch(`${API}/feed/dismiss-all`, { method: 'POST' });
+        feedInsights = [];
+        document.getElementById('feed-body').innerHTML =
+          '<div class="feed-empty">All insights dismissed. Run a new scan to discover fresh insights.</div>';
+        toast('All insights dismissed');
+      } catch (e) {
+        toast('Failed to dismiss all: ' + e.message);
+      }
+      btn.disabled = false;
+      btn.textContent = 'Dismiss All';
+    }
+
     // -----------------------------------------------------------------------
     // Insight Comparison Mode
     // -----------------------------------------------------------------------
@@ -3058,7 +3131,13 @@
     }
 
     // Auto-load feed on page load and tab click
-    document.querySelector('[data-panel="feed"]').addEventListener('click', loadFeed);
+    // Dirty flag: reload feed when switching to it after data changes
+    let feedDirty = false;
+    function markFeedDirty() { feedDirty = true; }
+    document.querySelector('[data-panel="feed"]').addEventListener('click', () => {
+      if (feedDirty) { feedDirty = false; loadFeed(); }
+      else { loadFeed(); }
+    });
     loadFeed();
 
     // ---------------------------------------------------------------------------
@@ -5630,6 +5709,7 @@
         document.getElementById('setup-completeness').textContent = pct + '% complete';
         document.getElementById('setup-progress').style.width = pct + '%';
         toast('Company profile saved');
+        markFeedDirty();
       } catch (e) { toast('Failed to save profile'); }
     }
 
@@ -5694,6 +5774,7 @@
         });
         if (data.error) return toast('Error: ' + data.error);
         toast('Threshold saved');
+        markFeedDirty();
         document.getElementById('threshold-modal').classList.remove('active');
         loadThresholds();
       } catch (e) { toast('Failed to save threshold'); }
@@ -5702,6 +5783,7 @@
     async function deleteThreshold(id) {
       await fetch(API + '/thresholds/' + id, { method: 'DELETE' });
       toast('Threshold removed');
+      markFeedDirty();
       loadThresholds();
     }
 
