@@ -199,7 +199,7 @@ def _extract_code(raw: str) -> str:
         else:
             block = parts[1] if len(parts) > 1 else text
         # Strip language tag
-        for tag in ("python", "py"):
+        for tag in ("python", "py", "json"):
             if block.startswith(tag):
                 block = block[len(tag):]
         return block.strip()
@@ -243,7 +243,10 @@ def _interpret_output(
             model=settings.gemini_model,
             contents=prompt,
         )
-        text = _extract_code(response.text)  # reuse fence stripper for JSON
+        raw_text = response.text or ""
+        text = _extract_code(raw_text)  # reuse fence stripper for JSON
+        if not text:
+            raise ValueError("LLM returned empty response")
         parsed = json.loads(text)
         return {
             "computations": parsed.get("computations", []),
