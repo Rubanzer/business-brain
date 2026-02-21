@@ -250,3 +250,43 @@ class SourceMapping(Base):
     authoritative_source = Column(String(255), nullable=True)
     confirmed_by_user = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Structured Process Map & I/O Definitions
+# ---------------------------------------------------------------------------
+
+
+class ProcessStep(Base):
+    """A single step in the company's structured process map."""
+
+    __tablename__ = "process_steps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(36), nullable=True)
+    step_order = Column(Integer, nullable=False, default=0)
+    process_name = Column(String(255), nullable=False)
+    inputs = Column(Text, nullable=True)        # comma-separated input names
+    outputs = Column(Text, nullable=True)       # comma-separated output names
+    key_metric = Column(String(255), nullable=True)
+    target_range = Column(String(255), nullable=True)  # e.g., "85-95%"
+    linked_table = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ProcessIO(Base):
+    """Structured input/output definition for the manufacturing process."""
+
+    __tablename__ = "process_ios"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(36), nullable=True)
+    io_type = Column(String(10), nullable=False)  # "input" or "output"
+    name = Column(String(255), nullable=False)
+    source_or_destination = Column(String(255), nullable=True)
+    unit = Column(String(50), nullable=True)
+    typical_range = Column(String(100), nullable=True)  # e.g., "3-5 MT per heat"
+    linked_table = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -70,9 +70,18 @@ Rules:
 
 # Phase 2: Ask Gemini to structure the raw output into our format.
 INTERPRET_PROMPT = """\
-You are formatting raw analysis output into structured JSON for a manufacturing
-business dashboard. Interpret numbers in the context of manufacturing operations
-(production, procurement, quality, energy, sales, finance).
+You are formatting raw analysis output into structured JSON for a secondary steel
+manufacturing business dashboard. You have DEEP knowledge of steel plant operations
+and can interpret numbers in the correct manufacturing context.
+
+DOMAIN KNOWLEDGE for interpretation:
+- SEC (kWh/ton): good <500, average 500-600, poor >600
+- Yield (%): good >92, average 88-92, poor <88
+- Power Factor: good >0.95, average 0.90-0.95, poor <0.90
+- Tap-to-tap (min): good <60, average 60-90, poor >90
+- Rejection rate: good <1.5%, average 1.5-3%, poor >3%
+- Energy cost is typically 35-50% of production cost
+- Scrap cost is typically 55-70% of production cost
 
 Given the printed output from a Python analysis script, return ONLY a JSON object:
 {{
@@ -80,20 +89,21 @@ Given the printed output from a Python analysis script, return ONLY a JSON objec
     {{
       "label": "descriptive metric name",
       "value": "formatted value with appropriate precision",
-      "unit": "%, Rs, Rs/ton, count, kWh/ton, heats, etc. or empty string",
+      "unit": "%, ₹, ₹/ton, count, kWh/ton, heats, etc. or empty string",
       "format": "number|currency|percentage|text",
       "priority": 1-10
     }}
   ],
   "narrative": "3-5 sentence executive interpretation connecting findings to business
                  decisions. Reference specific names and numbers from the output.
+                 COMPARE values against the industry benchmarks above.
                  State what's good, what's concerning, and what to investigate further.
-                 If metric thresholds are available, compare values against them."
+                 Always include a 'So what?' — what should the plant owner DO about this?"
 }}
 
 Priority guide: key averages=6, per-group comparisons=8, outliers=9, correlations=7,
-distributions=5, time trends=8, threshold breaches=10.
-Format guide: use "currency" for monetary values, "percentage" for rates/ratios/yields,
+distributions=5, time trends=8, threshold breaches=10, benchmark comparisons=9.
+Format guide: use "currency" for monetary values (₹), "percentage" for rates/ratios/yields,
 "number" for counts/quantities.
 """
 

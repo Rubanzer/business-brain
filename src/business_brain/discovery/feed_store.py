@@ -19,8 +19,17 @@ async def get_feed(
     session: AsyncSession,
     status: str | None = None,
     limit: int = 50,
+    min_quality: int = 15,
 ) -> list[Insight]:
-    """Get ranked insight feed, optionally filtered by status."""
+    """Get ranked insight feed, optionally filtered by status and minimum quality.
+
+    Args:
+        session: Database session.
+        status: Filter by specific status (new/seen/deployed/dismissed).
+        limit: Maximum number of insights to return.
+        min_quality: Minimum quality_score threshold. Insights below this
+            are filtered out to keep the feed clean. Default 15.
+    """
     q = select(Insight).order_by(Insight.impact_score.desc(), Insight.discovered_at.desc())
 
     if status:
@@ -28,6 +37,10 @@ async def get_feed(
     else:
         # Exclude dismissed by default
         q = q.where(Insight.status != "dismissed")
+
+    # Filter by minimum quality score to keep feed clean
+    if min_quality > 0:
+        q = q.where(Insight.quality_score >= min_quality)
 
     q = q.limit(limit)
     result = await session.execute(q)

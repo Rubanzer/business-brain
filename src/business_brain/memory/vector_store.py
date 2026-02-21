@@ -4,6 +4,8 @@ Improvements:
 - Relevance threshold filtering (cosine distance < 0.5 by default)
 - Source-priority boosting (company_profile and metric_thresholds always included)
 - Deduplication of results by content prefix
+- Only searches active (non-superseded) context entries
+- Context listing API for visibility in the Setup tab
 """
 
 from sqlalchemy import select
@@ -34,11 +36,13 @@ async def search(
 
     Returns:
         List of BusinessContext entries, most similar first.
+        Only returns active (non-superseded) entries.
     """
     # Fetch more than top_k to allow for filtering
     fetch_limit = top_k + 5
     stmt = (
         select(BusinessContext)
+        .where(BusinessContext.active == True)  # noqa: E712 — only active entries
         .order_by(BusinessContext.embedding.cosine_distance(query_embedding))
         .limit(fetch_limit)
     )
@@ -91,3 +95,35 @@ async def search_by_text(
     """Convenience: embed text and search for similar contexts."""
     embedding = embed_text(text)
     return await search(session, embedding, top_k=top_k)
+
+
+async def list_all_contexts(
+    session: AsyncSession,
+    active_only: bool = True,
+) -> list[dict]:
+    """List all context entries grouped by source.
+
+    Returns a list of dicts with id, content (truncated), source, created_at, active.
+    Used by the Setup tab to display all known context.
+    """
+    stmt = select(BusinessContext).order_by(
+        BusinessContext.source, BusinessContext.created_at.desc()
+    )
+    if active_only:
+        stmt = stmt.where(BusinessContext.active == True)  # noqa: E712
+
+    result = await session.execute(stmt)
+    entries = result.scalars().all()
+
+    return [
+        {
+            "id": e.id,
+            "content": e.content[:300] if e.content else "",
+            "full_content": e.content,
+            "source": e.source or "unknown",
+            "version": getattr(e, "version", 1) or 1,
+            "active": getattr(e, "active", True),
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in entries
+    ]

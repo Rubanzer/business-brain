@@ -120,7 +120,8 @@ class TestAnomalyDetection:
         assert len(currency_anomalies) >= 1
         assert currency_anomalies[0].severity == "critical"
 
-    def test_constant_column_detection(self):
+    def test_constant_column_suppressed(self):
+        """Constant column is now suppressed as a meta-insight (data quality note)."""
         profile = self._make_profile("data", {
             "status": {
                 "semantic_type": "categorical",
@@ -132,9 +133,10 @@ class TestAnomalyDetection:
 
         insights = detect_anomalies([profile])
         constant = [i for i in insights if "constant" in i.title.lower()]
-        assert len(constant) >= 1
+        assert len(constant) == 0  # Suppressed as meta-insight
 
-    def test_time_series_detection(self):
+    def test_time_series_suppressed(self):
+        """Time series 'data available' is now suppressed as a meta-insight."""
         profile = self._make_profile("sales", {
             "order_date": {
                 "semantic_type": "temporal",
@@ -153,7 +155,7 @@ class TestAnomalyDetection:
 
         insights = detect_anomalies([profile])
         time_insights = [i for i in insights if i.insight_type == "trend"]
-        assert len(time_insights) >= 1
+        assert len(time_insights) == 0  # Suppressed as meta-insight
 
     def test_no_anomalies_clean_data(self):
         profile = self._make_profile("clean", {

@@ -98,94 +98,12 @@ def _scan_table_seasonality(profile: TableProfile) -> list[Insight]:
                 ],
             ))
 
-    # 2. Day-of-week detection (if temporal columns have enough range)
-    for temp_col in temp_cols:
-        temp_info = cols.get(temp_col, {})
-        temp_cardinality = temp_info.get("cardinality", 0)
+    # 2. Day-of-week detection — suppressed as meta-insight ("opportunity" not "finding")
+    # These are pattern _possibilities_, not actual detected patterns.
+    # The system can still run this analysis on-demand via the Analyze tab.
 
-        # If we have 7+ distinct dates, suggest day-of-week analysis
-        if temp_cardinality >= 7:
-            results.append(Insight(
-                id=str(uuid.uuid4()),
-                insight_type="seasonality",
-                severity="info",
-                impact_score=35,
-                title=f"Day-of-week pattern opportunity in {profile.table_name}",
-                description=(
-                    f"Table has {temp_cardinality} distinct time points in {temp_col} "
-                    f"with numeric metrics {num_cols[:2]}. "
-                    f"Day-of-week pattern analysis is possible."
-                ),
-                source_tables=[profile.table_name],
-                source_columns=[temp_col] + num_cols[:2],
-                evidence={
-                    "pattern_type": "day_of_week",
-                    "temporal_column": temp_col,
-                    "date_cardinality": temp_cardinality,
-                    "metric_columns": num_cols[:2],
-                    "query": (
-                        f'SELECT EXTRACT(DOW FROM "{temp_col}"::date) as day_of_week, '
-                        + ", ".join(f'AVG("{n}")' for n in num_cols[:2])
-                        + f' FROM "{profile.table_name}" '
-                        f'GROUP BY EXTRACT(DOW FROM "{temp_col}"::date) '
-                        f'ORDER BY day_of_week'
-                    ),
-                    "chart_spec": {
-                        "type": "bar",
-                        "x": "day_of_week",
-                        "y": num_cols[:2],
-                        "title": f"Day-of-week pattern for {num_cols[0]}",
-                    },
-                },
-                suggested_actions=[
-                    f"Check if {num_cols[0]} varies by day of the week",
-                    "Identify peak and off-peak days",
-                ],
-            ))
-            break  # Only one day-of-week insight per table
-
-    # 3. Monthly trend detection (if enough time range)
-    for temp_col in temp_cols:
-        temp_info = cols.get(temp_col, {})
-        temp_cardinality = temp_info.get("cardinality", 0)
-
-        if temp_cardinality >= 30:
-            results.append(Insight(
-                id=str(uuid.uuid4()),
-                insight_type="seasonality",
-                severity="info",
-                impact_score=30,
-                title=f"Monthly trend analysis available for {profile.table_name}",
-                description=(
-                    f"Table has {temp_cardinality} time points spanning enough range for "
-                    f"month-over-month analysis of {num_cols[:2]}."
-                ),
-                source_tables=[profile.table_name],
-                source_columns=[temp_col] + num_cols[:2],
-                evidence={
-                    "pattern_type": "monthly_trend",
-                    "temporal_column": temp_col,
-                    "metric_columns": num_cols[:2],
-                    "query": (
-                        f'SELECT DATE_TRUNC(\'month\', "{temp_col}"::date) as month, '
-                        + ", ".join(f'AVG("{n}")' for n in num_cols[:2])
-                        + f' FROM "{profile.table_name}" '
-                        f'GROUP BY DATE_TRUNC(\'month\', "{temp_col}"::date) '
-                        f'ORDER BY month'
-                    ),
-                    "chart_spec": {
-                        "type": "line",
-                        "x": "month",
-                        "y": num_cols[:2],
-                        "title": f"Monthly trend for {num_cols[0]}",
-                    },
-                },
-                suggested_actions=[
-                    "Analyze month-over-month changes",
-                    "Identify seasonal peaks and troughs",
-                ],
-            ))
-            break
+    # 3. Monthly trend detection — also suppressed as meta-insight
+    # Only actual detected trends should appear in the Feed.
 
     # 4. Categorical distribution skew detection
     for cat_col in cat_cols:

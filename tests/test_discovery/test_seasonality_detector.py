@@ -64,19 +64,23 @@ class TestShiftCycleDetection:
 
 
 class TestDayOfWeekDetection:
-    """Test day-of-week pattern detection."""
+    """Test day-of-week pattern detection.
 
-    def test_enough_dates_triggers_dow(self):
+    Day-of-week 'opportunity' insights are now suppressed as meta-insights.
+    They are pattern _possibilities_, not actual detected patterns.
+    """
+
+    def test_dow_suppressed_as_meta_insight(self):
+        """Day-of-week pattern insights are suppressed — they are opportunities, not findings."""
         prof = _Prof("sales", {
             "date": {"semantic_type": "temporal", "cardinality": 14},
             "revenue": {"semantic_type": "numeric_currency", "cardinality": 50},
         })
         insights = _scan_table_seasonality(prof)
         dow_insights = [i for i in insights if i.evidence.get("pattern_type") == "day_of_week"]
-        assert len(dow_insights) == 1
-        assert dow_insights[0].evidence["temporal_column"] == "date"
+        assert len(dow_insights) == 0
 
-    def test_too_few_dates_no_dow(self):
+    def test_too_few_dates_still_no_dow(self):
         prof = _Prof("tiny", {
             "date": {"semantic_type": "temporal", "cardinality": 5},
             "value": {"semantic_type": "numeric_metric", "cardinality": 10},
@@ -85,17 +89,18 @@ class TestDayOfWeekDetection:
         dow_insights = [i for i in insights if i.evidence.get("pattern_type") == "day_of_week"]
         assert len(dow_insights) == 0
 
-    def test_exactly_7_dates_triggers(self):
+    def test_exactly_7_dates_still_suppressed(self):
+        """Even with 7+ dates, DOW insights are suppressed as meta-insights."""
         prof = _Prof("weekly", {
             "timestamp": {"semantic_type": "temporal", "cardinality": 7},
             "output": {"semantic_type": "numeric_metric", "cardinality": 30},
         })
         insights = _scan_table_seasonality(prof)
         dow_insights = [i for i in insights if i.evidence.get("pattern_type") == "day_of_week"]
-        assert len(dow_insights) == 1
+        assert len(dow_insights) == 0
 
-    def test_only_one_dow_per_table(self):
-        """Even with multiple temporal columns, only one DOW insight per table."""
+    def test_multiple_temporal_cols_still_suppressed(self):
+        """Even with multiple temporal columns, DOW insights are suppressed."""
         prof = _Prof("multi_date", {
             "start_date": {"semantic_type": "temporal", "cardinality": 30},
             "end_date": {"semantic_type": "temporal", "cardinality": 30},
@@ -103,31 +108,37 @@ class TestDayOfWeekDetection:
         })
         insights = _scan_table_seasonality(prof)
         dow_insights = [i for i in insights if i.evidence.get("pattern_type") == "day_of_week"]
-        assert len(dow_insights) == 1
+        assert len(dow_insights) == 0
 
 
 class TestMonthlyTrendDetection:
-    """Test monthly trend detection."""
+    """Test monthly trend detection.
 
-    def test_enough_dates_triggers_monthly(self):
+    Monthly trend 'analysis available' insights are now suppressed as meta-insights.
+    Only actual detected trends (not opportunities) should appear in the Feed.
+    """
+
+    def test_monthly_suppressed_as_meta_insight(self):
+        """Monthly trend insights are suppressed — they are opportunities, not findings."""
         prof = _Prof("production", {
             "date": {"semantic_type": "temporal", "cardinality": 90},
             "output": {"semantic_type": "numeric_metric", "cardinality": 50},
         })
         insights = _scan_table_seasonality(prof)
         monthly = [i for i in insights if i.evidence.get("pattern_type") == "monthly_trend"]
-        assert len(monthly) == 1
+        assert len(monthly) == 0
 
-    def test_exactly_30_triggers(self):
+    def test_exactly_30_still_suppressed(self):
+        """Even with 30+ dates, monthly trend insights are suppressed."""
         prof = _Prof("data", {
             "date": {"semantic_type": "temporal", "cardinality": 30},
             "metric": {"semantic_type": "numeric_metric", "cardinality": 20},
         })
         insights = _scan_table_seasonality(prof)
         monthly = [i for i in insights if i.evidence.get("pattern_type") == "monthly_trend"]
-        assert len(monthly) == 1
+        assert len(monthly) == 0
 
-    def test_29_dates_no_monthly(self):
+    def test_29_dates_also_no_monthly(self):
         prof = _Prof("data", {
             "date": {"semantic_type": "temporal", "cardinality": 29},
             "metric": {"semantic_type": "numeric_metric", "cardinality": 20},
@@ -219,6 +230,8 @@ class TestEdgeCases:
         assert insights == []
 
     def test_multiple_profiles(self):
+        """With DOW/monthly suppressed, only shift_cycle and distribution_skew produce insights.
+        The 'sales' profile (temporal + numeric only) no longer generates insights."""
         prof_a = _Prof("production", {
             "shift": {"semantic_type": "categorical", "cardinality": 3},
             "output": {"semantic_type": "numeric_metric", "cardinality": 50},
@@ -232,14 +245,17 @@ class TestEdgeCases:
         assert len(insights) > 0
         tables = {t for i in insights for t in i.source_tables}
         assert "production" in tables
-        assert "sales" in tables
+        # sales no longer produces insights (DOW/monthly suppressed)
 
     def test_insight_has_valid_fields(self):
+        """Use a profile with shift column to produce actual insights (shift_cycle)."""
         prof = _Prof("data", {
+            "shift": {"semantic_type": "categorical", "cardinality": 3},
             "date": {"semantic_type": "temporal", "cardinality": 30},
             "value": {"semantic_type": "numeric_metric", "cardinality": 50},
         })
         insights = _scan_table_seasonality(prof)
+        assert len(insights) > 0  # Should have shift_cycle insight
         for ins in insights:
             assert ins.id is not None
             assert ins.insight_type == "seasonality"
