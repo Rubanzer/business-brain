@@ -287,3 +287,122 @@ def format_leakages_for_prompt(industry: str | None = None) -> str:
         lines.append(f"     Detection: {leak['detection']}")
         lines.append(f"     Typical impact: {leak['impact']}")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Industry Setup Templates — pre-built configurations for Quick Setup
+# ---------------------------------------------------------------------------
+
+INDUSTRY_TEMPLATES: dict[str, dict] = {
+    "steel": {
+        "process_steps": [
+            {"step_order": 1, "process_name": "Scrap Procurement & Sorting", "inputs": "Raw scrap (HMS1, HMS2, shredded, turnings), Sponge iron/DRI", "outputs": "Sorted scrap by grade, Weighed lots", "key_metric": "Fe content (%)", "target_range": "85-95%", "linked_table": "purchases"},
+            {"step_order": 2, "process_name": "Furnace Charging", "inputs": "Sorted scrap, Sponge iron, Pig iron", "outputs": "Charged furnace (3-5 MT per heat)", "key_metric": "Charge weight (MT)", "target_range": "3-5 MT", "linked_table": "production"},
+            {"step_order": 3, "process_name": "Induction Furnace Melting", "inputs": "Charged scrap, Electricity (kWh)", "outputs": "Molten steel at 1600-1650\u00b0C", "key_metric": "SEC (kWh/ton)", "target_range": "500-625 kWh/ton", "linked_table": "power_data"},
+            {"step_order": 4, "process_name": "Chemistry Adjustment & Refining", "inputs": "Molten steel, FeSi, FeMn, Carbon raiser, Aluminum", "outputs": "Refined steel (target C, Mn, Si, S, P)", "key_metric": "Alloy consumption (kg/ton)", "target_range": "FeSi: 3-6, FeMn: 5-10 kg/ton", "linked_table": "alloy_data"},
+            {"step_order": 5, "process_name": "Tapping to Ladle", "inputs": "Refined molten steel", "outputs": "Ladle with liquid steel", "key_metric": "Tapping temperature (\u00b0C)", "target_range": "1640-1660\u00b0C", "linked_table": "production"},
+            {"step_order": 6, "process_name": "Continuous Casting (CCM)", "inputs": "Ladle steel, Tundish", "outputs": "Billets (various sections)", "key_metric": "Casting yield (%)", "target_range": "95-97%", "linked_table": "production"},
+            {"step_order": 7, "process_name": "Reheating", "inputs": "Cold billets, Furnace oil", "outputs": "Hot billets at rolling temp", "key_metric": "Fuel consumption (litres/ton)", "target_range": "30-35 litres/ton", "linked_table": "fuel_data"},
+            {"step_order": 8, "process_name": "Rolling Mill", "inputs": "Hot billets", "outputs": "TMT bars (various diameters)", "key_metric": "Rolling yield (%)", "target_range": "95-97%", "linked_table": "rolling_data"},
+            {"step_order": 9, "process_name": "TMT Quenching (Thermex)", "inputs": "Hot rolled bars, Cooling water", "outputs": "Quenched & tempered TMT bars", "key_metric": "Mechanical properties (UTS, YS)", "target_range": "Fe500D spec", "linked_table": "quality_data"},
+            {"step_order": 10, "process_name": "Shearing, Bundling & Dispatch", "inputs": "Finished TMT bars/billets", "outputs": "Bundled product, loaded trucks", "key_metric": "Dispatch weight (MT)", "target_range": "Match production \u00b10.5%", "linked_table": "dispatch"},
+        ],
+        "metrics": [
+            {"metric_name": "Power Consumption (SEC)", "table_name": "power_data", "column_name": "sec_kwh_per_ton", "unit": "kWh/ton", "normal_min": 500, "normal_max": 625, "warning_min": 625, "warning_max": 750, "critical_min": 750, "critical_max": 9999},
+            {"metric_name": "Melting Loss", "table_name": "production", "column_name": "melting_loss_pct", "unit": "%", "normal_min": 1.0, "normal_max": 2.0, "warning_min": 2.0, "warning_max": 4.0, "critical_min": 4.0, "critical_max": 100},
+            {"metric_name": "Overall Yield", "table_name": "production", "column_name": "yield_pct", "unit": "%", "normal_min": 85, "normal_max": 95, "warning_min": 80, "warning_max": 85, "critical_min": 0, "critical_max": 80},
+            {"metric_name": "Tap-to-Tap Time", "table_name": "production", "column_name": "tap_to_tap_min", "unit": "minutes", "normal_min": 60, "normal_max": 80, "warning_min": 80, "warning_max": 100, "critical_min": 100, "critical_max": 9999},
+            {"metric_name": "Power Factor", "table_name": "power_data", "column_name": "power_factor", "unit": "ratio", "normal_min": 0.95, "normal_max": 1.0, "warning_min": 0.90, "warning_max": 0.95, "critical_min": 0, "critical_max": 0.90},
+            {"metric_name": "Rolling Yield", "table_name": "rolling_data", "column_name": "rolling_yield_pct", "unit": "%", "normal_min": 95, "normal_max": 98, "warning_min": 93, "warning_max": 95, "critical_min": 0, "critical_max": 93},
+            {"metric_name": "Refractory Consumption", "table_name": "refractory_data", "column_name": "consumption_kg_per_ton", "unit": "kg/ton", "normal_min": 3.0, "normal_max": 3.6, "warning_min": 3.6, "warning_max": 5.0, "critical_min": 5.0, "critical_max": 9999},
+            {"metric_name": "Tapping Temperature", "table_name": "production", "column_name": "tapping_temp_c", "unit": "\u00b0C", "normal_min": 1620, "normal_max": 1660, "warning_min": 1660, "warning_max": 1690, "critical_min": 1690, "critical_max": 9999},
+            {"metric_name": "Furnace Utilization", "table_name": "production", "column_name": "utilization_pct", "unit": "%", "normal_min": 75, "normal_max": 95, "warning_min": 60, "warning_max": 75, "critical_min": 0, "critical_max": 60},
+            {"metric_name": "Receivables >90 days", "table_name": "finance", "column_name": "receivables_over_90_pct", "unit": "%", "normal_min": 0, "normal_max": 5, "warning_min": 5, "warning_max": 15, "critical_min": 15, "critical_max": 100},
+            {"metric_name": "Customer Concentration (Top 3)", "table_name": "sales", "column_name": "top3_customer_pct", "unit": "%", "normal_min": 0, "normal_max": 30, "warning_min": 30, "warning_max": 50, "critical_min": 50, "critical_max": 100},
+            {"metric_name": "Scrap Inventory Days", "table_name": "inventory", "column_name": "scrap_inventory_days", "unit": "days", "normal_min": 7, "normal_max": 15, "warning_min": 15, "warning_max": 25, "critical_min": 25, "critical_max": 9999},
+        ],
+        "inputs": [
+            {"io_type": "input", "name": "Scrap Iron (HMS1/HMS2)", "source_or_destination": "Scrap dealers, importers", "unit": "MT", "typical_range": "3-5 per heat", "linked_table": "purchases"},
+            {"io_type": "input", "name": "Sponge Iron / DRI", "source_or_destination": "DRI plants", "unit": "MT", "typical_range": "0.5-1.5 per heat", "linked_table": "purchases"},
+            {"io_type": "input", "name": "Electricity", "source_or_destination": "State grid / DISCOM", "unit": "kWh", "typical_range": "1500-3000 per heat", "linked_table": "power_data"},
+            {"io_type": "input", "name": "Ferro-Silicon (FeSi)", "source_or_destination": "Alloy suppliers", "unit": "kg", "typical_range": "3-6 per ton", "linked_table": "alloy_data"},
+            {"io_type": "input", "name": "Ferro-Manganese (FeMn)", "source_or_destination": "Alloy suppliers", "unit": "kg", "typical_range": "5-10 per ton", "linked_table": "alloy_data"},
+            {"io_type": "input", "name": "Carbon Raiser", "source_or_destination": "Carbon suppliers", "unit": "kg", "typical_range": "2-5 per ton", "linked_table": "alloy_data"},
+            {"io_type": "input", "name": "Ramming Mass (refractory)", "source_or_destination": "Refractory suppliers", "unit": "kg", "typical_range": "3.4-3.6 per ton", "linked_table": "refractory_data"},
+            {"io_type": "input", "name": "Furnace Oil (reheating)", "source_or_destination": "Fuel suppliers", "unit": "litres", "typical_range": "30-35 per ton", "linked_table": "fuel_data"},
+        ],
+        "outputs": [
+            {"io_type": "output", "name": "TMT Bars (Fe500D)", "source_or_destination": "Dealers, builders, fabricators", "unit": "MT", "typical_range": "2.5-4.2 per heat", "linked_table": "dispatch"},
+            {"io_type": "output", "name": "Billets", "source_or_destination": "Rolling mills, buyers", "unit": "MT", "typical_range": "2.7-4.5 per heat", "linked_table": "production"},
+            {"io_type": "output", "name": "Slag", "source_or_destination": "Cement plants, road contractors", "unit": "MT", "typical_range": "0.05-0.25 per heat", "linked_table": "waste_data"},
+            {"io_type": "output", "name": "Mill Scale", "source_or_destination": "Scale dealers", "unit": "MT", "typical_range": "0.03-0.07 per ton rolled", "linked_table": "waste_data"},
+            {"io_type": "output", "name": "Crop Ends", "source_or_destination": "Internal recharge / scrap dealers", "unit": "MT", "typical_range": "1-1.5% of rolled output", "linked_table": "waste_data"},
+        ],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# What-If Scenario Templates — pre-built scenarios by industry
+# ---------------------------------------------------------------------------
+
+WHATIF_TEMPLATES: dict[str, list[dict]] = {
+    "steel": [
+        {
+            "name": "Scrap Price Change",
+            "description": "What happens to your monthly costs if scrap prices change?",
+            "formula": "scrap_price * monthly_tonnage",
+            "base_values": {"scrap_price": 38000, "monthly_tonnage": 500},
+            "scenarios": [
+                {"name": "Price +5%", "values": {"scrap_price": 39900}},
+                {"name": "Price +10%", "values": {"scrap_price": 41800}},
+                {"name": "Price -5%", "values": {"scrap_price": 36100}},
+            ],
+        },
+        {
+            "name": "Power Cost Impact",
+            "description": "How does power tariff change affect cost per ton?",
+            "formula": "sec * tariff_rate",
+            "base_values": {"sec": 580, "tariff_rate": 8.5},
+            "scenarios": [
+                {"name": "Tariff +\u20b91/kWh", "values": {"tariff_rate": 9.5}},
+                {"name": "SEC improves to 500", "values": {"sec": 500}},
+                {"name": "Both worsen", "values": {"sec": 650, "tariff_rate": 9.5}},
+            ],
+        },
+        {
+            "name": "Yield Improvement",
+            "description": "Revenue impact of improving overall yield",
+            "formula": "monthly_input * (yield_pct / 100) * selling_price",
+            "base_values": {"monthly_input": 600, "yield_pct": 88, "selling_price": 48000},
+            "scenarios": [
+                {"name": "Yield to 90%", "values": {"yield_pct": 90}},
+                {"name": "Yield to 92%", "values": {"yield_pct": 92}},
+                {"name": "Yield drops to 85%", "values": {"yield_pct": 85}},
+            ],
+        },
+        {
+            "name": "Utilization Change",
+            "description": "What if you increase or decrease furnace utilization?",
+            "formula": "rated_capacity * (utilization / 100) * 30 * margin_per_ton",
+            "base_values": {"rated_capacity": 20, "utilization": 76, "margin_per_ton": 3000},
+            "scenarios": [
+                {"name": "85% utilization", "values": {"utilization": 85}},
+                {"name": "90% utilization", "values": {"utilization": 90}},
+                {"name": "60% utilization", "values": {"utilization": 60}},
+            ],
+        },
+    ],
+}
+
+
+def get_industry_template(industry: str) -> dict | None:
+    """Get setup template for a given industry."""
+    return INDUSTRY_TEMPLATES.get(industry.lower().strip())
+
+
+def get_whatif_templates(industry: str | None = None) -> list[dict]:
+    """Get What-If scenario templates for a given industry."""
+    if not industry:
+        industry = "steel"
+    return WHATIF_TEMPLATES.get(industry.lower().strip(), [])

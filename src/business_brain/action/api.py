@@ -9318,3 +9318,619 @@ async def _regenerate_io_context(session: AsyncSession) -> None:
 
     text = "\n".join(lines)
     await reingest_context(text, session, source="structured:process_io")
+
+
+# ---------------------------------------------------------------------------
+# Industry Setup Templates
+# ---------------------------------------------------------------------------
+
+
+@app.get("/setup/template/{industry}")
+async def get_industry_setup_template(industry: str) -> dict:
+    """Get pre-built setup template for a given industry."""
+    from business_brain.cognitive.domain_knowledge import (
+        get_industry_template,
+        get_whatif_templates,
+    )
+
+    template = get_industry_template(industry)
+    if not template:
+        return {"error": f"No template available for industry: {industry}"}
+
+    return {
+        "industry": industry,
+        "process_steps": template.get("process_steps", []),
+        "metrics": template.get("metrics", []),
+        "inputs": template.get("inputs", []),
+        "outputs": template.get("outputs", []),
+        "whatif_templates": get_whatif_templates(industry),
+    }
+
+
+@app.post("/setup/apply-template/{industry}")
+async def apply_industry_template(
+    industry: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Apply industry template — bulk-create process steps, metrics, and I/O."""
+    from business_brain.cognitive.domain_knowledge import get_industry_template
+    from business_brain.db.v3_models import MetricThreshold, ProcessIO, ProcessStep
+
+    template = get_industry_template(industry)
+    if not template:
+        return {"error": f"No template available for industry: {industry}"}
+
+    counts = {"process_steps": 0, "metrics": 0, "inputs": 0, "outputs": 0}
+
+    for step_data in template.get("process_steps", []):
+        session.add(ProcessStep(**step_data))
+        counts["process_steps"] += 1
+
+    for metric_data in template.get("metrics", []):
+        session.add(MetricThreshold(**metric_data))
+        counts["metrics"] += 1
+
+    for io_data in template.get("inputs", []) + template.get("outputs", []):
+        session.add(ProcessIO(**io_data))
+        counts["inputs" if io_data["io_type"] == "input" else "outputs"] += 1
+
+    await session.commit()
+
+    # Regenerate RAG context
+    await _regenerate_process_context(session)
+    await _regenerate_io_context(session)
+
+    return {"status": "applied", "industry": industry, "counts": counts}
+
+
+# ---------------------------------------------------------------------------
+# What-If Templates
+# ---------------------------------------------------------------------------
+
+
+@app.get("/whatif/templates")
+async def get_whatif_scenario_templates(industry: str = "steel") -> list[dict]:
+    """Get pre-built What-If scenario templates for the given industry."""
+    from business_brain.cognitive.domain_knowledge import get_whatif_templates
+
+    return get_whatif_templates(industry)
+
+
+# ---------------------------------------------------------------------------
+# Save Analysis to Feed (Analyze → Feed parity)
+# ---------------------------------------------------------------------------
+
+
+class SaveToFeedRequest(BaseModel):
+    title: str
+    description: str
+    insight_type: str = "analysis"
+    severity: str = "info"
+    evidence: Optional[dict] = None
+    suggested_actions: Optional[list[str]] = None
+    source_tables: Optional[list[str]] = None
+
+
+@app.post("/feed/from-analysis")
+async def save_analysis_to_feed(
+    req: SaveToFeedRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Save an analysis result as a manual insight in the Feed."""
+    from business_brain.db.discovery_models import Insight
+
+    insight = Insight(
+        insight_type=req.insight_type,
+        severity=req.severity,
+        impact_score=75,  # Manual = presumed high quality
+        quality_score=75,
+        title=req.title,
+        description=req.description,
+        source_tables=req.source_tables or [],
+        evidence=req.evidence or {},
+        suggested_actions=req.suggested_actions or [],
+        status="new",
+    )
+    session.add(insight)
+    await session.commit()
+    await session.refresh(insight)
+
+    return {"status": "created", "insight_id": insight.id, "title": req.title}
+
+
+# ---------------------------------------------------------------------------
+# Plan Limits — Free Tier Enforcement
+# ---------------------------------------------------------------------------
+
+PLAN_LIMITS = {
+    "free": {
+        "max_uploads": 3,
+        "google_sheets": False,
+        "api_connections": False,
+        "analyze_per_day": 5,
+        "reports": False,
+        "alerts": False,
+        "setup": False,
+        "whatif": False,
+        "deploy": False,
+        "export": False,
+        "max_users": 1,
+    },
+    "basic": {
+        "max_uploads": 10,
+        "google_sheets": True,
+        "api_connections": True,
+        "analyze_per_day": 50,
+        "reports": True,
+        "alerts": True,
+        "setup": True,
+        "whatif": True,
+        "deploy": True,
+        "export": True,
+        "max_users": 3,
+    },
+    "pro": {
+        "max_uploads": 999999,
+        "google_sheets": True,
+        "api_connections": True,
+        "analyze_per_day": 999999,
+        "reports": True,
+        "alerts": True,
+        "setup": True,
+        "whatif": True,
+        "deploy": True,
+        "export": True,
+        "max_users": 10,
+    },
+    "enterprise": {
+        "max_uploads": 999999,
+        "google_sheets": True,
+        "api_connections": True,
+        "analyze_per_day": 999999,
+        "reports": True,
+        "alerts": True,
+        "setup": True,
+        "whatif": True,
+        "deploy": True,
+        "export": True,
+        "max_users": 999999,
+    },
+}
+
+
+@app.get("/plan/limits")
+async def get_plan_limits(
+    authorization: str = Header(default=""),
+) -> dict:
+    """Get current user's plan limits and usage."""
+    user_data = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+        user_data = _decode_jwt(token)
+
+    plan = user_data.get("plan", "free") if user_data else "pro"  # No auth = full access
+    limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
+
+    return {
+        "plan": plan,
+        "limits": limits,
+        "upload_count": 0,  # Would need DB lookup for real count
+    }
+
+
+# ---------------------------------------------------------------------------
+# Access Control — JWT Authentication & User Management
+# ---------------------------------------------------------------------------
+
+import hashlib
+import hmac
+import time
+import secrets
+from datetime import datetime, timedelta
+
+from fastapi import Header, HTTPException, status
+from fastapi.responses import JSONResponse
+
+# Simple JWT implementation (no dependency on python-jose)
+_JWT_SECRET = secrets.token_hex(32)
+_JWT_ALGORITHM = "HS256"
+_JWT_EXPIRE_DAYS = 7
+
+# Role hierarchy (higher index = more permissions)
+ROLE_LEVELS = {"viewer": 0, "operator": 1, "manager": 2, "admin": 3, "owner": 4}
+
+
+def _hash_password(password: str) -> str:
+    """Hash password using SHA-256 with a salt."""
+    salt = secrets.token_hex(16)
+    hashed = hashlib.sha256((salt + password).encode()).hexdigest()
+    return f"{salt}:{hashed}"
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    """Verify password against hash."""
+    try:
+        salt, hashed = password_hash.split(":")
+        return hashlib.sha256((salt + password).encode()).hexdigest() == hashed
+    except Exception:
+        return False
+
+
+def _create_jwt(user_id: str, email: str, role: str, plan: str) -> str:
+    """Create a simple JWT token."""
+    import base64
+    import json as _json
+
+    header = base64.urlsafe_b64encode(_json.dumps({"alg": "HS256", "typ": "JWT"}).encode()).decode().rstrip("=")
+    now = int(time.time())
+    payload_data = {
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "plan": plan,
+        "iat": now,
+        "exp": now + (_JWT_EXPIRE_DAYS * 86400),
+    }
+    payload = base64.urlsafe_b64encode(_json.dumps(payload_data).encode()).decode().rstrip("=")
+    signature = hmac.new(_JWT_SECRET.encode(), f"{header}.{payload}".encode(), hashlib.sha256).hexdigest()
+    return f"{header}.{payload}.{signature}"
+
+
+def _decode_jwt(token: str) -> dict | None:
+    """Decode and verify a JWT token."""
+    import base64
+    import json as _json
+
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        header, payload, signature = parts
+
+        # Verify signature
+        expected_sig = hmac.new(
+            _JWT_SECRET.encode(), f"{header}.{payload}".encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected_sig):
+            return None
+
+        # Decode payload (add padding)
+        payload += "=" * (4 - len(payload) % 4)
+        data = _json.loads(base64.urlsafe_b64decode(payload))
+
+        # Check expiration
+        if data.get("exp", 0) < int(time.time()):
+            return None
+
+        return data
+    except Exception:
+        return None
+
+
+async def get_current_user(authorization: str = Header(default="")) -> dict | None:
+    """Extract user from JWT token in Authorization header. Returns None if no auth."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[7:]
+    user_data = _decode_jwt(token)
+    return user_data
+
+
+def require_role(min_role: str):
+    """Dependency that checks the user has at least the specified role level."""
+    min_level = ROLE_LEVELS.get(min_role, 0)
+
+    async def check(authorization: str = Header(default="")) -> dict:
+        user = await get_current_user(authorization)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        user_level = ROLE_LEVELS.get(user.get("role", "viewer"), 0)
+        if user_level < min_level:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Requires '{min_role}' role or higher. You have '{user.get('role')}'.",
+            )
+        return user
+
+    return check
+
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class InviteRequest(BaseModel):
+    email: str
+    role: str = "viewer"
+    plan: str = "free"
+
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    name: str
+    password: str
+
+
+class UpdateRoleRequest(BaseModel):
+    role: str
+
+
+@app.post("/auth/register")
+async def register_user(
+    req: RegisterRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Register a new user. First user auto-becomes owner."""
+    from sqlalchemy import func, select
+
+    from business_brain.db.v3_models import User
+
+    # Check if email already exists
+    existing = await session.execute(select(User).where(User.email == req.email))
+    if existing.scalars().first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Count existing users to determine if this is the first user
+    count_result = await session.execute(select(func.count()).select_from(User))
+    user_count = count_result.scalar() or 0
+
+    user = User(
+        email=req.email,
+        name=req.name,
+        password_hash=_hash_password(req.password),
+        role="owner" if user_count == 0 else "viewer",
+        plan="pro" if user_count == 0 else "free",
+        is_active=True,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+
+    token = _create_jwt(user.id, user.email, user.role, user.plan)
+    return {
+        "status": "registered",
+        "token": token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "plan": user.plan,
+        },
+    }
+
+
+@app.post("/auth/login")
+async def login_user(
+    req: LoginRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Login and receive a JWT token."""
+    from sqlalchemy import select
+
+    from business_brain.db.v3_models import User
+
+    result = await session.execute(select(User).where(User.email == req.email))
+    user = result.scalars().first()
+
+    if not user or not _verify_password(req.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is deactivated")
+
+    # Update last login
+    user.last_login_at = datetime.utcnow()
+    await session.commit()
+
+    token = _create_jwt(user.id, user.email, user.role, user.plan)
+    return {
+        "status": "logged_in",
+        "token": token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "plan": user.plan,
+            "upload_count": user.upload_count,
+        },
+    }
+
+
+@app.get("/auth/me")
+async def get_me(
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get current authenticated user info."""
+    if not user:
+        return {"authenticated": False}
+
+    from sqlalchemy import select
+
+    from business_brain.db.v3_models import User
+
+    result = await session.execute(select(User).where(User.id == user["sub"]))
+    db_user = result.scalars().first()
+    if not db_user:
+        return {"authenticated": False}
+
+    return {
+        "authenticated": True,
+        "user": {
+            "id": db_user.id,
+            "email": db_user.email,
+            "name": db_user.name,
+            "role": db_user.role,
+            "plan": db_user.plan,
+            "upload_count": db_user.upload_count,
+            "is_active": db_user.is_active,
+        },
+    }
+
+
+@app.post("/auth/invite")
+async def create_invite(
+    req: InviteRequest,
+    session: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_role("admin")),
+) -> dict:
+    """Create an invite token for a new user (admin/owner only)."""
+    from business_brain.db.v3_models import InviteToken
+
+    token_str = secrets.token_urlsafe(32)
+    invite = InviteToken(
+        email=req.email,
+        role=req.role,
+        plan=req.plan,
+        token=token_str,
+        expires_at=datetime.utcnow() + timedelta(days=7),
+        created_by=user.get("sub"),
+    )
+    session.add(invite)
+    await session.commit()
+
+    return {"status": "created", "token": token_str, "email": req.email, "role": req.role}
+
+
+@app.post("/auth/accept-invite")
+async def accept_invite(
+    req: AcceptInviteRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Accept an invite and create a new user account."""
+    from sqlalchemy import select
+
+    from business_brain.db.v3_models import InviteToken, User
+
+    result = await session.execute(
+        select(InviteToken).where(InviteToken.token == req.token, InviteToken.used == False)  # noqa: E712
+    )
+    invite = result.scalars().first()
+    if not invite:
+        raise HTTPException(status_code=400, detail="Invalid or expired invite token")
+
+    if invite.expires_at and invite.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Invite token has expired")
+
+    # Check if email already exists
+    existing = await session.execute(select(User).where(User.email == invite.email))
+    if existing.scalars().first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    user = User(
+        email=invite.email,
+        name=req.name,
+        password_hash=_hash_password(req.password),
+        role=invite.role,
+        plan=invite.plan,
+        company_id=invite.company_id,
+        is_active=True,
+    )
+    session.add(user)
+
+    invite.used = True
+    await session.commit()
+    await session.refresh(user)
+
+    token = _create_jwt(user.id, user.email, user.role, user.plan)
+    return {
+        "status": "registered",
+        "token": token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "plan": user.plan,
+        },
+    }
+
+
+@app.get("/users")
+async def list_users(
+    session: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_role("admin")),
+) -> list[dict]:
+    """List all users (admin/owner only)."""
+    from sqlalchemy import select
+
+    from business_brain.db.v3_models import User
+
+    result = await session.execute(select(User).order_by(User.created_at.desc()))
+    users = result.scalars().all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "name": u.name,
+            "role": u.role,
+            "plan": u.plan,
+            "is_active": u.is_active,
+            "upload_count": u.upload_count,
+            "created_at": str(u.created_at) if u.created_at else None,
+            "last_login_at": str(u.last_login_at) if u.last_login_at else None,
+        }
+        for u in users
+    ]
+
+
+@app.put("/users/{user_id}/role")
+async def update_user_role(
+    user_id: str,
+    req: UpdateRoleRequest,
+    session: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_role("admin")),
+) -> dict:
+    """Change a user's role (admin/owner only)."""
+    from sqlalchemy import select
+
+    from business_brain.db.v3_models import User
+
+    if req.role not in ROLE_LEVELS:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Valid: {list(ROLE_LEVELS.keys())}")
+
+    result = await session.execute(select(User).where(User.id == user_id))
+    target = result.scalars().first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Can't change owner role unless you're the owner
+    if target.role == "owner" and user.get("role") != "owner":
+        raise HTTPException(status_code=403, detail="Only the owner can change another owner's role")
+
+    target.role = req.role
+    await session.commit()
+    return {"status": "updated", "user_id": user_id, "new_role": req.role}
+
+
+@app.delete("/users/{user_id}")
+async def deactivate_user(
+    user_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_role("owner")),
+) -> dict:
+    """Deactivate a user account (owner only)."""
+    from sqlalchemy import select
+
+    from business_brain.db.v3_models import User
+
+    result = await session.execute(select(User).where(User.id == user_id))
+    target = result.scalars().first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.id == user.get("sub"):
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+
+    target.is_active = False
+    await session.commit()
+    return {"status": "deactivated", "user_id": user_id}
