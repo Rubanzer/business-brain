@@ -16,6 +16,7 @@ from business_brain.db.discovery_models import (
     TableProfile,
 )
 from business_brain.discovery.anomaly_detector import detect_anomalies
+from business_brain.discovery.insight_quality_gate import apply_quality_gate
 from business_brain.discovery.composite_discoverer import discover_composites
 from business_brain.discovery.cross_event_correlator import find_cross_events
 from business_brain.discovery.feed_store import refresh_report
@@ -176,7 +177,13 @@ async def run_discovery(
         except Exception:
             logger.exception("Data freshness check failed, continuing")
 
-        # 9. Deduplicate insights against existing DB records
+        # 9. Apply insight quality gate (filter garbage, score business value, rewrite)
+        logger.info("Discovery: applying quality gate...")
+        pre_gate = len(all_insights)
+        all_insights = apply_quality_gate(all_insights, profiles)
+        logger.info("Discovery: quality gate: %d → %d insights", pre_gate, len(all_insights))
+
+        # 10. Deduplicate insights against existing DB records
         logger.info("Discovery: deduplicating insights...")
         try:
             from business_brain.discovery.dedup import compute_insight_key, deduplicate_insights
@@ -197,10 +204,9 @@ async def run_discovery(
         except Exception:
             logger.exception("Insight deduplication failed, continuing")
 
-        # 10. Score all insights
+        # 11. Assign run ID to all insights (scoring already done by quality gate)
         for insight in all_insights:
             insight.discovery_run_id = run.id
-            _apply_scoring(insight)
 
         # 11. Bulk insert insights
         for insight in all_insights:

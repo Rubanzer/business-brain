@@ -59,12 +59,12 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                 ],
             ))
 
-        # 2. Numeric outliers: values > 2 stdev from mean
+        # 2. Numeric outliers: values > 3 stdev from mean (raised from 2σ to reduce noise)
         if stats and "stdev" in stats and stats["stdev"] > 0:
             mean = stats["mean"]
             stdev = stats["stdev"]
-            low_bound = mean - 2 * stdev
-            high_bound = mean + 2 * stdev
+            low_bound = mean - 3 * stdev
+            high_bound = mean + 3 * stdev
 
             outlier_samples = []
             for s in samples:
@@ -83,9 +83,10 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                     impact_score=45,
                     title=f"Outlier values in {profile.table_name}.{col_name}",
                     description=(
-                        f"{col_name} has values beyond 2 standard deviations from mean "
-                        f"(mean={stats['mean']}, stdev={stats['stdev']}). "
-                        f"Examples: {outlier_samples[:3]}"
+                        f"{col_name} has values beyond 3 standard deviations from mean "
+                        f"(mean={stats['mean']:.2f}, stdev={stats['stdev']:.2f}). "
+                        f"Examples: {outlier_samples[:3]}. "
+                        f"These extreme values may indicate measurement errors or exceptional events."
                     ),
                     source_tables=[profile.table_name],
                     source_columns=[col_name],
@@ -144,44 +145,28 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                 ))
 
         # 5. Rare categories: values appearing < 2% of the time
+        # NOTE: "High cardinality categorical" is a data quality note, not a business insight.
+        # Suppressed from Feed — the quality gate will filter it anyway.
         if sem_type == "categorical" and cardinality > 5 and samples:
-            # We can only estimate from sample_values — flag if cardinality is very high
             if row_count > 0 and cardinality > row_count * 0.5:
-                results.append(Insight(
-                    id=str(uuid.uuid4()),
-                    insight_type="anomaly",
-                    severity="info",
-                    impact_score=20,
-                    title=f"High cardinality categorical {profile.table_name}.{col_name}",
-                    description=(
-                        f"{col_name} has {cardinality} unique values across {row_count} rows. "
-                        f"This may actually be an identifier column, not categorical."
-                    ),
-                    source_tables=[profile.table_name],
-                    source_columns=[col_name],
-                    evidence={"cardinality": cardinality, "row_count": row_count},
-                    suggested_actions=["Review if this column should be treated as an identifier"],
-                ))
+                # Log for quality tab but don't create a feed insight
+                logger.debug(
+                    "High cardinality categorical %s.%s: %d unique / %d rows",
+                    profile.table_name, col_name, cardinality, row_count,
+                )
 
         # 6. Constant columns: cardinality of 1 (useless for analysis)
+        # NOTE: "Constant column" is a data quality note, not a business insight.
+        # Suppressed from Feed — logged for quality tracking only.
         if cardinality == 1 and row_count > 1:
-            results.append(Insight(
-                id=str(uuid.uuid4()),
-                insight_type="anomaly",
-                severity="info",
-                impact_score=10,
-                title=f"Constant column {profile.table_name}.{col_name}",
-                description=(
-                    f"{col_name} has only 1 unique value across {row_count} rows. "
-                    f"This column provides no analytical value."
-                ),
-                source_tables=[profile.table_name],
-                source_columns=[col_name],
-                evidence={"cardinality": 1, "sample": samples[:1] if samples else []},
-                suggested_actions=["Consider removing this column from analysis"],
-            ))
+            logger.debug(
+                "Constant column %s.%s: 1 unique value across %d rows",
+                profile.table_name, col_name, row_count,
+            )
 
     # 7. Time-based insights: detect temporal + numeric combinations for trend detection
+    # NOTE: "Time series data available" is a meta-observation, not a business insight.
+    # Suppressed from Feed. The system already uses this info for trend analysis internally.
     temp_cols = [c for c, i in cols.items() if i.get("semantic_type") == "temporal"]
     num_cols = [
         c for c, i in cols.items()
@@ -189,39 +174,10 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
     ]
 
     if temp_cols and num_cols:
-        results.append(Insight(
-            id=str(uuid.uuid4()),
-            insight_type="trend",
-            severity="info",
-            impact_score=35,
-            title=f"Time series data available in {profile.table_name}",
-            description=(
-                f"Table has temporal column(s) {temp_cols} and numeric column(s) {num_cols[:3]}. "
-                f"Period-over-period trend analysis is possible."
-            ),
-            source_tables=[profile.table_name],
-            source_columns=temp_cols + num_cols[:3],
-            evidence={
-                "temporal_columns": temp_cols,
-                "numeric_columns": num_cols[:3],
-                "query": (
-                    f'SELECT "{temp_cols[0]}", '
-                    + ", ".join(f'AVG("{n}")' for n in num_cols[:3])
-                    + f' FROM "{profile.table_name}" GROUP BY "{temp_cols[0]}" '
-                    f'ORDER BY "{temp_cols[0]}"'
-                ),
-                "chart_spec": {
-                    "type": "line",
-                    "x": temp_cols[0],
-                    "y": num_cols[:2],
-                    "title": f"{num_cols[0]} trend over {temp_cols[0]}",
-                },
-            },
-            suggested_actions=[
-                f"Analyze {num_cols[0]} trend over {temp_cols[0]}",
-                "Check for period-over-period growth or decline",
-            ],
-        ))
+        logger.debug(
+            "Time series available: %s has temporal=%s, numeric=%s",
+            profile.table_name, temp_cols, num_cols[:3],
+        )
 
     # 8. Domain-specific anomalies for manufacturing
     domain = (profile.domain_hint or "general").lower()

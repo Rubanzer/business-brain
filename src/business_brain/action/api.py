@@ -8885,3 +8885,405 @@ async def market_penetration(table_name: str, body: dict, session: AsyncSession 
         "untapped_regions": res.untapped_regions,
         "summary": res.summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Context Management Endpoints (for structured context visibility & editing)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/context/entries")
+async def list_context_entries(session: AsyncSession = Depends(get_session)) -> dict:
+    """List all business context entries grouped by source."""
+    from business_brain.memory.vector_store import list_all_contexts
+    entries = await list_all_contexts(session, active_only=True)
+
+    # Group by source
+    grouped: dict[str, list] = {}
+    for entry in entries:
+        source = entry["source"]
+        if source not in grouped:
+            grouped[source] = []
+        grouped[source].append(entry)
+
+    return {"sources": grouped, "total": len(entries)}
+
+
+@app.put("/context/entries/{entry_id}")
+async def update_context_entry(
+    entry_id: int,
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Edit a single context entry's text. Re-embeds the content."""
+    from sqlalchemy import select
+    from business_brain.db.models import BusinessContext
+    from business_brain.ingestion.embeddings import embed_text
+
+    result = await session.execute(
+        select(BusinessContext).where(BusinessContext.id == entry_id)
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        return {"error": "Context entry not found"}
+
+    new_content = body.get("content", "").strip()
+    if not new_content:
+        return {"error": "Content cannot be empty"}
+
+    # Update content and re-embed
+    entry.content = new_content
+    entry.embedding = embed_text(new_content)
+    await session.commit()
+
+    return {"status": "updated", "id": entry_id}
+
+
+@app.delete("/context/entries/{entry_id}")
+async def delete_context_entry(
+    entry_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Soft-delete a context entry (mark as inactive)."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from business_brain.db.models import BusinessContext
+
+    result = await session.execute(
+        select(BusinessContext).where(BusinessContext.id == entry_id)
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        return {"error": "Context entry not found"}
+
+    entry.active = False
+    entry.superseded_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    return {"status": "deleted", "id": entry_id}
+
+
+# ---------------------------------------------------------------------------
+# Process Steps Endpoints (structured process map)
+# ---------------------------------------------------------------------------
+
+
+class ProcessStepRequest(BaseModel):
+    step_order: int = 0
+    process_name: str
+    inputs: str = ""
+    outputs: str = ""
+    key_metric: str = ""
+    target_range: str = ""
+    linked_table: str = ""
+
+
+@app.get("/process-steps")
+async def list_process_steps(session: AsyncSession = Depends(get_session)) -> list[dict]:
+    """List all process steps ordered by step_order."""
+    from sqlalchemy import select
+    from business_brain.db.v3_models import ProcessStep
+
+    result = await session.execute(
+        select(ProcessStep).order_by(ProcessStep.step_order)
+    )
+    steps = result.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "step_order": s.step_order,
+            "process_name": s.process_name,
+            "inputs": s.inputs,
+            "outputs": s.outputs,
+            "key_metric": s.key_metric,
+            "target_range": s.target_range,
+            "linked_table": s.linked_table,
+        }
+        for s in steps
+    ]
+
+
+@app.post("/process-steps")
+async def create_process_step(
+    req: ProcessStepRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Add a new process step."""
+    from business_brain.db.v3_models import ProcessStep
+
+    step = ProcessStep(
+        step_order=req.step_order,
+        process_name=req.process_name,
+        inputs=req.inputs,
+        outputs=req.outputs,
+        key_metric=req.key_metric,
+        target_range=req.target_range,
+        linked_table=req.linked_table,
+    )
+    session.add(step)
+    await session.commit()
+    await session.refresh(step)
+
+    # Auto-regenerate RAG context from process steps
+    await _regenerate_process_context(session)
+
+    return {"status": "created", "id": step.id}
+
+
+@app.put("/process-steps/{step_id}")
+async def update_process_step(
+    step_id: int,
+    req: ProcessStepRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Update an existing process step."""
+    from sqlalchemy import select
+    from business_brain.db.v3_models import ProcessStep
+
+    result = await session.execute(
+        select(ProcessStep).where(ProcessStep.id == step_id)
+    )
+    step = result.scalar_one_or_none()
+    if not step:
+        return {"error": "Process step not found"}
+
+    step.step_order = req.step_order
+    step.process_name = req.process_name
+    step.inputs = req.inputs
+    step.outputs = req.outputs
+    step.key_metric = req.key_metric
+    step.target_range = req.target_range
+    step.linked_table = req.linked_table
+    await session.commit()
+
+    await _regenerate_process_context(session)
+
+    return {"status": "updated", "id": step.id}
+
+
+@app.delete("/process-steps/{step_id}")
+async def delete_process_step(
+    step_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Delete a process step."""
+    from sqlalchemy import select, delete
+    from business_brain.db.v3_models import ProcessStep
+
+    result = await session.execute(
+        select(ProcessStep).where(ProcessStep.id == step_id)
+    )
+    step = result.scalar_one_or_none()
+    if not step:
+        return {"error": "Process step not found"}
+
+    await session.execute(delete(ProcessStep).where(ProcessStep.id == step_id))
+    await session.commit()
+
+    await _regenerate_process_context(session)
+
+    return {"status": "deleted", "id": step_id}
+
+
+# ---------------------------------------------------------------------------
+# Process I/O Endpoints (inputs & outputs map)
+# ---------------------------------------------------------------------------
+
+
+class ProcessIORequest(BaseModel):
+    io_type: str  # "input" or "output"
+    name: str
+    source_or_destination: str = ""
+    unit: str = ""
+    typical_range: str = ""
+    linked_table: str = ""
+
+
+@app.get("/process-io")
+async def list_process_io(session: AsyncSession = Depends(get_session)) -> list[dict]:
+    """List all process inputs and outputs."""
+    from sqlalchemy import select
+    from business_brain.db.v3_models import ProcessIO
+
+    result = await session.execute(
+        select(ProcessIO).order_by(ProcessIO.io_type, ProcessIO.name)
+    )
+    ios = result.scalars().all()
+    return [
+        {
+            "id": io.id,
+            "io_type": io.io_type,
+            "name": io.name,
+            "source_or_destination": io.source_or_destination,
+            "unit": io.unit,
+            "typical_range": io.typical_range,
+            "linked_table": io.linked_table,
+        }
+        for io in ios
+    ]
+
+
+@app.post("/process-io")
+async def create_process_io(
+    req: ProcessIORequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Add a new process input or output."""
+    from business_brain.db.v3_models import ProcessIO
+
+    io = ProcessIO(
+        io_type=req.io_type,
+        name=req.name,
+        source_or_destination=req.source_or_destination,
+        unit=req.unit,
+        typical_range=req.typical_range,
+        linked_table=req.linked_table,
+    )
+    session.add(io)
+    await session.commit()
+    await session.refresh(io)
+
+    await _regenerate_io_context(session)
+
+    return {"status": "created", "id": io.id}
+
+
+@app.put("/process-io/{io_id}")
+async def update_process_io(
+    io_id: int,
+    req: ProcessIORequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Update an existing process I/O entry."""
+    from sqlalchemy import select
+    from business_brain.db.v3_models import ProcessIO
+
+    result = await session.execute(
+        select(ProcessIO).where(ProcessIO.id == io_id)
+    )
+    io = result.scalar_one_or_none()
+    if not io:
+        return {"error": "Process I/O entry not found"}
+
+    io.io_type = req.io_type
+    io.name = req.name
+    io.source_or_destination = req.source_or_destination
+    io.unit = req.unit
+    io.typical_range = req.typical_range
+    io.linked_table = req.linked_table
+    await session.commit()
+
+    await _regenerate_io_context(session)
+
+    return {"status": "updated", "id": io_id}
+
+
+@app.delete("/process-io/{io_id}")
+async def delete_process_io(
+    io_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Delete a process I/O entry."""
+    from sqlalchemy import select, delete
+    from business_brain.db.v3_models import ProcessIO
+
+    result = await session.execute(
+        select(ProcessIO).where(ProcessIO.id == io_id)
+    )
+    io = result.scalar_one_or_none()
+    if not io:
+        return {"error": "Process I/O entry not found"}
+
+    await session.execute(delete(ProcessIO).where(ProcessIO.id == io_id))
+    await session.commit()
+
+    await _regenerate_io_context(session)
+
+    return {"status": "deleted", "id": io_id}
+
+
+# ---------------------------------------------------------------------------
+# Helpers: Auto-regenerate RAG context from structured data
+# ---------------------------------------------------------------------------
+
+
+async def _regenerate_process_context(session: AsyncSession) -> None:
+    """Generate natural language context from process steps and reingest."""
+    from sqlalchemy import select
+    from business_brain.db.v3_models import ProcessStep
+    from business_brain.ingestion.context_ingestor import reingest_context
+
+    result = await session.execute(
+        select(ProcessStep).order_by(ProcessStep.step_order)
+    )
+    steps = result.scalars().all()
+    if not steps:
+        return
+
+    lines = ["PRODUCTION PROCESS MAP:"]
+    for s in steps:
+        line = f"Step {s.step_order}: {s.process_name}"
+        if s.inputs:
+            line += f" | Inputs: {s.inputs}"
+        if s.outputs:
+            line += f" | Outputs: {s.outputs}"
+        if s.key_metric:
+            line += f" | Key Metric: {s.key_metric}"
+        if s.target_range:
+            line += f" (Target: {s.target_range})"
+        if s.linked_table:
+            line += f" | Data: {s.linked_table}"
+        lines.append(line)
+
+    text = "\n".join(lines)
+    await reingest_context(text, session, source="structured:process_map")
+
+
+async def _regenerate_io_context(session: AsyncSession) -> None:
+    """Generate natural language context from process I/O and reingest."""
+    from sqlalchemy import select
+    from business_brain.db.v3_models import ProcessIO
+    from business_brain.ingestion.context_ingestor import reingest_context
+
+    result = await session.execute(
+        select(ProcessIO).order_by(ProcessIO.io_type, ProcessIO.name)
+    )
+    ios = result.scalars().all()
+    if not ios:
+        return
+
+    inputs = [io for io in ios if io.io_type == "input"]
+    outputs = [io for io in ios if io.io_type == "output"]
+
+    lines = ["PROCESS INPUTS AND OUTPUTS:"]
+
+    if inputs:
+        lines.append("INPUTS:")
+        for io in inputs:
+            line = f"  - {io.name}"
+            if io.source_or_destination:
+                line += f" (from {io.source_or_destination})"
+            if io.unit:
+                line += f" [{io.unit}]"
+            if io.typical_range:
+                line += f" typical: {io.typical_range}"
+            if io.linked_table:
+                line += f" → table: {io.linked_table}"
+            lines.append(line)
+
+    if outputs:
+        lines.append("OUTPUTS:")
+        for io in outputs:
+            line = f"  - {io.name}"
+            if io.source_or_destination:
+                line += f" (to {io.source_or_destination})"
+            if io.unit:
+                line += f" [{io.unit}]"
+            if io.typical_range:
+                line += f" typical: {io.typical_range}"
+            if io.linked_table:
+                line += f" → table: {io.linked_table}"
+            lines.append(line)
+
+    text = "\n".join(lines)
+    await reingest_context(text, session, source="structured:process_io")

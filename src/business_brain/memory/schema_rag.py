@@ -200,6 +200,23 @@ async def retrieve_relevant_tables(
     except Exception:
         logger.debug("Threshold context retrieval failed")
 
+    # 5. Feed relevant discovery insights into context
+    try:
+        matched_table_names = [t["table_name"] for t in ranked]
+        insight_context = await _get_relevant_insights(session, matched_table_names)
+        if insight_context:
+            context_snippets.append(insight_context)
+    except Exception:
+        logger.debug("Discovery insight retrieval failed")
+
+    # 6. Add domain knowledge (benchmarks, red flags, terminology)
+    try:
+        domain_context = await _get_domain_context(session)
+        if domain_context:
+            context_snippets.append(domain_context)
+    except Exception:
+        logger.debug("Domain knowledge context retrieval failed")
+
     return tables, context_snippets
 
 
@@ -313,6 +330,100 @@ async def _get_threshold_context(session: AsyncSession) -> Optional[dict]:
         return {
             "content": "\n".join(parts),
             "source": "metric_thresholds",
+        }
+    except Exception:
+        return None
+
+
+async def _get_relevant_insights(
+    session: AsyncSession,
+    table_names: list[str],
+    limit: int = 5,
+) -> Optional[dict]:
+    """Fetch recent high-scoring insights relevant to the queried tables.
+
+    This feeds discovery knowledge back into the query pipeline so agents
+    know about anomalies, trends, and patterns already found.
+    """
+    try:
+        from business_brain.db.discovery_models import Insight
+
+        # Find insights where source_tables overlap with queried tables
+        result = await session.execute(
+            select(Insight)
+            .where(
+                Insight.status != "dismissed",
+                Insight.quality_score >= 30,
+            )
+            .order_by(Insight.impact_score.desc(), Insight.discovered_at.desc())
+            .limit(limit * 3)  # fetch extra to filter by table overlap
+        )
+        all_insights = result.scalars().all()
+
+        # Filter to insights relevant to the queried tables
+        relevant = []
+        for insight in all_insights:
+            source_tables = insight.source_tables or []
+            if any(t in table_names for t in source_tables):
+                relevant.append(insight)
+            if len(relevant) >= limit:
+                break
+
+        if not relevant:
+            return None
+
+        parts = ["PREVIOUSLY DISCOVERED INSIGHTS (from automated analysis):"]
+        for ins in relevant:
+            severity_icon = {"critical": "🔴", "warning": "🟡"}.get(ins.severity, "🔵")
+            parts.append(f"  {severity_icon} [{ins.insight_type}] {ins.title}")
+            if ins.description:
+                # Truncate long descriptions
+                desc = ins.description[:200] + "..." if len(ins.description) > 200 else ins.description
+                parts.append(f"    {desc}")
+
+        return {
+            "content": "\n".join(parts),
+            "source": "discovery_insights",
+        }
+    except Exception:
+        return None
+
+
+async def _get_domain_context(session: AsyncSession) -> Optional[dict]:
+    """Get domain knowledge (benchmarks, red flags) based on company industry."""
+    try:
+        from business_brain.cognitive.domain_knowledge import (
+            format_benchmarks_for_prompt,
+            format_red_flags_for_prompt,
+            get_domain_knowledge,
+        )
+        from business_brain.db.v3_models import CompanyProfile
+
+        # Get the company's industry
+        result = await session.execute(select(CompanyProfile).limit(1))
+        profile = result.scalar_one_or_none()
+        industry = profile.industry if profile else None
+
+        knowledge = get_domain_knowledge(industry)
+        if not knowledge:
+            return None
+
+        # Combine benchmarks and red flags into a single context snippet
+        benchmarks_text = format_benchmarks_for_prompt(industry)
+        red_flags_text = format_red_flags_for_prompt(industry)
+
+        parts = []
+        if benchmarks_text:
+            parts.append(benchmarks_text)
+        if red_flags_text:
+            parts.append(red_flags_text)
+
+        if not parts:
+            return None
+
+        return {
+            "content": "\n\n".join(parts),
+            "source": "domain_knowledge",
         }
     except Exception:
         return None

@@ -65,7 +65,8 @@ class Insight(Base):
     id = Column(String(36), primary_key=True, default=_uuid)
     insight_type = Column(String(30), nullable=False)  # anomaly/trend/correlation/composite/cross_event/story
     severity = Column(String(20), nullable=False, default="info")  # critical/warning/info
-    impact_score = Column(Integer, default=0)  # 0-100
+    impact_score = Column(Integer, default=0)  # 0-100 (business value score from quality gate)
+    quality_score = Column(Integer, default=0)  # 0-100 (mirrors impact_score after quality gate)
     title = Column(String(500), nullable=False)
     description = Column(Text, nullable=False)
     narrative = Column(Text, nullable=True)

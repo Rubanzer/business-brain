@@ -132,6 +132,127 @@
     .panel { display: none; }
     .panel.active { display: block; }
 
+    /* Sub-navigation pills within panels */
+    .sub-nav {
+      display: flex;
+      gap: 0.3rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .sub-nav-pill {
+      padding: 0.3rem 0.8rem;
+      font-size: 0.75rem;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .sub-nav-pill:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+    .sub-nav-pill.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .sub-panel { display: none; }
+    .sub-panel.active { display: block; }
+
+    /* Context entries list */
+    .ctx-entry {
+      padding: 0.6rem 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      position: relative;
+    }
+    .ctx-entry .ctx-source {
+      font-size: 0.65rem;
+      color: var(--accent);
+      margin-bottom: 0.2rem;
+      font-weight: 500;
+    }
+    .ctx-entry .ctx-actions {
+      position: absolute;
+      top: 0.4rem;
+      right: 0.4rem;
+      display: flex;
+      gap: 0.3rem;
+    }
+    .ctx-entry .ctx-actions button {
+      font-size: 0.65rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .ctx-entry .ctx-actions button:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* Process map table */
+    .process-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+      margin-bottom: 0.5rem;
+    }
+    .process-table th {
+      background: var(--border);
+      padding: 0.4rem 0.6rem;
+      text-align: left;
+      font-weight: 500;
+      font-size: 0.68rem;
+    }
+    .process-table td {
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .process-table tr:hover {
+      background: rgba(99, 102, 241, 0.05);
+    }
+
+    /* Metric threshold cards */
+    .metric-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.7rem;
+      font-size: 0.72rem;
+    }
+    .metric-card h4 {
+      margin: 0 0 0.3rem;
+      font-size: 0.8rem;
+      color: var(--text);
+    }
+    .metric-card .mc-range {
+      display: flex;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.3rem;
+    }
+    .metric-card .mc-range span {
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.65rem;
+    }
+    .mc-good { background: rgba(16,185,129,0.15); color: #059669; }
+    .mc-warn { background: rgba(245,158,11,0.15); color: #d97706; }
+    .mc-crit { background: rgba(239,68,68,0.15); color: #dc2626; }
+    .metric-card .mc-meta {
+      font-size: 0.62rem;
+      color: var(--muted);
+    }
+
     .input-group {
       display: flex;
       gap: 0.5rem;
@@ -1159,19 +1280,15 @@
       <button class="tab" data-panel="analyze">Analyze</button>
       <button class="tab" data-panel="reports">Reports</button>
       <button class="tab" data-panel="alerts">Alerts</button>
-      <button class="tab" data-panel="sources">Sources</button>
+      <button class="tab" data-panel="data">Data</button>
       <button class="tab" data-panel="setup">Setup</button>
       <div class="tab-more-wrap">
         <button class="tab-more-btn" id="tab-more-btn">More &#x25BE;</button>
         <div class="tab-more-menu" id="tab-more-menu">
-          <button class="tab-menu-item" data-panel="quality">Quality</button>
           <button class="tab-menu-item" data-panel="relationships">Relationships</button>
           <button class="tab-menu-item" data-panel="goals">Goals</button>
           <button class="tab-menu-item" data-panel="whatif">What-If</button>
           <button class="tab-menu-item" data-panel="changelog">Audit Log</button>
-          <button class="tab-menu-item" data-panel="context">Context</button>
-          <button class="tab-menu-item" data-panel="upload">Upload</button>
-          <button class="tab-menu-item" data-panel="schema">Schema</button>
         </div>
       </div>
       <span class="data-health-global" id="data-health-global" title="Data health status"></span>
@@ -1299,7 +1416,67 @@
       </div>
     </div>
 
-    <!-- Sources Panel -->
+    <!-- =====================================================================
+         DATA TAB (consolidated: Tables/Schema + Upload + Sources + Quality)
+         ===================================================================== -->
+    <div id="data" class="panel">
+      <div class="sub-nav" id="data-sub-nav">
+        <button class="sub-nav-pill active" data-sub="data-tables">Tables</button>
+        <button class="sub-nav-pill" data-sub="data-upload">Upload</button>
+        <button class="sub-nav-pill" data-sub="data-sources">Sources</button>
+        <button class="sub-nav-pill" data-sub="data-quality">Quality</button>
+      </div>
+
+      <!-- Sub: Tables (was Schema) -->
+      <div id="data-tables" class="sub-panel active">
+        <div id="data-schema-body">
+          <div class="feed-empty">Loading schema...</div>
+        </div>
+      </div>
+
+      <!-- Sub: Upload -->
+      <div id="data-upload" class="sub-panel">
+        <div class="drop-zone" id="data-drop-zone">
+          <span class="drop-icon">&#8593;</span>
+          <div>Drag &amp; drop a file here, or click to browse</div>
+          <div class="drop-hint">Accepts .csv, .xlsx, .pdf</div>
+          <input type="file" id="data-file-input" accept=".csv,.xlsx,.xls,.pdf" />
+        </div>
+        <div id="data-upload-result" class="result" style="display:none">
+          <div class="result-header">
+            <span>Upload Report</span>
+            <span id="data-upload-status"></span>
+          </div>
+          <div class="result-body" id="data-upload-body"></div>
+        </div>
+      </div>
+
+      <!-- Sub: Sources -->
+      <div id="data-sources" class="sub-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+          <span style="font-size:0.8rem;color:var(--muted);">Connected Data Sources</span>
+          <div style="display:flex;gap:0.4rem;">
+            <button class="btn-sm" onclick="showAddSourceModal('sheet')">+ Google Sheet</button>
+            <button class="btn-sm btn-secondary" onclick="showAddSourceModal('api')">+ API</button>
+          </div>
+        </div>
+        <div id="data-sources-body">
+          <div class="feed-empty">No data sources connected yet.</div>
+        </div>
+      </div>
+
+      <!-- Sub: Quality -->
+      <div id="data-quality" class="sub-panel">
+        <div class="input-group">
+          <button onclick="loadDataQuality()">Refresh Quality Scores</button>
+        </div>
+        <div id="data-quality-body">
+          <div class="feed-empty">Click refresh to load data quality scores.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sources Panel (legacy — kept for backward compat, hidden from tabs) -->
     <div id="sources" class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
         <span style="font-size:0.8rem;color:var(--muted);">Connected Data Sources</span>
@@ -1313,56 +1490,131 @@
       </div>
     </div>
 
-    <!-- Setup Panel (Onboarding) -->
+    <!-- =====================================================================
+         SETUP TAB (consolidated: Company Profile + Context + Process Map + Metrics + I/O)
+         ===================================================================== -->
     <div id="setup" class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-        <span style="font-size:0.9rem;font-weight:500;">Company Profile</span>
-        <span style="font-size:0.7rem;color:var(--muted);" id="setup-completeness">0% complete</span>
-      </div>
-      <div class="progress-bar"><div class="progress-bar-fill" id="setup-progress" style="width:0%"></div></div>
-
-      <div class="onboard-step">
-        <h3>Company Basics</h3>
-        <label>Company Name</label>
-        <input type="text" id="ob-name" placeholder="Your company name" />
-        <label>Industry</label>
-        <select id="ob-industry">
-          <option value="">Select industry...</option>
-          <option value="steel">Steel</option>
-          <option value="cement">Cement</option>
-          <option value="textile">Textile</option>
-          <option value="pharma">Pharma</option>
-          <option value="auto">Automotive</option>
-          <option value="food">Food Processing</option>
-          <option value="other">Other</option>
-        </select>
-        <label>Products (comma-separated)</label>
-        <input type="text" id="ob-products" placeholder="e.g., TMT bars, billets, wire rods" />
+      <div class="sub-nav" id="setup-sub-nav">
+        <button class="sub-nav-pill active" data-sub="setup-profile">Company Profile</button>
+        <button class="sub-nav-pill" data-sub="setup-process">Process Map</button>
+        <button class="sub-nav-pill" data-sub="setup-metrics">Key Metrics</button>
+        <button class="sub-nav-pill" data-sub="setup-io">Inputs &amp; Outputs</button>
+        <button class="sub-nav-pill" data-sub="setup-context">Business Context</button>
       </div>
 
-      <div class="onboard-step">
-        <h3>Process Flow</h3>
-        <label>Describe your production process</label>
-        <textarea id="ob-process" rows="3" placeholder="e.g., Scrap/sponge iron → Induction furnace → Continuous casting → Rolling mill → TMT bars"></textarea>
+      <!-- Sub: Company Profile (existing onboarding) -->
+      <div id="setup-profile" class="sub-panel active">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+          <span style="font-size:0.9rem;font-weight:500;">Company Profile</span>
+          <span style="font-size:0.7rem;color:var(--muted);" id="setup-completeness">0% complete</span>
+        </div>
+        <div class="progress-bar"><div class="progress-bar-fill" id="setup-progress" style="width:0%"></div></div>
+
+        <div class="onboard-step">
+          <h3>Company Basics</h3>
+          <label>Company Name</label>
+          <input type="text" id="ob-name" placeholder="Your company name" />
+          <label>Industry</label>
+          <select id="ob-industry">
+            <option value="">Select industry...</option>
+            <option value="steel">Steel</option>
+            <option value="cement">Cement</option>
+            <option value="textile">Textile</option>
+            <option value="pharma">Pharma</option>
+            <option value="auto">Automotive</option>
+            <option value="food">Food Processing</option>
+            <option value="other">Other</option>
+          </select>
+          <label>Products (comma-separated)</label>
+          <input type="text" id="ob-products" placeholder="e.g., TMT bars, billets, wire rods" />
+        </div>
+
+        <div class="onboard-step">
+          <h3>Process Flow</h3>
+          <label>Describe your production process</label>
+          <textarea id="ob-process" rows="3" placeholder="e.g., Scrap/sponge iron → Induction furnace → Continuous casting → Rolling mill → TMT bars"></textarea>
+        </div>
+
+        <div class="onboard-step">
+          <h3>Data Systems</h3>
+          <label>List your systems (one per line: Name - Description)</label>
+          <textarea id="ob-systems" rows="4" placeholder="Tally - Financial accounting&#10;VEGA - Truck/logistics management&#10;SCADA - Electrical monitoring"></textarea>
+        </div>
+
+        <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;">
+          <button onclick="saveOnboarding()">Save Profile</button>
+          <button class="btn-secondary" onclick="loadOnboarding()">Refresh</button>
+        </div>
       </div>
 
-      <div class="onboard-step">
-        <h3>Data Systems</h3>
-        <label>List your systems (one per line: Name - Description)</label>
-        <textarea id="ob-systems" rows="4" placeholder="Tally - Financial accounting&#10;VEGA - Truck/logistics management&#10;SCADA - Electrical monitoring"></textarea>
+      <!-- Sub: Process Map -->
+      <div id="setup-process" class="sub-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem;font-weight:500;">Production Process Map</span>
+          <button class="btn-sm" onclick="showAddProcessStepModal()">+ Add Step</button>
+        </div>
+        <p style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem;">
+          Define each step of your production process with inputs, outputs, key metrics, and target ranges.
+          Changes auto-update the system's context for better analysis.
+        </p>
+        <div id="process-steps-body">
+          <div class="feed-empty" style="padding:0.8rem;">No process steps defined yet. Click "+ Add Step" to start.</div>
+        </div>
       </div>
 
-      <div style="display:flex;gap:0.5rem;margin-bottom:1.5rem;">
-        <button onclick="saveOnboarding()">Save Profile</button>
-        <button class="btn-secondary" onclick="loadOnboarding()">Refresh</button>
+      <!-- Sub: Key Metrics & Ranges -->
+      <div id="setup-metrics" class="sub-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem;font-weight:500;">Key Metrics &amp; Ranges</span>
+          <button class="btn-sm" onclick="showAddThresholdModal()">+ Add Metric</button>
+        </div>
+        <p style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem;">
+          Define acceptable ranges for key metrics. The system uses these to flag anomalies and benchmark performance.
+        </p>
+        <div id="thresholds-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.5rem;">
+          <div class="feed-empty" style="padding:0.8rem;grid-column:1/-1;">No thresholds configured yet.</div>
+        </div>
       </div>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-        <span style="font-size:0.85rem;font-weight:500;">Metric Thresholds</span>
-        <button class="btn-sm" onclick="showAddThresholdModal()">+ Add Threshold</button>
+      <!-- Sub: Inputs & Outputs Map -->
+      <div id="setup-io" class="sub-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem;font-weight:500;">Process Inputs &amp; Outputs</span>
+          <div style="display:flex;gap:0.3rem;">
+            <button class="btn-sm" onclick="showAddIOModal('input')">+ Input</button>
+            <button class="btn-sm btn-secondary" onclick="showAddIOModal('output')">+ Output</button>
+          </div>
+        </div>
+        <p style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem;">
+          Define what goes into and comes out of your production process. Link to data tables for automatic tracking.
+        </p>
+        <div id="process-io-body">
+          <div class="feed-empty" style="padding:0.8rem;">No inputs or outputs defined yet.</div>
+        </div>
       </div>
-      <div id="thresholds-body">
-        <div class="feed-empty" style="padding:1rem;">No thresholds configured yet.</div>
+
+      <!-- Sub: Business Context (visible, editable entries from vector store) -->
+      <div id="setup-context" class="sub-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem;font-weight:500;">Business Context</span>
+          <div style="display:flex;gap:0.3rem;">
+            <button class="btn-sm" onclick="showAddContextModal()">+ Add Context</button>
+            <button class="btn-sm btn-secondary" onclick="loadContextEntries()">Refresh</button>
+          </div>
+        </div>
+        <p style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem;">
+          All business knowledge the system uses for analysis. Auto-generated from your profile and uploads, or manually entered.
+        </p>
+        <div class="context-form" style="margin-bottom:0.75rem;">
+          <textarea id="ctx-text" rows="2" placeholder="Enter business context (e.g., 'Enterprise customers generate 80% of our revenue')" style="font-size:0.75rem;"></textarea>
+          <div style="display:flex;gap:0.3rem;margin-top:0.3rem;">
+            <input type="text" id="ctx-source" placeholder="Source label" value="manual" style="font-size:0.72rem;flex:1;" />
+            <button class="btn-sm" onclick="submitContext()">Add</button>
+          </div>
+        </div>
+        <div id="context-entries-body">
+          <div class="feed-empty" style="padding:0.8rem;">Loading context entries...</div>
+        </div>
       </div>
     </div>
 
@@ -1660,6 +1912,271 @@
         moreMenu.classList.remove('open');
       });
     });
+
+    // Sub-navigation pills (for Data and Setup tabs)
+    document.querySelectorAll('.sub-nav').forEach(nav => {
+      nav.querySelectorAll('.sub-nav-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+          const parentPanel = nav.closest('.panel');
+          parentPanel.querySelectorAll('.sub-nav-pill').forEach(p => p.classList.remove('active'));
+          parentPanel.querySelectorAll('.sub-panel').forEach(sp => sp.classList.remove('active'));
+          pill.classList.add('active');
+          document.getElementById(pill.dataset.sub).classList.add('active');
+
+          // Auto-load content when switching sub-panels
+          const sub = pill.dataset.sub;
+          if (sub === 'data-tables') loadSchemaIntoData();
+          if (sub === 'data-sources') loadSourcesIntoData();
+          if (sub === 'data-quality') loadDataQualityIntoData();
+          if (sub === 'setup-process') loadProcessSteps();
+          if (sub === 'setup-metrics') loadThresholds();
+          if (sub === 'setup-io') loadProcessIO();
+          if (sub === 'setup-context') loadContextEntries();
+        });
+      });
+    });
+
+    // Load Data tab sub-content (wiring to existing functions where possible)
+    function loadSchemaIntoData() {
+      const body = document.getElementById('data-schema-body');
+      const existingSchema = document.getElementById('schema-body');
+      if (existingSchema && existingSchema.innerHTML.trim()) {
+        body.innerHTML = existingSchema.innerHTML;
+      } else {
+        // Trigger the original schema load and copy
+        if (typeof loadSchema === 'function') loadSchema();
+        body.innerHTML = '<div class="feed-empty">Loading schema data...</div>';
+      }
+    }
+
+    function loadSourcesIntoData() {
+      const body = document.getElementById('data-sources-body');
+      const existingSources = document.getElementById('sources-body');
+      if (existingSources && existingSources.innerHTML.trim()) {
+        body.innerHTML = existingSources.innerHTML;
+      }
+    }
+
+    function loadDataQualityIntoData() {
+      const body = document.getElementById('data-quality-body');
+      const existingQuality = document.getElementById('quality-body');
+      if (existingQuality && existingQuality.innerHTML.trim()) {
+        body.innerHTML = existingQuality.innerHTML;
+      } else {
+        if (typeof loadDataQuality === 'function') loadDataQuality();
+      }
+    }
+
+    // Auto-load Data tab schema on first visit
+    document.querySelector('[data-panel="data"]')?.addEventListener('click', () => {
+      loadSchemaIntoData();
+    });
+
+    // Auto-load Setup tab content on first visit
+    document.querySelector('[data-panel="setup"]')?.addEventListener('click', () => {
+      if (typeof loadOnboarding === 'function') loadOnboarding();
+    });
+
+    // ---- Context Entries Management ----
+    async function loadContextEntries() {
+      const body = document.getElementById('context-entries-body');
+      try {
+        const res = await fetch('/context/entries');
+        const data = await res.json();
+        if (!data.sources || data.total === 0) {
+          body.innerHTML = '<div class="feed-empty" style="padding:0.8rem;">No context entries yet. Add some from the form above or they will be auto-generated from your company profile and data uploads.</div>';
+          return;
+        }
+        let html = '';
+        for (const [source, entries] of Object.entries(data.sources)) {
+          const icon = source.startsWith('onboarding') ? '📋' :
+                       source.startsWith('upload') ? '📄' :
+                       source.startsWith('structured') ? '🏭' :
+                       source === 'manual' ? '✍️' : '📎';
+          html += `<div style="font-size:0.72rem;font-weight:500;color:var(--muted);margin:0.6rem 0 0.3rem;padding-left:0.2rem;">${icon} ${source} (${entries.length} chunks)</div>`;
+          for (const entry of entries) {
+            const truncated = entry.content.length > 200 ? entry.content.substring(0, 200) + '...' : entry.content;
+            const isEditable = source === 'manual' || source.startsWith('onboarding');
+            html += `<div class="ctx-entry">
+              <div class="ctx-actions">
+                ${isEditable ? `<button onclick="editContextEntry(${entry.id})">Edit</button>` : ''}
+                <button onclick="deleteContextEntry(${entry.id})" style="color:#e74c3c;">Delete</button>
+              </div>
+              <div style="padding-right:5rem;">${truncated}</div>
+            </div>`;
+          }
+        }
+        body.innerHTML = html;
+      } catch (e) {
+        body.innerHTML = '<div class="feed-empty">Failed to load context entries.</div>';
+      }
+    }
+
+    async function editContextEntry(id) {
+      const newContent = prompt('Edit context entry:');
+      if (!newContent) return;
+      try {
+        await fetch(`/context/entries/${id}`, {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({content: newContent})
+        });
+        toast('Context updated');
+        loadContextEntries();
+      } catch (e) {
+        toast('Failed to update context');
+      }
+    }
+
+    async function deleteContextEntry(id) {
+      if (!confirm('Delete this context entry?')) return;
+      try {
+        await fetch(`/context/entries/${id}`, {method: 'DELETE'});
+        toast('Context deleted');
+        loadContextEntries();
+      } catch (e) {
+        toast('Failed to delete context');
+      }
+    }
+
+    // ---- Process Steps Management ----
+    async function loadProcessSteps() {
+      const body = document.getElementById('process-steps-body');
+      try {
+        const res = await fetch('/process-steps');
+        const steps = await res.json();
+        if (!steps.length) {
+          body.innerHTML = '<div class="feed-empty" style="padding:0.8rem;">No process steps defined yet. Click "+ Add Step" to start mapping your production process.</div>';
+          return;
+        }
+        let html = '<table class="process-table"><tr><th>#</th><th>Process</th><th>Inputs</th><th>Outputs</th><th>Key Metric</th><th>Target</th><th>Table</th><th></th></tr>';
+        for (const s of steps) {
+          html += `<tr>
+            <td>${s.step_order}</td>
+            <td>${s.process_name}</td>
+            <td>${s.inputs || '-'}</td>
+            <td>${s.outputs || '-'}</td>
+            <td>${s.key_metric || '-'}</td>
+            <td>${s.target_range || '-'}</td>
+            <td>${s.linked_table || '-'}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn-sm" onclick="editProcessStep(${s.id})" style="font-size:0.6rem;">Edit</button>
+              <button class="btn-sm" onclick="deleteProcessStep(${s.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button>
+            </td>
+          </tr>`;
+        }
+        html += '</table>';
+        body.innerHTML = html;
+      } catch (e) {
+        body.innerHTML = '<div class="feed-empty">Failed to load process steps.</div>';
+      }
+    }
+
+    function showAddProcessStepModal() {
+      const name = prompt('Process name (e.g., Melting):');
+      if (!name) return;
+      const inputs = prompt('Inputs (comma-separated):') || '';
+      const outputs = prompt('Outputs (comma-separated):') || '';
+      const metric = prompt('Key metric (e.g., SEC):') || '';
+      const range = prompt('Target range (e.g., 450-600 kWh/ton):') || '';
+      const table = prompt('Linked table name (optional):') || '';
+      const order = parseInt(prompt('Step order number:') || '0');
+
+      fetch('/process-steps', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({step_order: order, process_name: name, inputs, outputs, key_metric: metric, target_range: range, linked_table: table})
+      }).then(() => { toast('Step added'); loadProcessSteps(); }).catch(() => toast('Failed'));
+    }
+
+    async function editProcessStep(id) {
+      const res = await fetch('/process-steps');
+      const steps = await res.json();
+      const step = steps.find(s => s.id === id);
+      if (!step) return;
+      const name = prompt('Process name:', step.process_name);
+      if (!name) return;
+      const inputs = prompt('Inputs:', step.inputs) || '';
+      const outputs = prompt('Outputs:', step.outputs) || '';
+      const metric = prompt('Key metric:', step.key_metric) || '';
+      const range = prompt('Target range:', step.target_range) || '';
+      const table = prompt('Linked table:', step.linked_table) || '';
+      const order = parseInt(prompt('Step order:', step.step_order) || '0');
+
+      fetch(`/process-steps/${id}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({step_order: order, process_name: name, inputs, outputs, key_metric: metric, target_range: range, linked_table: table})
+      }).then(() => { toast('Step updated'); loadProcessSteps(); }).catch(() => toast('Failed'));
+    }
+
+    async function deleteProcessStep(id) {
+      if (!confirm('Delete this process step?')) return;
+      fetch(`/process-steps/${id}`, {method: 'DELETE'}).then(() => { toast('Deleted'); loadProcessSteps(); }).catch(() => toast('Failed'));
+    }
+
+    // ---- Process I/O Management ----
+    async function loadProcessIO() {
+      const body = document.getElementById('process-io-body');
+      try {
+        const res = await fetch('/process-io');
+        const ios = await res.json();
+        if (!ios.length) {
+          body.innerHTML = '<div class="feed-empty" style="padding:0.8rem;">No inputs or outputs defined yet.</div>';
+          return;
+        }
+        const inputs = ios.filter(io => io.io_type === 'input');
+        const outputs = ios.filter(io => io.io_type === 'output');
+        let html = '';
+
+        if (inputs.length) {
+          html += '<div style="font-size:0.78rem;font-weight:500;margin-bottom:0.3rem;">📥 INPUTS</div>';
+          html += '<table class="process-table"><tr><th>Name</th><th>Source</th><th>Unit</th><th>Range</th><th>Table</th><th></th></tr>';
+          for (const io of inputs) {
+            html += `<tr><td>${io.name}</td><td>${io.source_or_destination || '-'}</td><td>${io.unit || '-'}</td><td>${io.typical_range || '-'}</td><td>${io.linked_table || '-'}</td>
+              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
+          }
+          html += '</table>';
+        }
+
+        if (outputs.length) {
+          html += '<div style="font-size:0.78rem;font-weight:500;margin:0.6rem 0 0.3rem;">📤 OUTPUTS</div>';
+          html += '<table class="process-table"><tr><th>Name</th><th>Destination</th><th>Unit</th><th>Range</th><th>Table</th><th></th></tr>';
+          for (const io of outputs) {
+            html += `<tr><td>${io.name}</td><td>${io.source_or_destination || '-'}</td><td>${io.unit || '-'}</td><td>${io.typical_range || '-'}</td><td>${io.linked_table || '-'}</td>
+              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
+          }
+          html += '</table>';
+        }
+        body.innerHTML = html;
+      } catch (e) {
+        body.innerHTML = '<div class="feed-empty">Failed to load inputs/outputs.</div>';
+      }
+    }
+
+    function showAddIOModal(ioType) {
+      const name = prompt(`${ioType === 'input' ? 'Input' : 'Output'} name (e.g., ${ioType === 'input' ? 'Scrap Iron' : 'TMT Bars'}):`);
+      if (!name) return;
+      const srcDest = prompt(ioType === 'input' ? 'Source (e.g., Suppliers):' : 'Destination (e.g., Buyers):') || '';
+      const unit = prompt('Unit (e.g., MT, kWh, kg):') || '';
+      const range = prompt('Typical range (e.g., 3-5 per heat):') || '';
+      const table = prompt('Linked table name (optional):') || '';
+
+      fetch('/process-io', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({io_type: ioType, name, source_or_destination: srcDest, unit, typical_range: range, linked_table: table})
+      }).then(() => { toast(`${ioType} added`); loadProcessIO(); }).catch(() => toast('Failed'));
+    }
+
+    async function deleteProcessIO(id) {
+      if (!confirm('Delete this entry?')) return;
+      fetch(`/process-io/${id}`, {method: 'DELETE'}).then(() => { toast('Deleted'); loadProcessIO(); }).catch(() => toast('Failed'));
+    }
+
+    function showAddContextModal() {
+      document.getElementById('ctx-text').focus();
+    }
 
     // Toast
     function toast(msg) {
@@ -2555,10 +3072,27 @@
     }
 
     // ---------------------------------------------------------------------------
-    // Upload
+    // Upload (original + data tab clone)
     // ---------------------------------------------------------------------------
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
+
+    // Wire up the Data tab upload zone too
+    const dataDropZone = document.getElementById('data-drop-zone');
+    const dataFileInput = document.getElementById('data-file-input');
+    if (dataDropZone && dataFileInput) {
+      dataDropZone.addEventListener('click', () => dataFileInput.click());
+      dataDropZone.addEventListener('dragover', e => { e.preventDefault(); dataDropZone.classList.add('drag-over'); });
+      dataDropZone.addEventListener('dragleave', () => dataDropZone.classList.remove('drag-over'));
+      dataDropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dataDropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]);
+      });
+      dataFileInput.addEventListener('change', () => {
+        if (dataFileInput.files.length) handleUpload(dataFileInput.files[0]);
+      });
+    }
 
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
