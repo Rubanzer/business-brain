@@ -1,10 +1,16 @@
-"""Tests for context ingestor — chunking, ingestion, regex edge cases."""
+"""Tests for context ingestor — chunking, ingestion, dedup, regex edge cases."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from business_brain.ingestion.context_ingestor import chunk_text, ingest_context
+from business_brain.ingestion.context_ingestor import (
+    chunk_text,
+    ingest_context,
+    _content_exists,
+    delete_context_by_source,
+    reingest_context,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -178,9 +184,16 @@ class TestChunkText:
 
 
 class TestIngestContext:
+    """Tests for the ingest_context function.
+
+    All tests patch _content_exists to return False (no duplicates) so we're
+    testing ingestion logic in isolation.  Dedup behaviour has its own test class.
+    """
+
     @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=False)
     @patch("business_brain.ingestion.context_ingestor.embed_text")
-    async def test_short_text_single_row(self, mock_embed):
+    async def test_short_text_single_row(self, mock_embed, _mock_dedup):
         mock_embed.return_value = [0.1] * 3072
 
         session = AsyncMock()
@@ -200,8 +213,9 @@ class TestIngestContext:
         assert session.commit.call_count == 1
 
     @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=False)
     @patch("business_brain.ingestion.context_ingestor.embed_text")
-    async def test_long_text_multiple_rows(self, mock_embed):
+    async def test_long_text_multiple_rows(self, mock_embed, _mock_dedup):
         mock_embed.return_value = [0.1] * 3072
 
         session = AsyncMock()
@@ -221,16 +235,18 @@ class TestIngestContext:
         assert session.add.call_count == len(ids)
 
     @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=False)
     @patch("business_brain.ingestion.context_ingestor.embed_text")
-    async def test_empty_text_returns_empty(self, mock_embed):
+    async def test_empty_text_returns_empty(self, mock_embed, _mock_dedup):
         session = AsyncMock()
         ids = await ingest_context("", session)
         assert ids == []
         mock_embed.assert_not_called()
 
     @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=False)
     @patch("business_brain.ingestion.context_ingestor.embed_text")
-    async def test_source_passed_through(self, mock_embed):
+    async def test_source_passed_through(self, mock_embed, _mock_dedup):
         mock_embed.return_value = [0.1] * 3072
 
         session = AsyncMock()
@@ -245,15 +261,17 @@ class TestIngestContext:
         assert added_entry.source == "upload:data.csv"
 
     @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=False)
     @patch("business_brain.ingestion.context_ingestor.embed_text")
-    async def test_whitespace_only_returns_empty(self, mock_embed):
+    async def test_whitespace_only_returns_empty(self, mock_embed, _mock_dedup):
         session = AsyncMock()
         ids = await ingest_context("   \n\n  ", session)
         assert ids == []
 
     @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=False)
     @patch("business_brain.ingestion.context_ingestor.embed_text")
-    async def test_text_with_special_characters(self, mock_embed):
+    async def test_text_with_special_characters(self, mock_embed, _mock_dedup):
         mock_embed.return_value = [0.1] * 3072
 
         session = AsyncMock()
@@ -268,8 +286,9 @@ class TestIngestContext:
         assert len(ids) == 1
 
     @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=False)
     @patch("business_brain.ingestion.context_ingestor.embed_text")
-    async def test_default_source(self, mock_embed):
+    async def test_default_source(self, mock_embed, _mock_dedup):
         mock_embed.return_value = [0.1] * 3072
 
         session = AsyncMock()
@@ -282,3 +301,113 @@ class TestIngestContext:
         await ingest_context("Some text.", session)
         added_entry = session.add.call_args[0][0]
         assert added_entry.source == "manual"
+
+
+# ---------------------------------------------------------------------------
+# Deduplication tests
+# ---------------------------------------------------------------------------
+
+
+class TestDeduplication:
+    """Tests for _content_exists dedup logic and its effect on ingestion."""
+
+    @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=True)
+    @patch("business_brain.ingestion.context_ingestor.embed_text")
+    async def test_duplicate_chunks_skipped(self, mock_embed, _mock_dedup):
+        """When _content_exists returns True, chunks should be skipped."""
+        mock_embed.return_value = [0.1] * 3072
+        session = AsyncMock()
+
+        ids = await ingest_context("Duplicate content.", session, source="test")
+        assert ids == []
+        mock_embed.assert_not_called()
+        session.add.assert_not_called()
+        session.commit.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", side_effect=Exception("DB down"))
+    @patch("business_brain.ingestion.context_ingestor.embed_text")
+    async def test_dedup_failure_allows_insertion(self, mock_embed, _mock_dedup):
+        """When _content_exists raises, ingestion should proceed anyway."""
+        mock_embed.return_value = [0.1] * 3072
+        session = AsyncMock()
+
+        async def fake_refresh(entry):
+            entry.id = 42
+
+        session.refresh = fake_refresh
+
+        ids = await ingest_context("Content despite dedup failure.", session, source="test")
+        assert len(ids) == 1
+        assert ids[0] == 42
+
+    @pytest.mark.asyncio
+    async def test_content_exists_returns_false_on_error(self):
+        """_content_exists should return False if the DB query fails."""
+        session = AsyncMock()
+        session.execute.side_effect = Exception("connection lost")
+
+        result = await _content_exists(session, "some content", "test")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_content_exists_returns_true_when_found(self):
+        """_content_exists should return True when a matching row exists."""
+        session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = 42  # row ID = found
+        session.execute.return_value = mock_result
+
+        result = await _content_exists(session, "some content", "test")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_content_exists_returns_false_when_not_found(self):
+        """_content_exists should return False when no matching row exists."""
+        session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None  # not found
+        session.execute.return_value = mock_result
+
+        result = await _content_exists(session, "some content", "test")
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# delete_context_by_source and reingest_context tests
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteAndReingest:
+    @pytest.mark.asyncio
+    async def test_delete_context_by_source(self):
+        session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.rowcount = 3
+        session.execute.return_value = mock_result
+
+        count = await delete_context_by_source(session, "test_source")
+        assert count == 3
+        session.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("business_brain.ingestion.context_ingestor._content_exists", return_value=False)
+    @patch("business_brain.ingestion.context_ingestor.embed_text")
+    async def test_reingest_deletes_then_ingests(self, mock_embed, _mock_dedup):
+        mock_embed.return_value = [0.1] * 3072
+
+        session = AsyncMock()
+        mock_delete_result = MagicMock()
+        mock_delete_result.rowcount = 2
+        session.execute.return_value = mock_delete_result
+
+        async def fake_refresh(entry):
+            entry.id = 99
+
+        session.refresh = fake_refresh
+
+        ids = await reingest_context("New content.", session, source="profile")
+        assert len(ids) == 1
+        # commit called once for delete, once for ingest
+        assert session.commit.call_count == 2

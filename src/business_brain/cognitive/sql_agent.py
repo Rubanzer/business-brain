@@ -1,4 +1,8 @@
-"""SQL Specialist agent — converts natural language to SQL and executes."""
+"""SQL Specialist agent — converts natural language to SQL and executes.
+
+Now reuses RAG context from state (populated by Supervisor) to avoid duplicate
+embedding calls. Falls back to fresh retrieval if state context is missing.
+"""
 from __future__ import annotations
 
 import logging
@@ -14,17 +18,25 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are an expert SQL analyst. Given a business question, schema context, and
-business context (domain definitions, business rules, KPIs), generate a precise
-PostgreSQL query to retrieve the required data.
+You are an expert SQL analyst working for a manufacturing company. Given a business
+question, schema context, business context (domain definitions, business rules, KPIs),
+and metric thresholds, generate a precise PostgreSQL query to retrieve the required data.
 
 Use the business context to understand domain-specific terms, acronyms, and
 business rules that inform correct query logic.
 
-Rules:
+IMPORTANT RULES:
 - Use CTEs for clarity when appropriate.
 - NEVER use DELETE, DROP, ALTER, INSERT, UPDATE, or TRUNCATE.
 - Return ONLY the SQL query, no explanation or markdown fences.
+- When table relationships/joins are provided, use them for cross-table queries.
+- When metric thresholds are available, use CASE WHEN to flag values:
+  e.g., CASE WHEN power_kwh > 750 THEN 'critical'
+             WHEN power_kwh > 625 THEN 'warning'
+             ELSE 'normal' END AS power_status
+- Use meaningful column aliases that reflect business meaning.
+- LIMIT results to 500 rows maximum unless the task explicitly needs more.
+- For aggregations, always include COUNT(*) so analysts know sample sizes.
 """
 
 _client: genai.Client | None = None
@@ -45,7 +57,12 @@ def _format_schema_context(tables: list[dict]) -> str:
             f"{c['name']} ({c['type']})" for c in (t.get("columns") or [])
         )
         desc = t.get("description") or "No description"
-        parts.append(f"Table: {t['table_name']} — {desc}\n  Columns: {cols}")
+        rels = t.get("relationships", [])
+
+        table_str = f"Table: {t['table_name']} — {desc}\n  Columns: {cols}"
+        if rels:
+            table_str += f"\n  Joins: {'; '.join(rels)}"
+        parts.append(table_str)
     return "\n\n".join(parts)
 
 
@@ -78,6 +95,9 @@ class SQLAgent:
         Supports multi-query mode: reads ``current_query_index`` from state,
         executes the matching SQL task from the plan, appends to ``sql_results``,
         and increments the index for the next pass.
+
+        Reuses RAG context from state if available (populated by Supervisor),
+        falling back to fresh retrieval.
         """
         db_session: AsyncSession | None = state.get("db_session")
 
@@ -98,8 +118,15 @@ class SQLAgent:
 
         question = state.get("question", task)
 
-        # Retrieve relevant schemas and business context
-        tables, contexts = await retrieve_relevant_tables(db_session, question)
+        # Reuse RAG context from state (populated by Supervisor) or fetch fresh
+        tables = state.get("_rag_tables")
+        contexts = state.get("_rag_contexts")
+
+        if tables is None or contexts is None:
+            tables, contexts = await retrieve_relevant_tables(db_session, question)
+            state["_rag_tables"] = tables
+            state["_rag_contexts"] = contexts
+
         schema_context = _format_schema_context(tables)
         biz_context = _format_business_context(contexts)
 
@@ -154,10 +181,14 @@ class SQLAgent:
                 logger.warning("SQL execution failed (attempt %d): %s", attempt, last_error)
                 await db_session.rollback()
                 if attempt < max_retries:
-                    # Ask Gemini to fix the query
+                    # Ask Gemini to fix the query — include business context for better fixes
                     retry_prompt = (
                         f"{SYSTEM_PROMPT}\n\n"
                         f"Schema:\n{schema_context}\n\n"
+                    )
+                    if biz_context:
+                        retry_prompt += f"Business Context:\n{biz_context}\n\n"
+                    retry_prompt += (
                         f"The following SQL query failed:\n{sql}\n\n"
                         f"Error: {last_error}\n\n"
                         f"Fix the query to resolve the error. Return ONLY the corrected SQL."

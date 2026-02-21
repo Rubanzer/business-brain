@@ -16,7 +16,7 @@ def _get_client() -> genai.Client:
 
 
 def embed_text(text: str) -> list[float]:
-    """Return a 768-dim embedding from Gemini text-embedding-004."""
+    """Return a 3072-dim embedding from Gemini gemini-embedding-001."""
     client = _get_client()
     result = client.models.embed_content(
         model=settings.embedding_model,

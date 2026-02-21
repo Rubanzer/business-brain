@@ -1,4 +1,9 @@
-"""Data Scientist agent — statistical analysis with Gemini."""
+"""Data Scientist agent — statistical analysis with Gemini.
+
+Now receives business context and metric thresholds from the RAG pipeline
+so it can interpret findings in the correct business domain and flag values
+against known thresholds.
+"""
 from __future__ import annotations
 
 import json
@@ -12,11 +17,18 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are a senior data analyst. Given SQL query results and a column classification
-report, perform RIGOROUS statistical analysis.
+You are a senior data analyst at a manufacturing company. Given SQL query results,
+a column classification report, business context, and metric thresholds, perform
+RIGOROUS statistical analysis.
 
 COLUMN CLASSIFICATION (auto-detected):
 {column_classification}
+
+BUSINESS CONTEXT (company profile, domain knowledge, KPIs):
+{business_context}
+
+METRIC THRESHOLDS (flag values against these benchmarks):
+{threshold_context}
 
 REQUIRED ANALYSIS — perform ALL that apply based on column types present:
 
@@ -45,15 +57,16 @@ REQUIRED ANALYSIS — perform ALL that apply based on column types present:
    Is the data normally distributed, skewed, or multimodal?
    Are there clusters?
 
-BUSINESS DOMAIN CONTEXT: {domain_hint}
-Use this to interpret findings (e.g., if procurement data, frame in terms of
-supplier value; if HR data, frame in terms of employee retention).
+7. THRESHOLD COMPARISON (when thresholds are available):
+   Compare actual values against defined thresholds.
+   Flag any values in warning or critical ranges with specific numbers.
+   State how many data points fall in each range (normal/warning/critical).
 
 Return ONLY a JSON object:
 {{
   "findings": [
     {{
-      "type": "trend|anomaly|insight|comparison|correlation",
+      "type": "trend|anomaly|insight|comparison|correlation|threshold_breach",
       "description": "Specific finding with actual numbers and names",
       "confidence": 0.0-1.0,
       "business_impact": "Why this matters for business decisions"
@@ -130,8 +143,35 @@ def _get_all_rows(state: dict[str, Any]) -> list[dict]:
     return single.get("rows", [])
 
 
+def _format_business_context_for_analyst(contexts: list[dict] | None) -> str:
+    """Format business context from RAG state for the analyst prompt."""
+    if not contexts:
+        return "No business context available."
+    parts = []
+    for ctx in contexts:
+        source = ctx.get("source", "unknown")
+        content = ctx.get("content", "")
+        if content:
+            parts.append(f"[{source}] {content}")
+    return "\n".join(parts) if parts else "No business context available."
+
+
+def _extract_threshold_context(contexts: list[dict] | None) -> str:
+    """Extract metric threshold context from RAG contexts."""
+    if not contexts:
+        return "No thresholds defined."
+    for ctx in contexts:
+        if ctx.get("source") == "metric_thresholds":
+            return ctx.get("content", "No thresholds defined.")
+    return "No thresholds defined."
+
+
 class AnalystAgent:
-    """Performs analysis on query results using Gemini."""
+    """Performs analysis on query results using Gemini.
+
+    Now receives business context and thresholds from the RAG pipeline
+    to ground its analysis in domain knowledge.
+    """
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Analyse the SQL result set(s)."""
@@ -160,9 +200,15 @@ class AnalystAgent:
         classification_text = format_classification_for_prompt(classification)
         domain_hint = classification.get("domain_hint", "general")
 
+        # Get business context and thresholds from RAG state
+        rag_contexts = state.get("_rag_contexts", [])
+        business_context = _format_business_context_for_analyst(rag_contexts)
+        threshold_context = _extract_threshold_context(rag_contexts)
+
         system = SYSTEM_PROMPT.format(
             column_classification=classification_text,
-            domain_hint=domain_hint,
+            business_context=business_context,
+            threshold_context=threshold_context,
         )
 
         prompt = (

@@ -1,8 +1,16 @@
-"""Ingest natural-language business context into the vector store."""
+"""Ingest natural-language business context into the vector store.
+
+Improvements:
+- Batch commit (one commit per document instead of per chunk)
+- Deduplication: checks for existing content before inserting
+- Source-aware chunking: preserves source metadata through chunks
+- Overlap-based chunking on sentence boundaries
+"""
 
 import logging
 import re
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.db.models import BusinessContext
@@ -88,6 +96,27 @@ def chunk_text(text: str, max_chars: int = 500, overlap: int = 50) -> list[str]:
     return chunks
 
 
+async def _content_exists(session: AsyncSession, content: str, source: str) -> bool:
+    """Check if identical content from the same source already exists.
+
+    Returns False on any error so ingestion is never blocked by dedup failures.
+    """
+    try:
+        prefix = content[:200]
+        stmt = (
+            select(BusinessContext.id)
+            .where(
+                BusinessContext.source == source,
+                BusinessContext.content.startswith(prefix),
+            )
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+    except Exception:
+        return False
+
+
 async def ingest_context(
     text: str,
     session: AsyncSession,
@@ -108,13 +137,61 @@ async def ingest_context(
         return []
 
     ids: list[int] = []
+    new_entries: list[BusinessContext] = []
+
     for chunk in chunks:
+        # Deduplication: skip if identical content from same source exists
+        try:
+            if await _content_exists(session, chunk, source):
+                logger.debug("Skipping duplicate context chunk (source=%s, len=%d)", source, len(chunk))
+                continue
+        except Exception:
+            # If dedup check fails, proceed with insertion
+            logger.debug("Dedup check failed, proceeding with insertion")
+
         embedding = embed_text(chunk)
         entry = BusinessContext(content=chunk, embedding=embedding, source=source)
         session.add(entry)
+        new_entries.append(entry)
+
+    # Batch commit — one commit for all chunks instead of per-chunk
+    if new_entries:
         await session.commit()
-        await session.refresh(entry)
-        ids.append(entry.id)
-        logger.info("Stored context id=%d source=%s chunk_len=%d", entry.id, source, len(chunk))
+        for entry in new_entries:
+            await session.refresh(entry)
+            ids.append(entry.id)
+            logger.info("Stored context id=%d source=%s chunk_len=%d", entry.id, source, len(entry.content))
 
     return ids
+
+
+async def delete_context_by_source(
+    session: AsyncSession,
+    source: str,
+) -> int:
+    """Delete all context entries from a specific source. Useful for re-ingestion.
+
+    Returns count of entries deleted.
+    """
+    from sqlalchemy import delete
+
+    stmt = delete(BusinessContext).where(BusinessContext.source == source)
+    result = await session.execute(stmt)
+    await session.commit()
+    count = result.rowcount
+    if count:
+        logger.info("Deleted %d context entries for source=%s", count, source)
+    return count
+
+
+async def reingest_context(
+    text: str,
+    session: AsyncSession,
+    source: str,
+) -> list[int]:
+    """Delete existing context for a source, then re-ingest fresh.
+
+    Useful when onboarding data or company profile is updated.
+    """
+    await delete_context_by_source(session, source)
+    return await ingest_context(text, session, source=source)
