@@ -290,3 +290,44 @@ class ProcessIO(Base):
     linked_table = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# ---------------------------------------------------------------------------
+# User & Access Control
+# ---------------------------------------------------------------------------
+
+import uuid as _uuid_mod
+
+
+class User(Base):
+    """User accounts with role-based access control."""
+
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(_uuid_mod.uuid4()))
+    email = Column(String(255), unique=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), default="viewer")  # owner/admin/manager/operator/viewer
+    plan = Column(String(20), default="free")     # free/basic/pro/enterprise
+    company_id = Column(String(36), nullable=True)
+    upload_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class InviteToken(Base):
+    """Invite tokens for adding users to a company."""
+
+    __tablename__ = "invite_tokens"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(_uuid_mod.uuid4()))
+    email = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="viewer")
+    plan = Column(String(20), default="free")
+    company_id = Column(String(36), nullable=True)
+    token = Column(String(255), unique=True, nullable=False)
+    used = Column(Boolean, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(String(36), nullable=True)

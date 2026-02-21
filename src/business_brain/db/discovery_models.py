@@ -98,3 +98,4 @@ class DeployedReport(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     session_id = Column(String(64), nullable=True)
     active = Column(Boolean, default=True)
+    refresh_frequency = Column(String(20), default="manual")  # manual/hourly/daily/weekly
