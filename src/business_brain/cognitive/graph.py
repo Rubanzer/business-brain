@@ -1,4 +1,12 @@
-"""LangGraph state machine wiring the agent swarm."""
+"""LangGraph state machine wiring the agent swarm.
+
+Context flow:
+  validate_schema → supervisor (fetches RAG context + schema) →
+  sql_agent (reuses RAG context from state, generates SQL) →  [loop up to 3x]
+  analyst (receives SQL results + business context) →
+  python_analyst (receives analyst findings + data) →
+  cfo (receives everything: analysis + python analysis + business context + thresholds)
+"""
 
 import logging
 from typing import Any, TypedDict
@@ -33,6 +41,9 @@ class AgentState(TypedDict, total=False):
     cfo_key_metrics: list[dict]      # CFO's top metrics with verdicts
     cfo_chart_suggestions: list[dict]  # CFO's chart suggestions
     parent_finding: dict             # drill-down: the finding being investigated
+    # RAG context — populated by supervisor, reused by all downstream agents
+    _rag_tables: list[dict]          # relevant table schemas from schema_rag
+    _rag_contexts: list[dict]        # business context snippets from vector store
 
 
 # Instantiate agents
@@ -70,8 +81,8 @@ def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
 
     graph.add_node("validate_schema", _validate_schema)
-    graph.add_node("supervisor", _supervisor.invoke)
-    graph.add_node("sql_agent", _sql_agent.invoke)  # async invoke
+    graph.add_node("supervisor", _supervisor.invoke)  # now async
+    graph.add_node("sql_agent", _sql_agent.invoke)    # async invoke
     graph.add_node("analyst", _analyst.invoke)
     graph.add_node("python_analyst", _python_analyst.invoke)
     graph.add_node("cfo", _cfo.invoke)

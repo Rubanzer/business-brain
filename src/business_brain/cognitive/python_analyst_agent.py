@@ -70,7 +70,9 @@ Rules:
 
 # Phase 2: Ask Gemini to structure the raw output into our format.
 INTERPRET_PROMPT = """\
-You are formatting raw analysis output into structured JSON for a business dashboard.
+You are formatting raw analysis output into structured JSON for a manufacturing
+business dashboard. Interpret numbers in the context of manufacturing operations
+(production, procurement, quality, energy, sales, finance).
 
 Given the printed output from a Python analysis script, return ONLY a JSON object:
 {{
@@ -78,18 +80,19 @@ Given the printed output from a Python analysis script, return ONLY a JSON objec
     {{
       "label": "descriptive metric name",
       "value": "formatted value with appropriate precision",
-      "unit": "%, Rs, Rs/ton, count, etc. or empty string",
+      "unit": "%, Rs, Rs/ton, count, kWh/ton, heats, etc. or empty string",
       "format": "number|currency|percentage|text",
       "priority": 1-10
     }}
   ],
   "narrative": "3-5 sentence executive interpretation connecting findings to business
                  decisions. Reference specific names and numbers from the output.
-                 State what's good, what's concerning, and what to investigate further."
+                 State what's good, what's concerning, and what to investigate further.
+                 If metric thresholds are available, compare values against them."
 }}
 
 Priority guide: key averages=6, per-group comparisons=8, outliers=9, correlations=7,
-distributions=5, time trends=8.
+distributions=5, time trends=8, threshold breaches=10.
 Format guide: use "currency" for monetary values, "percentage" for rates/ratios/yields,
 "number" for counts/quantities.
 """
@@ -211,6 +214,7 @@ def _interpret_output(
     question: str,
     stdout: str,
     variables: dict,
+    business_context: str = "",
 ) -> dict[str, Any]:
     """Phase 2: Have Gemini interpret raw execution output into structured format."""
     # Build a summary of what the code produced
@@ -232,11 +236,12 @@ def _interpret_output(
 
     raw_output = "\n\n".join(output_parts)
 
-    prompt = (
-        f"{INTERPRET_PROMPT}\n\n"
-        f"Original question: {question}\n\n"
-        f"Raw analysis output:\n{raw_output}"
-    )
+    prompt_parts = [INTERPRET_PROMPT, ""]
+    if business_context:
+        prompt_parts.append(f"Business Context:\n{business_context}\n")
+    prompt_parts.append(f"Original question: {question}\n")
+    prompt_parts.append(f"Raw analysis output:\n{raw_output}")
+    prompt = "\n".join(prompt_parts)
 
     try:
         response = client.models.generate_content(
@@ -393,9 +398,18 @@ class PythonAnalystAgent:
             }
             return state
 
-        # --- Phase 3: Interpret ---
+        # --- Phase 3: Interpret (with business context for domain-aware interpretation) ---
+        rag_contexts = state.get("_rag_contexts", [])
+        biz_ctx_parts = []
+        for ctx in rag_contexts:
+            content = ctx.get("content", "")
+            if content:
+                biz_ctx_parts.append(f"[{ctx.get('source', '')}] {content}")
+        biz_context_str = "\n".join(biz_ctx_parts)
+
         interpreted = _interpret_output(
-            client, question, exec_result["stdout"], exec_result["variables"]
+            client, question, exec_result["stdout"], exec_result["variables"],
+            business_context=biz_context_str,
         )
 
         state["python_analysis"] = {

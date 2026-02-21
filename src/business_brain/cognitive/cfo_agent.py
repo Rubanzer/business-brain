@@ -1,4 +1,9 @@
-"""CFO Filter agent — economic viability gate for proposed actions."""
+"""CFO Filter agent — economic viability gate for proposed actions.
+
+Now receives business context and metric thresholds from the RAG pipeline
+so it can make domain-informed economic assessments and reference company-specific
+benchmarks.
+"""
 from __future__ import annotations
 
 import json
@@ -12,31 +17,41 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are the CFO reviewing analysis results for a business. Your job is to extract the
-most important business implications and make actionable recommendations.
+You are the CFO reviewing analysis results for a manufacturing business. Your job is
+to extract the most important business implications and make actionable recommendations.
 
 COLUMN CLASSIFICATION (auto-detected):
 {column_classification}
 
 DETECTED BUSINESS DOMAIN: {domain_hint}
 
+COMPANY & BUSINESS CONTEXT:
+{business_context}
+
+METRIC THRESHOLDS (approved benchmarks for this company):
+{threshold_context}
+
 YOUR ASSESSMENT MUST COVER:
 
 1. KEY METRICS: Extract the 3-5 most important numbers from the analysis.
-   For each, assign a verdict:
-   - "good": favorable metric (low cost, high efficiency, strong growth)
-   - "warning": needs monitoring (declining trend, moderate variance)
-   - "critical": requires immediate action (cost spike, quality below threshold)
+   For each, assign a verdict based on the thresholds above (if available):
+   - "good": within normal range, favorable metric
+   - "warning": in warning range, needs monitoring
+   - "critical": in critical range, requires immediate action
+   If no threshold exists, use industry benchmarks for secondary steel manufacturing.
 
 2. COST/VALUE IMPACT: Quantify the business impact where possible.
    Be specific: "Supplier X costs 8% more but yields 5% less, increasing
    effective cost by Rs 2,400/ton" — not "costs vary across suppliers."
+   Reference the company's specific production volume/scale if available.
 
 3. RISK ASSESSMENT: Identify which areas have high variance or inconsistency.
    High standard deviation in quality/cost = operational risk.
+   Concentration risk (top 3 customers/suppliers > 40%) = business risk.
 
 4. RECOMMENDATIONS: 2-4 specific, actionable recommendations with expected impact.
    Each recommendation should reference specific data points.
+   Prioritize by estimated Rs impact per month/year.
 
 5. CHART SUGGESTIONS: 1-2 charts that highlight the most important economic insight
    from the data. These will be auto-rendered prominently on the dashboard.
@@ -87,8 +102,35 @@ def _format_classification_for_cfo(classification: dict) -> tuple[str, str]:
     return "\n".join(lines), domain
 
 
+def _format_business_context_for_cfo(contexts: list[dict] | None) -> str:
+    """Format business context from RAG state for the CFO prompt."""
+    if not contexts:
+        return "No business context available."
+    parts = []
+    for ctx in contexts:
+        source = ctx.get("source", "unknown")
+        content = ctx.get("content", "")
+        if content:
+            parts.append(f"[{source}] {content}")
+    return "\n".join(parts) if parts else "No business context available."
+
+
+def _extract_threshold_context(contexts: list[dict] | None) -> str:
+    """Extract metric threshold context from RAG contexts."""
+    if not contexts:
+        return "No thresholds defined. Use industry benchmarks for secondary steel."
+    for ctx in contexts:
+        if ctx.get("source") == "metric_thresholds":
+            return ctx.get("content", "No thresholds defined.")
+    return "No thresholds defined. Use industry benchmarks for secondary steel."
+
+
 class CFOAgent:
-    """Gates analysis outputs through an economic viability check."""
+    """Gates analysis outputs through an economic viability check.
+
+    Now receives business context and metric thresholds from the RAG pipeline
+    for domain-informed economic assessments.
+    """
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         """Evaluate whether the analysis findings are economically viable."""
@@ -99,9 +141,16 @@ class CFOAgent:
 
         classification_text, domain_hint = _format_classification_for_cfo(classification)
 
+        # Get business context and thresholds from RAG state
+        rag_contexts = state.get("_rag_contexts", [])
+        business_context = _format_business_context_for_cfo(rag_contexts)
+        threshold_context = _extract_threshold_context(rag_contexts)
+
         system = SYSTEM_PROMPT.format(
             column_classification=classification_text,
             domain_hint=domain_hint,
+            business_context=business_context,
+            threshold_context=threshold_context,
         )
 
         prompt_parts = [
