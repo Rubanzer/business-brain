@@ -28,7 +28,7 @@ async def test_keyword_match_on_table_name(mock_embed, mock_meta, mock_vs, mock_
     """Tables whose names appear in the query should rank highest."""
     mock_embed.return_value = [0.1] * 768
     mock_vs.search = AsyncMock(return_value=[])
-    mock_meta.get_all = AsyncMock(return_value=[
+    mock_meta.get_filtered = AsyncMock(return_value=[
         _make_entry("sales_orders", "Records of all sales orders"),
         _make_entry("customers", "Customer information"),
     ])
@@ -47,7 +47,7 @@ async def test_fallback_returns_all(mock_embed, mock_meta, mock_vs, mock_session
     """When no keyword matches, all entries are returned as fallback."""
     mock_embed.return_value = [0.1] * 768
     mock_vs.search = AsyncMock(return_value=[])
-    mock_meta.get_all = AsyncMock(return_value=[
+    mock_meta.get_filtered = AsyncMock(return_value=[
         _make_entry("products", "Product catalog"),
     ])
 
@@ -65,7 +65,7 @@ async def test_description_keyword_match(mock_embed, mock_meta, mock_vs, mock_se
     """Keywords from the query matching descriptions should boost score."""
     mock_embed.return_value = [0.1] * 768
     mock_vs.search = AsyncMock(return_value=[])
-    mock_meta.get_all = AsyncMock(return_value=[
+    mock_meta.get_filtered = AsyncMock(return_value=[
         _make_entry("tbl_a", "Contains revenue and profit data"),
         _make_entry("tbl_b", "Employee directory"),
     ])
@@ -88,7 +88,7 @@ async def test_context_boost(mock_embed, mock_meta, mock_vs, mock_session):
     ctx_hit.source = "manual"
     mock_vs.search = AsyncMock(return_value=[ctx_hit])
 
-    mock_meta.get_all = AsyncMock(return_value=[
+    mock_meta.get_filtered = AsyncMock(return_value=[
         _make_entry("customers", "Customer info"),
         _make_entry("orders", "Order records"),
     ])
@@ -109,7 +109,7 @@ async def test_vector_search_failure_triggers_rollback(mock_embed, mock_meta, mo
     """When vector search fails, session.rollback() must be called to prevent
     InFailedSqlTransaction from poisoning the metadata query that follows."""
     mock_embed.side_effect = Exception("embedding service down")
-    mock_meta.get_all = AsyncMock(return_value=[
+    mock_meta.get_filtered = AsyncMock(return_value=[
         _make_entry("sales", "Sales data"),
     ])
 
@@ -127,7 +127,7 @@ async def test_vector_search_failure_triggers_rollback(mock_embed, mock_meta, mo
 async def test_vector_search_failure_still_returns_results(mock_embed, mock_meta, mock_vs, mock_session):
     """After vector search failure + rollback, keyword matching should still work."""
     mock_embed.side_effect = Exception("embedding service down")
-    mock_meta.get_all = AsyncMock(return_value=[
+    mock_meta.get_filtered = AsyncMock(return_value=[
         _make_entry("orders", "Customer orders"),
         _make_entry("products", "Product catalog"),
     ])

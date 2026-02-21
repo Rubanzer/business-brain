@@ -17,9 +17,16 @@ from business_brain.memory import metadata_store
 logger = logging.getLogger(__name__)
 
 
-async def profile_all_tables(session: AsyncSession) -> list[TableProfile]:
-    """Profile every table that has metadata, returning updated TableProfile objects."""
-    entries = await metadata_store.get_all(session)
+async def profile_all_tables(
+    session: AsyncSession,
+    table_filter: list[str] | None = None,
+) -> list[TableProfile]:
+    """Profile tables that have metadata, returning updated TableProfile objects.
+
+    If table_filter is provided, only profile the specified tables.
+    If table_filter is None, profile all tables (backward compatible).
+    """
+    entries = await metadata_store.get_filtered(session, table_filter)
     profiles: list[TableProfile] = []
 
     for entry in entries:

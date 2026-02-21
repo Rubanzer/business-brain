@@ -137,12 +137,16 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
         logger.exception("Failed to load chat history")
         await session.rollback()
 
+    # Resolve focus scope (table filtering)
+    focus_tables = await _get_focus_tables(session)
+
     graph = build_graph()
     invoke_state = {
         "question": req.question,
         "db_session": session,
         "session_id": session_id,
         "chat_history": chat_history,
+        "allowed_tables": focus_tables,
     }
     if req.parent_finding:
         invoke_state["parent_finding"] = req.parent_finding
@@ -381,37 +385,49 @@ async def upload_context_file(
 @app.get("/metadata")
 async def list_metadata(session: AsyncSession = Depends(get_session)) -> list[dict]:
     """List all table metadata."""
-    entries = await metadata_store.get_all(session)
-    return [
-        {
-            "table_name": e.table_name,
-            "description": e.description,
-            "columns": e.columns_metadata,
-        }
-        for e in entries
-    ]
+    try:
+        entries = await metadata_store.get_all(session)
+        return [
+            {
+                "table_name": e.table_name,
+                "description": e.description,
+                "columns": e.columns_metadata,
+            }
+            for e in entries
+        ]
+    except Exception:
+        logger.exception("Error listing metadata")
+        return []
 
 
 @app.get("/metadata/{table}")
 async def get_table_metadata(table: str, session: AsyncSession = Depends(get_session)) -> dict:
     """Get metadata for a single table."""
-    entry = await metadata_store.get_by_table(session, table)
-    if entry is None:
-        return {"error": "Table not found"}
-    return {
-        "table_name": entry.table_name,
-        "description": entry.description,
-        "columns": entry.columns_metadata,
-    }
+    try:
+        entry = await metadata_store.get_by_table(session, table)
+        if entry is None:
+            return {"error": "Table not found"}
+        return {
+            "table_name": entry.table_name,
+            "description": entry.description,
+            "columns": entry.columns_metadata,
+        }
+    except Exception:
+        logger.exception("Error fetching metadata for table: %s", table)
+        return {"error": "Failed to fetch table metadata"}
 
 
 @app.delete("/metadata/{table}")
 async def delete_table_metadata(table: str, session: AsyncSession = Depends(get_session)) -> dict:
     """Delete metadata for a table (e.g. after dropping the table)."""
-    deleted = await metadata_store.delete(session, table)
-    if not deleted:
-        return {"error": "Table not found"}
-    return {"status": "deleted", "table": table}
+    try:
+        deleted = await metadata_store.delete(session, table)
+        if not deleted:
+            return {"error": "Table not found"}
+        return {"status": "deleted", "table": table}
+    except Exception:
+        logger.exception("Error deleting metadata for table: %s", table)
+        return {"error": "Failed to delete table metadata"}
 
 
 @app.delete("/tables/{table_name}")
@@ -661,13 +677,31 @@ async def generate_chart(body: dict) -> dict:
 # Background discovery helper
 # ---------------------------------------------------------------------------
 
-async def _run_discovery_background(trigger: str = "manual") -> None:
+async def _get_focus_tables(session: AsyncSession) -> list[str] | None:
+    """Return list of included table names if focus mode is active, else None.
+
+    If no FocusScope rows exist for the current context, returns None (= all tables).
+    """
+    try:
+        from business_brain.db.v3_models import FocusScope
+
+        result = await session.execute(
+            select(FocusScope.table_name).where(FocusScope.is_included == True)  # noqa: E712
+        )
+        tables = [row[0] for row in result.fetchall()]
+        return tables if tables else None  # None means focus mode is off
+    except Exception:
+        logger.debug("Focus scope query failed, defaulting to all tables")
+        return None
+
+
+async def _run_discovery_background(trigger: str = "manual", table_filter: list[str] | None = None) -> None:
     """Run discovery engine in a background task with its own session."""
     from business_brain.discovery.engine import run_discovery
 
     try:
         async with async_session() as session:
-            await run_discovery(session, trigger=trigger)
+            await run_discovery(session, trigger=trigger, table_filter=table_filter)
     except Exception:
         logger.exception("Background discovery failed")
 
@@ -687,10 +721,20 @@ class StatusRequest(BaseModel):
 
 @app.get("/feed")
 async def get_feed(session: AsyncSession = Depends(get_session)) -> list[dict]:
-    """Get ranked insight feed."""
+    """Get ranked insight feed, filtered by focus scope if active."""
     from business_brain.discovery.feed_store import get_feed as _get_feed
 
     insights = await _get_feed(session)
+
+    # Filter by focus scope — only show insights from focused tables
+    focus_tables = await _get_focus_tables(session)
+    if focus_tables:
+        focus_set = set(focus_tables)
+        insights = [
+            i for i in insights
+            if not i.source_tables or any(t in focus_set for t in (i.source_tables or []))
+        ]
+
     return [
         {
             "id": i.id,
@@ -840,9 +884,13 @@ async def trigger_discovery(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Manually trigger a discovery sweep."""
-    background_tasks.add_task(_run_discovery_background, "manual")
-    return {"status": "started", "message": "Discovery sweep triggered in background"}
+    """Manually trigger a discovery sweep, respecting focus scope."""
+    focus_tables = await _get_focus_tables(session)
+    background_tasks.add_task(_run_discovery_background, "manual", table_filter=focus_tables)
+    msg = "Discovery sweep triggered in background"
+    if focus_tables:
+        msg += f" (focused on {len(focus_tables)} tables)"
+    return {"status": "started", "message": msg}
 
 
 @app.get("/discovery/status")
@@ -9005,6 +9053,7 @@ class ProcessStepRequest(BaseModel):
     inputs: str = ""
     outputs: str = ""
     key_metric: str = ""
+    key_metrics: list[str] = []    # NEW: multiple metrics
     target_range: str = ""
     linked_table: str = ""
 
@@ -9027,6 +9076,7 @@ async def list_process_steps(session: AsyncSession = Depends(get_session)) -> li
             "inputs": s.inputs,
             "outputs": s.outputs,
             "key_metric": s.key_metric,
+            "key_metrics": s.key_metrics or ([s.key_metric] if s.key_metric else []),
             "target_range": s.target_range,
             "linked_table": s.linked_table,
         }
@@ -9042,12 +9092,17 @@ async def create_process_step(
     """Add a new process step."""
     from business_brain.db.v3_models import ProcessStep
 
+    # Support both key_metric (singular) and key_metrics (plural)
+    key_metrics = req.key_metrics if req.key_metrics else ([req.key_metric] if req.key_metric else [])
+    key_metric_single = key_metrics[0] if key_metrics else req.key_metric
+
     step = ProcessStep(
         step_order=req.step_order,
         process_name=req.process_name,
         inputs=req.inputs,
         outputs=req.outputs,
-        key_metric=req.key_metric,
+        key_metric=key_metric_single,
+        key_metrics=key_metrics,
         target_range=req.target_range,
         linked_table=req.linked_table,
     )
@@ -9078,11 +9133,15 @@ async def update_process_step(
     if not step:
         return {"error": "Process step not found"}
 
+    key_metrics = req.key_metrics if req.key_metrics else ([req.key_metric] if req.key_metric else [])
+    key_metric_single = key_metrics[0] if key_metrics else req.key_metric
+
     step.step_order = req.step_order
     step.process_name = req.process_name
     step.inputs = req.inputs
     step.outputs = req.outputs
-    step.key_metric = req.key_metric
+    step.key_metric = key_metric_single
+    step.key_metrics = key_metrics
     step.target_range = req.target_range
     step.linked_table = req.linked_table
     await session.commit()
@@ -9234,6 +9293,304 @@ async def delete_process_io(
 
 
 # ---------------------------------------------------------------------------
+# Setup Intelligence — Auto-link, Suggest, Derived Metrics, Process-Metric Links
+# ---------------------------------------------------------------------------
+
+
+@app.post("/setup/auto-link-metrics")
+async def auto_link_metrics(session: AsyncSession = Depends(get_session)) -> dict:
+    """Auto-suggest table/column mappings for all configured metrics.
+
+    Uses fuzzy matching of metric names against column names across all tables.
+    High-confidence matches (>=0.8) are auto-linked; lower ones returned as suggestions.
+    """
+    from business_brain.db.v3_models import MetricThreshold
+
+    # Get unlinked metrics
+    result = await session.execute(
+        select(MetricThreshold).where(
+            (MetricThreshold.table_name == None) | (MetricThreshold.table_name == "")  # noqa: E711
+        )
+    )
+    unlinked = list(result.scalars().all())
+
+    # Get all table metadata
+    all_entries = await metadata_store.get_all(session)
+
+    auto_linked = []
+    suggestions = []
+    unmatched = []
+
+    for metric in unlinked:
+        metric_lower = metric.metric_name.lower().replace(" ", "_").replace("-", "_")
+        metric_words = set(metric.metric_name.lower().replace("_", " ").replace("-", " ").split())
+        best_candidates = []
+
+        for entry in all_entries:
+            if not entry.columns_metadata:
+                continue
+            for col in entry.columns_metadata:
+                col_name = col.get("name", "")
+                col_lower = col_name.lower().replace(" ", "_").replace("-", "_")
+
+                # Scoring
+                confidence = 0.0
+                if col_lower == metric_lower:
+                    confidence = 1.0
+                elif col_lower.replace("_", "") == metric_lower.replace("_", ""):
+                    confidence = 0.95
+                elif metric_lower in col_lower or col_lower in metric_lower:
+                    confidence = 0.7
+                else:
+                    col_words = set(col_lower.replace("_", " ").split())
+                    overlap = metric_words & col_words
+                    if overlap and len(overlap) >= max(1, len(metric_words) // 2):
+                        confidence = 0.3 + 0.2 * len(overlap)
+
+                if confidence > 0.2:
+                    best_candidates.append({
+                        "table_name": entry.table_name,
+                        "column_name": col_name,
+                        "confidence": round(confidence, 2),
+                    })
+
+        best_candidates.sort(key=lambda x: x["confidence"], reverse=True)
+
+        if best_candidates and best_candidates[0]["confidence"] >= 0.8:
+            best = best_candidates[0]
+            metric.table_name = best["table_name"]
+            metric.column_name = best["column_name"]
+            metric.auto_linked = True
+            metric.confidence = best["confidence"]
+            auto_linked.append({
+                "metric_id": metric.id,
+                "metric_name": metric.metric_name,
+                **best,
+            })
+        elif best_candidates:
+            suggestions.append({
+                "metric_id": metric.id,
+                "metric_name": metric.metric_name,
+                "candidates": best_candidates[:5],
+            })
+        else:
+            unmatched.append({
+                "metric_id": metric.id,
+                "metric_name": metric.metric_name,
+            })
+
+    if auto_linked:
+        await session.commit()
+
+    return {
+        "auto_linked": auto_linked,
+        "suggestions": suggestions,
+        "unmatched": unmatched,
+    }
+
+
+@app.post("/setup/suggest-metrics")
+async def suggest_metrics(session: AsyncSession = Depends(get_session)) -> dict:
+    """Analyze uploaded data and suggest trackable metrics from numeric columns."""
+    from business_brain.db.v3_models import MetricThreshold
+
+    all_entries = await metadata_store.get_all(session)
+    if not all_entries:
+        return {"suggestions": [], "message": "No data uploaded yet"}
+
+    # Get already-configured metric names
+    result = await session.execute(select(MetricThreshold.metric_name))
+    existing = {row[0].lower() for row in result.fetchall()}
+
+    suggestions_by_table = []
+    for entry in all_entries:
+        if not entry.columns_metadata:
+            continue
+        table_suggestions = []
+        for col in entry.columns_metadata:
+            col_name = col.get("name", "")
+            col_type = col.get("type", "").lower()
+            # Only suggest numeric columns
+            if any(t in col_type for t in ("int", "float", "numeric", "decimal", "double", "real", "bigint")):
+                # Skip if already configured
+                if col_name.lower() in existing:
+                    continue
+                # Skip ID-like columns
+                if col_name.lower().endswith("_id") or col_name.lower() == "id":
+                    continue
+                table_suggestions.append({
+                    "column_name": col_name,
+                    "column_type": col_type,
+                    "suggested_metric_name": col_name.replace("_", " ").title(),
+                })
+        if table_suggestions:
+            suggestions_by_table.append({
+                "table_name": entry.table_name,
+                "columns": table_suggestions,
+            })
+
+    return {"suggestions": suggestions_by_table}
+
+
+@app.post("/metrics/derived")
+async def create_derived_metric(body: dict, session: AsyncSession = Depends(get_session)) -> dict:
+    """Create a derived/calculated metric with a formula."""
+    from business_brain.db.v3_models import MetricThreshold
+
+    metric_name = body.get("metric_name", "").strip()
+    formula = body.get("formula", "").strip()
+    if not metric_name:
+        raise HTTPException(status_code=400, detail="metric_name is required")
+    if not formula:
+        raise HTTPException(status_code=400, detail="formula is required")
+
+    # Parse source columns from formula (look for table.column references)
+    import re
+    source_refs = re.findall(r'(\w+)\.(\w+)', formula)
+    source_columns = [f"{t}.{c}" for t, c in source_refs]
+
+    # Validate that referenced columns exist
+    all_entries = await metadata_store.get_all(session)
+    table_columns = {}
+    for entry in all_entries:
+        if entry.columns_metadata:
+            table_columns[entry.table_name] = {c.get("name", "") for c in entry.columns_metadata}
+
+    for ref in source_refs:
+        table, col = ref
+        if table not in table_columns:
+            raise HTTPException(status_code=400, detail=f"Table '{table}' not found")
+        if col not in table_columns[table]:
+            raise HTTPException(status_code=400, detail=f"Column '{col}' not found in table '{table}'")
+
+    metric = MetricThreshold(
+        metric_name=metric_name,
+        is_derived=True,
+        formula=formula,
+        source_columns=source_columns,
+        unit=body.get("unit", ""),
+        normal_min=body.get("normal_min"),
+        normal_max=body.get("normal_max"),
+        warning_min=body.get("warning_min"),
+        warning_max=body.get("warning_max"),
+        critical_min=body.get("critical_min"),
+        critical_max=body.get("critical_max"),
+    )
+    session.add(metric)
+    await session.commit()
+    await session.refresh(metric)
+
+    return {"status": "created", "id": metric.id, "metric_name": metric_name, "is_derived": True}
+
+
+@app.post("/process-steps/{step_id}/metrics")
+async def link_metrics_to_step(
+    step_id: int,
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Link one or more metrics to a process step."""
+    from business_brain.db.v3_models import ProcessStep, ProcessMetricLink, MetricThreshold
+
+    # Validate step exists
+    result = await session.execute(select(ProcessStep).where(ProcessStep.id == step_id))
+    step = result.scalar_one_or_none()
+    if not step:
+        raise HTTPException(status_code=404, detail="Process step not found")
+
+    metric_ids = body.get("metric_ids", [])
+    if not metric_ids:
+        raise HTTPException(status_code=400, detail="metric_ids array is required")
+
+    linked = []
+    for mid in metric_ids:
+        # Validate metric exists
+        m_result = await session.execute(select(MetricThreshold).where(MetricThreshold.id == mid))
+        metric = m_result.scalar_one_or_none()
+        if not metric:
+            continue
+
+        # Check for duplicate link
+        existing = await session.execute(
+            select(ProcessMetricLink).where(
+                ProcessMetricLink.process_step_id == step_id,
+                ProcessMetricLink.metric_id == mid,
+            )
+        )
+        if existing.scalar_one_or_none():
+            continue
+
+        link = ProcessMetricLink(
+            process_step_id=step_id,
+            metric_id=mid,
+            is_primary=len(linked) == 0,  # first one is primary
+        )
+        session.add(link)
+        linked.append(mid)
+
+    await session.commit()
+    return {"status": "linked", "step_id": step_id, "metrics_linked": linked}
+
+
+@app.get("/process-steps/{step_id}/metrics")
+async def get_step_metrics(
+    step_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Get all metrics linked to a process step."""
+    from business_brain.db.v3_models import ProcessMetricLink, MetricThreshold
+
+    result = await session.execute(
+        select(ProcessMetricLink).where(ProcessMetricLink.process_step_id == step_id)
+    )
+    links = result.scalars().all()
+
+    metrics = []
+    for link in links:
+        m_result = await session.execute(
+            select(MetricThreshold).where(MetricThreshold.id == link.metric_id)
+        )
+        metric = m_result.scalar_one_or_none()
+        if metric:
+            metrics.append({
+                "link_id": link.id,
+                "metric_id": metric.id,
+                "metric_name": metric.metric_name,
+                "table_name": metric.table_name,
+                "column_name": metric.column_name,
+                "unit": metric.unit,
+                "is_primary": link.is_primary,
+                "is_derived": metric.is_derived or False,
+                "auto_linked": metric.auto_linked or False,
+                "confidence": metric.confidence,
+            })
+
+    return metrics
+
+
+@app.delete("/process-steps/{step_id}/metrics/{metric_id}")
+async def unlink_metric_from_step(
+    step_id: int,
+    metric_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Unlink a metric from a process step."""
+    from sqlalchemy import delete as sa_delete
+    from business_brain.db.v3_models import ProcessMetricLink
+
+    result = await session.execute(
+        sa_delete(ProcessMetricLink).where(
+            ProcessMetricLink.process_step_id == step_id,
+            ProcessMetricLink.metric_id == metric_id,
+        )
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Link not found")
+    return {"status": "unlinked", "step_id": step_id, "metric_id": metric_id}
+
+
+# ---------------------------------------------------------------------------
 # Helpers: Auto-regenerate RAG context from structured data
 # ---------------------------------------------------------------------------
 
@@ -9258,7 +9615,9 @@ async def _regenerate_process_context(session: AsyncSession) -> None:
             line += f" | Inputs: {s.inputs}"
         if s.outputs:
             line += f" | Outputs: {s.outputs}"
-        if s.key_metric:
+        if s.key_metrics:
+            line += f" | Metrics: {', '.join(s.key_metrics)}"
+        elif s.key_metric:
             line += f" | Key Metric: {s.key_metric}"
         if s.target_range:
             line += f" (Target: {s.target_range})"
@@ -9516,6 +9875,87 @@ async def get_plan_limits(
         "limits": limits,
         "upload_count": 0,  # Would need DB lookup for real count
     }
+
+
+# ---------------------------------------------------------------------------
+# Focus Mode — Table Scoping
+# ---------------------------------------------------------------------------
+
+
+@app.get("/focus")
+async def get_focus(session: AsyncSession = Depends(get_session)) -> dict:
+    """Get current focus scope (which tables are included/excluded)."""
+    from business_brain.db.v3_models import FocusScope
+
+    try:
+        result = await session.execute(select(FocusScope))
+        rows = list(result.scalars().all())
+        all_entries = await metadata_store.get_all(session)
+        all_table_names = [e.table_name for e in all_entries]
+
+        focused = {r.table_name: r.is_included for r in rows}
+        tables = []
+        for t in all_table_names:
+            tables.append({
+                "table_name": t,
+                "is_included": focused.get(t, True),  # default to included
+            })
+
+        active = any(not v for v in focused.values()) or (len(focused) > 0 and len(focused) < len(all_table_names))
+        return {"active": bool(rows) and active, "tables": tables, "total": len(all_table_names)}
+    except Exception:
+        logger.exception("Error fetching focus scope")
+        return {"active": False, "tables": [], "total": 0}
+
+
+@app.put("/focus")
+async def update_focus(body: dict, session: AsyncSession = Depends(get_session)) -> dict:
+    """Update focus scope — set which tables are included/excluded."""
+    from business_brain.db.v3_models import FocusScope
+
+    tables = body.get("tables", [])
+    if not tables:
+        raise HTTPException(status_code=400, detail="'tables' array is required")
+
+    # Validate that all referenced tables exist
+    all_entries = await metadata_store.get_all(session)
+    valid_names = {e.table_name for e in all_entries}
+    for t in tables:
+        if t.get("table_name") not in valid_names:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Table '{t.get('table_name')}' not found in metadata"
+            )
+
+    # Clear existing scope and recreate
+    await session.execute(
+        select(FocusScope)  # Just to init; actual delete below
+    )
+    from sqlalchemy import delete as sa_delete
+    await session.execute(sa_delete(FocusScope))
+
+    for t in tables:
+        scope = FocusScope(
+            table_name=t["table_name"],
+            is_included=t.get("is_included", True),
+        )
+        session.add(scope)
+
+    await session.commit()
+
+    included = sum(1 for t in tables if t.get("is_included", True))
+    return {"status": "updated", "total": len(tables), "included": included}
+
+
+@app.delete("/focus")
+async def clear_focus(session: AsyncSession = Depends(get_session)) -> dict:
+    """Clear focus scope — disable focus mode (analyze all tables)."""
+    from business_brain.db.v3_models import FocusScope
+    from sqlalchemy import delete as sa_delete
+
+    result = await session.execute(sa_delete(FocusScope))
+    await session.commit()
+    return {"status": "cleared", "rows_removed": result.rowcount}
 
 
 # ---------------------------------------------------------------------------
@@ -9934,3 +10374,61 @@ async def deactivate_user(
     target.is_active = False
     await session.commit()
     return {"status": "deactivated", "user_id": user_id}
+
+
+@app.get("/auth/invites")
+async def list_invites(
+    session: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_role("admin")),
+) -> list[dict]:
+    """List all pending (unused) invite tokens (admin/owner only)."""
+    from sqlalchemy import select
+
+    from business_brain.db.v3_models import InviteToken
+
+    try:
+        result = await session.execute(
+            select(InviteToken)
+            .where(InviteToken.used == False)  # noqa: E712
+            .order_by(InviteToken.expires_at.desc())
+        )
+        invites = list(result.scalars().all())
+        return [
+            {
+                "id": inv.id,
+                "email": inv.email,
+                "role": inv.role,
+                "plan": inv.plan,
+                "token": inv.token,
+                "expires_at": str(inv.expires_at) if inv.expires_at else None,
+                "created_by": inv.created_by,
+                "expired": inv.expires_at is not None and inv.expires_at < datetime.utcnow(),
+            }
+            for inv in invites
+        ]
+    except Exception:
+        logger.exception("Error listing invites")
+        return []
+
+
+@app.delete("/auth/invites/{invite_id}")
+async def revoke_invite(
+    invite_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: dict = Depends(require_role("admin")),
+) -> dict:
+    """Revoke (delete) a pending invite token (admin/owner only)."""
+    from sqlalchemy import select
+
+    from business_brain.db.v3_models import InviteToken
+
+    result = await session.execute(select(InviteToken).where(InviteToken.id == invite_id))
+    invite = result.scalars().first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    if invite.used:
+        raise HTTPException(status_code=400, detail="Invite already used, cannot revoke")
+
+    await session.delete(invite)
+    await session.commit()
+    return {"status": "revoked", "invite_id": invite_id}

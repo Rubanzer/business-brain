@@ -12,15 +12,49 @@ logger = logging.getLogger(__name__)
 
 
 async def get_all(session: AsyncSession) -> list[MetadataEntry]:
-    result = await session.execute(select(MetadataEntry))
-    return list(result.scalars().all())
+    try:
+        result = await session.execute(select(MetadataEntry))
+        return list(result.scalars().all())
+    except Exception:
+        logger.exception("Failed to fetch all metadata entries")
+        await session.rollback()
+        return []
+
+
+async def get_filtered(
+    session: AsyncSession,
+    table_names: list[str] | None = None,
+) -> list[MetadataEntry]:
+    """Fetch metadata entries, optionally filtering to a specific set of tables.
+
+    If table_names is None, returns all entries (same as get_all).
+    If table_names is an empty list, returns an empty list.
+    """
+    if table_names is None:
+        return await get_all(session)
+    if not table_names:
+        return []
+    try:
+        result = await session.execute(
+            select(MetadataEntry).where(MetadataEntry.table_name.in_(table_names))
+        )
+        return list(result.scalars().all())
+    except Exception:
+        logger.exception("Failed to fetch filtered metadata entries")
+        await session.rollback()
+        return []
 
 
 async def get_by_table(session: AsyncSession, table_name: str) -> MetadataEntry | None:
-    result = await session.execute(
-        select(MetadataEntry).where(MetadataEntry.table_name == table_name)
-    )
-    return result.scalar_one_or_none()
+    try:
+        result = await session.execute(
+            select(MetadataEntry).where(MetadataEntry.table_name == table_name)
+        )
+        return result.scalar_one_or_none()
+    except Exception:
+        logger.exception("Failed to fetch metadata for table: %s", table_name)
+        await session.rollback()
+        return None
 
 
 async def upsert(
@@ -29,29 +63,39 @@ async def upsert(
     description: str,
     columns_metadata: list[dict] | None = None,
 ) -> MetadataEntry:
-    existing = await get_by_table(session, table_name)
-    if existing:
-        existing.description = description
-        existing.columns_metadata = columns_metadata
-    else:
-        existing = MetadataEntry(
-            table_name=table_name,
-            description=description,
-            columns_metadata=columns_metadata,
-        )
-        session.add(existing)
-    await session.commit()
-    await session.refresh(existing)
-    return existing
+    try:
+        existing = await get_by_table(session, table_name)
+        if existing:
+            existing.description = description
+            existing.columns_metadata = columns_metadata
+        else:
+            existing = MetadataEntry(
+                table_name=table_name,
+                description=description,
+                columns_metadata=columns_metadata,
+            )
+            session.add(existing)
+        await session.commit()
+        await session.refresh(existing)
+        return existing
+    except Exception:
+        logger.exception("Failed to upsert metadata for table: %s", table_name)
+        await session.rollback()
+        raise
 
 
 async def delete(session: AsyncSession, table_name: str) -> bool:
-    entry = await get_by_table(session, table_name)
-    if entry:
-        await session.delete(entry)
-        await session.commit()
-        return True
-    return False
+    try:
+        entry = await get_by_table(session, table_name)
+        if entry:
+            await session.delete(entry)
+            await session.commit()
+            return True
+        return False
+    except Exception:
+        logger.exception("Failed to delete metadata for table: %s", table_name)
+        await session.rollback()
+        return False
 
 
 async def validate_tables(session: AsyncSession) -> list[str]:

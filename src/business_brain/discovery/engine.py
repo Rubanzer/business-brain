@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 async def run_discovery(
     session: AsyncSession,
     trigger: str = "manual",
+    table_filter: list[str] | None = None,
 ) -> DiscoveryRun:
     """Run the full discovery pipeline.
 
@@ -55,7 +56,7 @@ async def run_discovery(
     try:
         # 2. Profile all tables
         logger.info("Discovery: profiling tables...")
-        profiles = await profile_all_tables(session)
+        profiles = await profile_all_tables(session, table_filter=table_filter)
         run.tables_scanned = len(profiles)
 
         if not profiles:
