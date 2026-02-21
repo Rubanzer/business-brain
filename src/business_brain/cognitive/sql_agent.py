@@ -139,7 +139,10 @@ class SQLAgent:
         contexts = state.get("_rag_contexts")
 
         if tables is None or contexts is None:
-            tables, contexts = await retrieve_relevant_tables(db_session, question)
+            tables, contexts = await retrieve_relevant_tables(
+                db_session, question,
+                allowed_tables=state.get("allowed_tables"),
+            )
             state["_rag_tables"] = tables
             state["_rag_contexts"] = contexts
 

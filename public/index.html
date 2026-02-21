@@ -1267,118 +1267,7 @@
     }
     .threshold-range { font-size: 0.7rem; color: var(--muted); }
 
-    /* ===== WIZARD STEPPER ===== */
-    .setup-wizard-stepper {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 1.5rem;
-      padding: 1rem 0;
-      border-bottom: 1px solid var(--border);
-      position: relative;
-    }
-    .wizard-step {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      flex: 1;
-      position: relative;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .wizard-step-number {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.75rem;
-      font-weight: 600;
-      border: 2px solid var(--border);
-      background: var(--bg);
-      color: var(--muted);
-      transition: all 0.3s;
-      z-index: 1;
-    }
-    .wizard-step.active .wizard-step-number {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
-    }
-    .wizard-step.completed .wizard-step-number {
-      border-color: var(--green);
-      background: var(--green);
-      color: #fff;
-    }
-    .wizard-step-label {
-      font-size: 0.68rem;
-      margin-top: 0.4rem;
-      color: var(--muted);
-      text-align: center;
-      max-width: 80px;
-    }
-    .wizard-step.active .wizard-step-label { color: var(--accent); font-weight: 600; }
-    .wizard-step.completed .wizard-step-label { color: var(--green); }
-    .wizard-step-connector {
-      position: absolute;
-      top: 16px;
-      left: calc(50% + 20px);
-      right: calc(-50% + 20px);
-      height: 2px;
-      background: var(--border);
-      z-index: 0;
-    }
-    .wizard-step.completed .wizard-step-connector { background: var(--green); }
-    .wizard-step:last-child .wizard-step-connector { display: none; }
-
-    /* Setup checklist sidebar */
-    .setup-checklist {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.8rem;
-      margin-bottom: 1rem;
-      font-size: 0.72rem;
-    }
-    .setup-checklist-title {
-      font-weight: 600;
-      font-size: 0.78rem;
-      margin-bottom: 0.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-    }
-    .setup-checklist-title .cl-toggle { font-size: 0.65rem; color: var(--muted); }
-    .checklist-item {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.2rem 0;
-      color: var(--muted);
-    }
-    .checklist-item.done { color: var(--green); }
-    .checklist-item .cl-icon { font-size: 0.8rem; }
-
-    /* Wizard navigation buttons */
-    .wizard-nav {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 1.5rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--border);
-    }
-    .wizard-nav .btn-skip {
-      font-size: 0.72rem;
-      color: var(--muted);
-      background: none;
-      border: none;
-      cursor: pointer;
-      text-decoration: underline;
-    }
-    .wizard-nav .btn-skip:hover { color: var(--text); }
+    /* Setup card dashboard styles are below in the "Setup Dashboard" section */
 
     /* Help tooltip */
     .help-tip {
@@ -1846,6 +1735,280 @@
       padding-top: 0.4rem;
       border-top: 1px solid var(--border);
     }
+
+    /* Focus Mode */
+    .focus-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 1rem;
+      background: linear-gradient(90deg, rgba(99,102,241,0.1), rgba(99,102,241,0.05));
+      border-bottom: 1px solid var(--accent);
+      font-size: 0.72rem;
+      color: var(--accent);
+    }
+    .focus-toggle {
+      position: relative;
+      display: inline-block;
+      width: 32px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+    .focus-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .focus-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: var(--border);
+      border-radius: 18px;
+      transition: 0.2s;
+    }
+    .focus-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    .focus-toggle input:checked + .focus-slider {
+      background-color: var(--accent);
+    }
+    .focus-toggle input:checked + .focus-slider:before {
+      transform: translateX(14px);
+    }
+    .meta-card.focus-dimmed {
+      opacity: 0.45;
+      border-color: var(--border);
+    }
+
+    /* Setup Dashboard — Card Grid Layout */
+    .setup-dashboard-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .setup-pct-badge {
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 0.1rem 0.4rem;
+      border-radius: 8px;
+    }
+    .setup-card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+    }
+    .setup-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.7rem 0.8rem;
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.1s, box-shadow 0.2s;
+      position: relative;
+    }
+    .setup-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(108,92,231,0.12);
+    }
+    .setup-card-active {
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 2px rgba(108,92,231,0.15);
+    }
+    .setup-card-done {
+      border-left: 3px solid var(--green);
+    }
+    .setup-card-done .setup-card-icon { color: var(--green); }
+    .setup-card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 0.3rem;
+    }
+    .setup-card-icon { font-size: 0.85rem; color: var(--muted); }
+    .setup-card-title { font-size: 0.78rem; font-weight: 600; }
+    .setup-card-summary {
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-bottom: 0.3rem;
+    }
+    .setup-card-action {
+      font-size: 0.65rem;
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .setup-card-actions-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .setup-card-action-secondary { color: var(--muted); }
+    .setup-card-suggestions {
+      background: linear-gradient(135deg, rgba(108,92,231,0.05), rgba(0,206,201,0.05));
+    }
+
+    /* Setup card panel (expandable content below grid) */
+    .setup-card-panel {
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      background: var(--surface);
+    }
+    .setup-card-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    /* Metrics section labels */
+    .metrics-section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+    }
+
+    /* Multi-metric tag input */
+    .metric-tags-input {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.3rem;
+      margin-bottom: 0.5rem;
+      min-height: 32px;
+      align-items: center;
+    }
+    .metric-tags-input input {
+      border: none;
+      background: transparent;
+      outline: none;
+      font-size: 0.75rem;
+      flex: 1;
+      min-width: 120px;
+      margin: 0;
+      padding: 0.2rem;
+    }
+    .metric-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 12px;
+      padding: 0.15rem 0.5rem;
+      font-size: 0.68rem;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .metric-tag-remove {
+      cursor: pointer;
+      font-size: 0.8rem;
+      margin-left: 0.15rem;
+      opacity: 0.8;
+    }
+    .metric-tag-remove:hover { opacity: 1; }
+
+    /* Metric chip in table */
+    .metric-chip {
+      display: inline-block;
+      background: rgba(108,92,231,0.15);
+      color: var(--accent);
+      border-radius: 10px;
+      padding: 0.1rem 0.4rem;
+      font-size: 0.65rem;
+      font-weight: 500;
+      margin: 0.1rem;
+    }
+
+    /* Auto-linked hint below process name */
+    .auto-linked-hint {
+      font-size: 0.62rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+    }
+
+    /* Suggested metric card */
+    .suggested-metric-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem;
+    }
+
+    /* Derived metric card */
+    .derived-metric-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem;
+    }
+
+    /* Auto-link items */
+    .auto-link-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.6rem;
+      font-size: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .auto-link-item:last-child { border-bottom: none; }
+    .auto-link-done { color: var(--green); }
+    .confidence-badge {
+      font-size: 0.6rem;
+      padding: 0.1rem 0.3rem;
+      border-radius: 6px;
+      background: var(--border);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* Auto-link confidence indicator */
+    .confidence-bar {
+      display: inline-block;
+      width: 40px;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      vertical-align: middle;
+    }
+    .confidence-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+    .confidence-high { background: var(--green); }
+    .confidence-med { background: var(--amber); }
+    .confidence-low { background: var(--red); }
+
+    @media (max-width: 700px) {
+      .setup-card-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 480px) {
+      .setup-card-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -1919,9 +2082,16 @@
           <button class="tab-menu-item" data-panel="goals">Goals</button>
           <button class="tab-menu-item" data-panel="whatif">What-If</button>
           <button class="tab-menu-item" data-panel="changelog">Audit Log</button>
+          <button class="tab-menu-item" data-panel="users">Users</button>
         </div>
       </div>
       <span class="data-health-global" id="data-health-global" title="Data health status"></span>
+    </div>
+
+    <!-- Focus Mode Banner -->
+    <div id="focus-banner" class="focus-banner" style="display:none;">
+      <span>Focus Mode: Analyzing <strong id="focus-count">0</strong> of <strong id="focus-total">0</strong> tables</span>
+      <button class="btn-sm btn-secondary" onclick="clearFocusMode()" style="font-size:0.65rem;">Clear Focus</button>
     </div>
 
     <!-- Feed Panel (Default) -->
@@ -2125,59 +2295,75 @@
          SETUP TAB (consolidated: Company Profile + Context + Process Map + Metrics + I/O)
          ===================================================================== -->
     <div id="setup" class="panel">
-      <!-- Wizard Stepper -->
-      <div class="setup-wizard-stepper" id="setup-stepper">
-        <div class="wizard-step active" data-step="0" onclick="goToSetupStep(0)">
-          <div class="wizard-step-number">1</div>
-          <div class="wizard-step-label">Company Profile</div>
-          <div class="wizard-step-connector"></div>
+      <!-- Setup Dashboard Header -->
+      <div class="setup-dashboard-header">
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <span style="font-size:1rem;font-weight:600;">Setup Dashboard</span>
+          <span class="setup-pct-badge" id="setup-completeness">0%</span>
         </div>
-        <div class="wizard-step" data-step="1" onclick="goToSetupStep(1)">
-          <div class="wizard-step-number">2</div>
-          <div class="wizard-step-label">Process Map</div>
-          <div class="wizard-step-connector"></div>
+        <div class="progress-bar" style="flex:1;max-width:200px;margin:0;"><div class="progress-bar-fill" id="setup-progress" style="width:0%"></div></div>
+      </div>
+
+      <!-- Card-Based Dashboard Grid -->
+      <div class="setup-card-grid" id="setup-card-grid">
+        <div class="setup-card" data-card="profile" onclick="toggleSetupCard('profile')">
+          <div class="setup-card-header">
+            <span class="setup-card-icon" id="card-icon-profile">&#9675;</span>
+            <span class="setup-card-title">Company Profile</span>
+          </div>
+          <div class="setup-card-summary" id="card-summary-profile">Not configured</div>
+          <div class="setup-card-action">Edit</div>
         </div>
-        <div class="wizard-step" data-step="2" onclick="goToSetupStep(2)">
-          <div class="wizard-step-number">3</div>
-          <div class="wizard-step-label">Key Metrics</div>
-          <div class="wizard-step-connector"></div>
+        <div class="setup-card" data-card="process" onclick="toggleSetupCard('process')">
+          <div class="setup-card-header">
+            <span class="setup-card-icon" id="card-icon-process">&#9675;</span>
+            <span class="setup-card-title">Process Map</span>
+          </div>
+          <div class="setup-card-summary" id="card-summary-process">No steps defined</div>
+          <div class="setup-card-action">Edit</div>
         </div>
-        <div class="wizard-step" data-step="3" onclick="goToSetupStep(3)">
-          <div class="wizard-step-number">4</div>
-          <div class="wizard-step-label">Inputs &amp; Outputs</div>
-          <div class="wizard-step-connector"></div>
+        <div class="setup-card" data-card="metrics" onclick="toggleSetupCard('metrics')">
+          <div class="setup-card-header">
+            <span class="setup-card-icon" id="card-icon-metrics">&#9675;</span>
+            <span class="setup-card-title">Metrics &amp; KPIs</span>
+          </div>
+          <div class="setup-card-summary" id="card-summary-metrics">No metrics configured</div>
+          <div class="setup-card-actions-row">
+            <span class="setup-card-action">Edit</span>
+            <span class="setup-card-action setup-card-action-secondary" onclick="event.stopPropagation(); runAutoScan()">Auto-scan</span>
+          </div>
         </div>
-        <div class="wizard-step" data-step="4" onclick="goToSetupStep(4)">
-          <div class="wizard-step-number">5</div>
-          <div class="wizard-step-label">Business Context</div>
+        <div class="setup-card" data-card="io" onclick="toggleSetupCard('io')">
+          <div class="setup-card-header">
+            <span class="setup-card-icon" id="card-icon-io">&#9675;</span>
+            <span class="setup-card-title">Inputs &amp; Outputs</span>
+          </div>
+          <div class="setup-card-summary" id="card-summary-io">Not configured</div>
+          <div class="setup-card-action">Edit</div>
+        </div>
+        <div class="setup-card" data-card="context" onclick="toggleSetupCard('context')">
+          <div class="setup-card-header">
+            <span class="setup-card-icon" id="card-icon-context">&#9675;</span>
+            <span class="setup-card-title">Business Context</span>
+          </div>
+          <div class="setup-card-summary" id="card-summary-context">No context added</div>
+          <div class="setup-card-action">Edit</div>
+        </div>
+        <div class="setup-card setup-card-suggestions" data-card="suggestions" onclick="toggleSetupCard('suggestions')">
+          <div class="setup-card-header">
+            <span class="setup-card-icon">&#128161;</span>
+            <span class="setup-card-title">Auto-Suggestions</span>
+          </div>
+          <div class="setup-card-summary" id="card-summary-suggestions">Upload data to enable</div>
+          <div class="setup-card-action">Review</div>
         </div>
       </div>
 
-      <!-- Setup Checklist -->
-      <div class="setup-checklist" id="setup-checklist">
-        <div class="setup-checklist-title" onclick="toggleChecklist()">
-          Setup Progress <span id="setup-completeness" style="color:var(--accent);font-size:0.72rem;">0% complete</span>
-          <span class="cl-toggle" id="cl-toggle-icon">&#9660;</span>
-        </div>
-        <div id="checklist-items">
-          <div class="checklist-item" id="cl-name"><span class="cl-icon">&#9675;</span> Company name entered</div>
-          <div class="checklist-item" id="cl-industry"><span class="cl-icon">&#9675;</span> Industry selected</div>
-          <div class="checklist-item" id="cl-products"><span class="cl-icon">&#9675;</span> Products listed</div>
-          <div class="checklist-item" id="cl-process"><span class="cl-icon">&#9675;</span> Process flow described</div>
-          <div class="checklist-item" id="cl-steps"><span class="cl-icon">&#9675;</span> At least 1 process step</div>
-          <div class="checklist-item" id="cl-metrics"><span class="cl-icon">&#9675;</span> At least 1 metric threshold</div>
-          <div class="checklist-item" id="cl-inputs"><span class="cl-icon">&#9675;</span> At least 1 input defined</div>
-          <div class="checklist-item" id="cl-outputs"><span class="cl-icon">&#9675;</span> At least 1 output defined</div>
-          <div class="checklist-item" id="cl-context"><span class="cl-icon">&#9675;</span> Business context added</div>
-        </div>
-        <div class="progress-bar" style="margin-top:0.5rem;"><div class="progress-bar-fill" id="setup-progress" style="width:0%"></div></div>
-      </div>
-
-      <!-- Step 1: Company Profile -->
-      <div id="setup-profile" class="sub-panel active">
-        <div style="display:flex;align-items:center;margin-bottom:0.75rem;">
+      <!-- Card Panel: Company Profile -->
+      <div id="setup-profile" class="sub-panel setup-card-panel">
+        <div class="setup-card-panel-header">
           <span style="font-size:0.9rem;font-weight:500;">Company Profile</span>
-          <span class="help-tip">?<div class="help-tip-box">Tell us about your company. This helps the AI understand your business context and provide more relevant analysis.</div></span>
+          <button class="btn-sm btn-secondary" onclick="collapseSetupCard('profile')">&times; Close</button>
         </div>
         <div class="template-banner" id="template-banner" style="display:none;">
           <span class="template-banner-icon">&#127981;</span>
@@ -2218,57 +2404,65 @@
           <label>List your systems (one per line: Name - Description)</label>
           <textarea id="ob-systems" rows="4" placeholder="Tally - Financial accounting&#10;VEGA - Truck/logistics management&#10;SCADA - Electrical monitoring"></textarea>
         </div>
-        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
+        <div style="display:flex;gap:0.5rem;">
           <button onclick="saveOnboarding()">Save Profile</button>
           <button class="btn-secondary" onclick="loadOnboarding()">Refresh</button>
         </div>
-        <div class="wizard-nav">
-          <div></div>
-          <button onclick="goToSetupStep(1)">Next: Process Map &#8594;</button>
-        </div>
       </div>
 
-      <!-- Step 2: Process Map -->
-      <div id="setup-process" class="sub-panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+      <!-- Card Panel: Process Map -->
+      <div id="setup-process" class="sub-panel setup-card-panel">
+        <div class="setup-card-panel-header">
           <div style="display:flex;align-items:center;">
             <span style="font-size:0.85rem;font-weight:500;">Production Process Map</span>
-            <span class="help-tip">?<div class="help-tip-box">Define each step of your production process. This helps the AI understand how your plant works and detect where issues might be occurring.</div></span>
+            <span class="help-tip">?<div class="help-tip-box">Define each step of your production process. The AI uses this to understand how your plant works and detect where issues occur.</div></span>
           </div>
-          <button class="btn-sm" onclick="openProcessStepModal()">+ Add Step</button>
+          <div style="display:flex;gap:0.3rem;">
+            <button class="btn-sm" onclick="openProcessStepModal()">+ Add Step</button>
+            <button class="btn-sm btn-secondary" onclick="collapseSetupCard('process')">&times; Close</button>
+          </div>
         </div>
         <div id="process-steps-body">
           <div class="feed-empty" style="padding:0.8rem;">No process steps defined yet. Click "+ Add Step" to start.</div>
         </div>
-        <div class="wizard-nav">
-          <button class="btn-secondary" onclick="goToSetupStep(0)">&#8592; Back</button>
-          <button class="btn-skip" onclick="goToSetupStep(2)">Skip</button>
-          <button onclick="goToSetupStep(2)">Next: Key Metrics &#8594;</button>
-        </div>
       </div>
 
-      <!-- Step 3: Key Metrics & Ranges -->
-      <div id="setup-metrics" class="sub-panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+      <!-- Card Panel: Metrics & KPIs -->
+      <div id="setup-metrics" class="sub-panel setup-card-panel">
+        <div class="setup-card-panel-header">
           <div style="display:flex;align-items:center;">
-            <span style="font-size:0.85rem;font-weight:500;">Key Metrics &amp; Ranges</span>
+            <span style="font-size:0.85rem;font-weight:500;">Metrics &amp; KPIs</span>
             <span class="help-tip">?<div class="help-tip-box">Set target ranges for your critical metrics. The AI will alert you when any metric goes outside these ranges.</div></span>
           </div>
-          <button class="btn-sm" onclick="showAddThresholdModal()">+ Add Metric</button>
+          <div style="display:flex;gap:0.3rem;">
+            <button class="btn-sm" onclick="showAddThresholdModal()">+ Add Metric</button>
+            <button class="btn-sm btn-secondary" onclick="collapseSetupCard('metrics')">&times; Close</button>
+          </div>
         </div>
+        <!-- Your Metrics -->
+        <div class="metrics-section-label">Your Metrics</div>
         <div id="thresholds-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.5rem;">
           <div class="feed-empty" style="padding:0.8rem;grid-column:1/-1;">No thresholds configured yet.</div>
         </div>
-        <div class="wizard-nav">
-          <button class="btn-secondary" onclick="goToSetupStep(1)">&#8592; Back</button>
-          <button class="btn-skip" onclick="goToSetupStep(3)">Skip</button>
-          <button onclick="goToSetupStep(3)">Next: Inputs &amp; Outputs &#8594;</button>
+        <!-- Auto-Discovered Metrics -->
+        <div class="metrics-section-label" style="margin-top:1rem;">Auto-Discovered from Data
+          <button class="btn-sm btn-secondary" onclick="loadSuggestedMetrics()" style="margin-left:0.5rem;font-size:0.65rem;">Scan Now</button>
+        </div>
+        <div id="suggested-metrics-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.5rem;">
+          <div class="feed-empty" style="padding:0.5rem;grid-column:1/-1;font-size:0.72rem;">Upload data first, then click "Scan Now" to discover metrics.</div>
+        </div>
+        <!-- Derived Metrics -->
+        <div class="metrics-section-label" style="margin-top:1rem;">Derived Metrics
+          <button class="btn-sm btn-secondary" onclick="openDerivedMetricModal()" style="margin-left:0.5rem;font-size:0.65rem;">+ Create</button>
+        </div>
+        <div id="derived-metrics-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.5rem;">
+          <div class="feed-empty" style="padding:0.5rem;grid-column:1/-1;font-size:0.72rem;">No derived metrics. Create formulas like <em>total_kwh / output_mt</em>.</div>
         </div>
       </div>
 
-      <!-- Step 4: Inputs & Outputs -->
-      <div id="setup-io" class="sub-panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+      <!-- Card Panel: Inputs & Outputs -->
+      <div id="setup-io" class="sub-panel setup-card-panel">
+        <div class="setup-card-panel-header">
           <div style="display:flex;align-items:center;">
             <span style="font-size:0.85rem;font-weight:500;">Process Inputs &amp; Outputs</span>
             <span class="help-tip">?<div class="help-tip-box">List what goes into your production process and what comes out. This helps track yield, losses, and cost per unit.</div></span>
@@ -2276,21 +2470,17 @@
           <div style="display:flex;gap:0.3rem;">
             <button class="btn-sm" onclick="openIOModal('input')">+ Input</button>
             <button class="btn-sm btn-secondary" onclick="openIOModal('output')">+ Output</button>
+            <button class="btn-sm btn-secondary" onclick="collapseSetupCard('io')">&times; Close</button>
           </div>
         </div>
         <div id="process-io-body">
           <div class="feed-empty" style="padding:0.8rem;">No inputs or outputs defined yet.</div>
         </div>
-        <div class="wizard-nav">
-          <button class="btn-secondary" onclick="goToSetupStep(2)">&#8592; Back</button>
-          <button class="btn-skip" onclick="goToSetupStep(4)">Skip</button>
-          <button onclick="goToSetupStep(4)">Next: Business Context &#8594;</button>
-        </div>
       </div>
 
-      <!-- Step 5: Business Context -->
-      <div id="setup-context" class="sub-panel">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+      <!-- Card Panel: Business Context -->
+      <div id="setup-context" class="sub-panel setup-card-panel">
+        <div class="setup-card-panel-header">
           <div style="display:flex;align-items:center;">
             <span style="font-size:0.85rem;font-weight:500;">Business Context</span>
             <span class="help-tip">?<div class="help-tip-box">Add any business rules, constraints, or knowledge that the AI should know about when analyzing your data.</div></span>
@@ -2298,6 +2488,7 @@
           <div style="display:flex;gap:0.3rem;">
             <button class="btn-sm" onclick="showAddContextModal()">+ Add Context</button>
             <button class="btn-sm btn-secondary" onclick="loadContextEntries()">Refresh</button>
+            <button class="btn-sm btn-secondary" onclick="collapseSetupCard('context')">&times; Close</button>
           </div>
         </div>
         <div class="context-form" style="margin-bottom:0.75rem;">
@@ -2310,15 +2501,27 @@
         <div id="context-entries-body">
           <div class="feed-empty" style="padding:0.8rem;">Loading context entries...</div>
         </div>
-        <div class="wizard-nav">
-          <button class="btn-secondary" onclick="goToSetupStep(3)">&#8592; Back</button>
-          <div></div>
-          <button onclick="toast('Setup complete! Your AI is now configured.')">&#10003; Finish Setup</button>
+      </div>
+
+      <!-- Card Panel: Auto-Suggestions -->
+      <div id="setup-suggestions" class="sub-panel setup-card-panel">
+        <div class="setup-card-panel-header">
+          <div style="display:flex;align-items:center;">
+            <span style="font-size:0.85rem;font-weight:500;">Auto-Suggestions</span>
+            <span class="help-tip">?<div class="help-tip-box">The system automatically matches your metrics to data columns. Review and accept suggestions or manually override.</div></span>
+          </div>
+          <div style="display:flex;gap:0.3rem;">
+            <button class="btn-sm" onclick="runAutoLink()">Run Auto-Link</button>
+            <button class="btn-sm btn-secondary" onclick="collapseSetupCard('suggestions')">&times; Close</button>
+          </div>
+        </div>
+        <div id="auto-link-body">
+          <div class="feed-empty" style="padding:0.8rem;">Click "Run Auto-Link" to match your metrics to data columns automatically.</div>
         </div>
       </div>
     </div>
 
-    <!-- Process Step Modal (replaces browser prompt) -->
+    <!-- Process Step Modal (multi-metric, no linked table) -->
     <div class="form-modal-overlay" id="process-step-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
       <div class="form-modal">
         <h3>Add Process Step <button onclick="document.getElementById('process-step-modal').style.display='none'" style="background:none;border:none;color:var(--text);font-size:1.2rem;cursor:pointer;">&times;</button></h3>
@@ -2328,18 +2531,45 @@
           <div><label>Inputs</label><input type="text" id="ps-inputs" placeholder="e.g., Scrap, Electricity" /></div>
           <div><label>Outputs</label><input type="text" id="ps-outputs" placeholder="e.g., Molten steel" /></div>
         </div>
-        <div class="form-row">
-          <div><label>Key Metric</label><input type="text" id="ps-metric" placeholder="e.g., SEC (kWh/ton)" /></div>
-          <div><label>Target Range</label><input type="text" id="ps-range" placeholder="e.g., 500-625 kWh/ton" /></div>
+        <label>Key Metrics <span style="font-size:0.65rem;color:var(--muted);">(comma-separated, e.g., SEC, Yield %, Tap-to-tap time)</span></label>
+        <div class="metric-tags-input" id="ps-metrics-tags">
+          <input type="text" id="ps-metric-input" placeholder="Type a metric and press Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addMetricTag()}" />
         </div>
+        <input type="hidden" id="ps-metric" value="" />
         <div class="form-row">
-          <div><label>Linked Table</label><input type="text" id="ps-table" placeholder="e.g., power_data" /></div>
+          <div><label>Target Range</label><input type="text" id="ps-range" placeholder="e.g., 500-625 kWh/ton" /></div>
           <div><label>Step Order</label><input type="number" id="ps-order" value="1" min="1" /></div>
         </div>
         <input type="hidden" id="ps-edit-id" value="" />
+        <input type="hidden" id="ps-table" value="" />
         <div class="form-actions">
           <button onclick="submitProcessStep()">Save Step</button>
           <button class="btn-secondary" onclick="document.getElementById('process-step-modal').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Derived Metric Modal -->
+    <div class="form-modal-overlay" id="derived-metric-modal" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+      <div class="form-modal">
+        <h3>Create Derived Metric <button onclick="document.getElementById('derived-metric-modal').style.display='none'" style="background:none;border:none;color:var(--text);font-size:1.2rem;cursor:pointer;">&times;</button></h3>
+        <label>Metric Name *</label>
+        <input type="text" id="dm-name" placeholder="e.g., Specific Energy Consumption" />
+        <label>Unit</label>
+        <input type="text" id="dm-unit" placeholder="e.g., kWh/ton" />
+        <label>Formula <span style="font-size:0.65rem;color:var(--muted);">(use table.column notation)</span></label>
+        <input type="text" id="dm-formula" placeholder="e.g., power_data.total_kwh / production.output_mt" style="font-family:monospace;" />
+        <div class="form-row">
+          <div><label>Warning Below</label><input type="number" id="dm-warn-min" step="any" placeholder="e.g., 450" /></div>
+          <div><label>Warning Above</label><input type="number" id="dm-warn-max" step="any" placeholder="e.g., 650" /></div>
+        </div>
+        <div class="form-row">
+          <div><label>Critical Below</label><input type="number" id="dm-crit-min" step="any" placeholder="e.g., 400" /></div>
+          <div><label>Critical Above</label><input type="number" id="dm-crit-max" step="any" placeholder="e.g., 750" /></div>
+        </div>
+        <div class="form-actions">
+          <button onclick="submitDerivedMetric()">Create Metric</button>
+          <button class="btn-secondary" onclick="document.getElementById('derived-metric-modal').style.display='none'">Cancel</button>
         </div>
       </div>
     </div>
@@ -2521,6 +2751,53 @@
         </div>
       </div>
       <div id="whatif-body"><div class="feed-empty">Choose a quick scenario above or build your own, then click "Compare Scenarios" to model outcomes.</div></div>
+    </div>
+
+    <!-- Users / Access Management Panel -->
+    <div id="users" class="panel">
+      <div class="sub-nav" id="users-sub-nav">
+        <button class="sub-nav-pill active" data-sub="users-list" onclick="switchUsersSub('users-list')">Team Members</button>
+        <button class="sub-nav-pill" data-sub="users-invite" onclick="switchUsersSub('users-invite')">Invite User</button>
+        <button class="sub-nav-pill" data-sub="users-pending" onclick="switchUsersSub('users-pending')">Pending Invites</button>
+      </div>
+
+      <!-- Sub: Team Members List -->
+      <div id="users-list" class="sub-panel active">
+        <div id="users-list-body">
+          <div class="feed-empty">Loading team members...</div>
+        </div>
+      </div>
+
+      <!-- Sub: Invite User Form -->
+      <div id="users-invite" class="sub-panel">
+        <div class="onboard-step" style="max-width:480px;">
+          <h3 style="margin-top:0;">Invite a Team Member</h3>
+          <label>Email Address</label>
+          <input type="email" id="invite-email" placeholder="colleague@company.com" />
+          <label style="margin-top:0.5rem;">Role</label>
+          <select id="invite-role">
+            <option value="viewer">Viewer — Read-only access to Feed &amp; Reports</option>
+            <option value="operator">Operator — Can also analyze data</option>
+            <option value="manager" selected>Manager — Can create reports, alerts, what-if</option>
+            <option value="admin">Admin — Full access including user management</option>
+          </select>
+          <label style="margin-top:0.5rem;">Plan</label>
+          <select id="invite-plan">
+            <option value="free">Free</option>
+            <option value="basic">Basic</option>
+            <option value="pro" selected>Pro</option>
+          </select>
+          <button onclick="sendInvite()" style="margin-top:0.8rem;">Send Invite</button>
+          <div id="invite-result" style="display:none;margin-top:0.7rem;"></div>
+        </div>
+      </div>
+
+      <!-- Sub: Pending Invites -->
+      <div id="users-pending" class="sub-panel">
+        <div id="pending-invites-body">
+          <div class="feed-empty">Loading pending invites...</div>
+        </div>
+      </div>
     </div>
 
     <!-- Schema Panel -->
@@ -2991,6 +3268,160 @@
     }
 
     // -----------------------------------------------------------------------
+    // Users / Access Management Panel
+    // -----------------------------------------------------------------------
+
+    function switchUsersSub(subId) {
+      document.querySelectorAll('#users .sub-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('#users-sub-nav .sub-nav-pill').forEach(b => b.classList.remove('active'));
+      const target = document.getElementById(subId);
+      if (target) target.classList.add('active');
+      const btn = document.querySelector(`#users-sub-nav [data-sub="${subId}"]`);
+      if (btn) btn.classList.add('active');
+      if (subId === 'users-list') loadUsersList();
+      if (subId === 'users-pending') loadPendingInvites();
+    }
+
+    async function loadUsersList() {
+      const body = document.getElementById('users-list-body');
+      body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading team members...</div>';
+      try {
+        const users = await apiFetch(API + '/users');
+        if (!users.length) {
+          body.innerHTML = '<div class="feed-empty">No users found.</div>';
+          return;
+        }
+        const myId = currentUser ? currentUser.id : null;
+        body.innerHTML = users.map(u => {
+          const isOwner = u.role === 'owner';
+          const isSelf = u.id === myId;
+          const roleOptions = ['viewer','operator','manager','admin','owner'].map(r =>
+            `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`
+          ).join('');
+          return `
+            <div class="meta-card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+              <div style="flex:1;min-width:200px;">
+                <strong>${esc(u.name)}</strong>${isSelf ? ' <span style="color:var(--accent);font-size:0.68rem;">(you)</span>' : ''}
+                <span style="color:var(--muted);font-size:0.72rem;margin-left:0.3rem;">${esc(u.email)}</span>
+                ${!u.is_active ? '<span style="color:var(--red);font-size:0.68rem;margin-left:0.3rem;">INACTIVE</span>' : ''}
+                <div style="font-size:0.68rem;color:var(--muted);margin-top:0.15rem;">
+                  Joined: ${u.created_at ? new Date(u.created_at).toLocaleDateString() : 'N/A'}
+                  &middot; Last login: ${u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : 'Never'}
+                  &middot; Uploads: ${u.upload_count || 0}
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:0.4rem;flex-shrink:0;">
+                <span class="plan-badge" style="font-size:0.62rem;padding:0.1rem 0.4rem;">${esc(u.plan)}</span>
+                <select class="role-select" style="font-size:0.72rem;padding:0.2rem 0.3rem;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;"
+                  onchange="changeUserRole('${u.id}', this.value, this)"
+                  ${isOwner || isSelf ? 'disabled' : ''}>
+                  ${roleOptions}
+                </select>
+                ${!isSelf && !isOwner && u.is_active ? `<button class="btn-sm" style="background:var(--red);color:#fff;font-size:0.65rem;" onclick="deactivateUser('${u.id}', '${esc(u.name)}')">Deactivate</button>` : ''}
+              </div>
+            </div>`;
+        }).join('');
+      } catch (e) {
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">${e.message}</div>`;
+      }
+    }
+
+    async function changeUserRole(userId, newRole, selectEl) {
+      try {
+        await apiFetch(API + `/users/${userId}/role`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: newRole }),
+        });
+        toast('Role updated to ' + newRole);
+      } catch (e) {
+        toast('Failed: ' + e.message);
+        loadUsersList(); // reload to reset dropdown
+      }
+    }
+
+    async function deactivateUser(userId, userName) {
+      if (!confirm(`Deactivate user "${userName}"? They will lose access immediately.`)) return;
+      try {
+        await apiFetch(API + `/users/${userId}`, { method: 'DELETE' });
+        toast(userName + ' has been deactivated');
+        loadUsersList();
+      } catch (e) {
+        toast('Failed: ' + e.message);
+      }
+    }
+
+    async function sendInvite() {
+      const email = document.getElementById('invite-email').value.trim();
+      const role = document.getElementById('invite-role').value;
+      const plan = document.getElementById('invite-plan').value;
+      if (!email) { toast('Email is required'); return; }
+      try {
+        const result = await apiFetch(API + '/auth/invite', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, role, plan }),
+        });
+        const resultDiv = document.getElementById('invite-result');
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `
+          <div style="background:var(--surface);border:1px solid var(--green);border-radius:8px;padding:0.7rem;">
+            <strong>Invite created!</strong><br>
+            <span style="font-size:0.72rem;">Share this token with <strong>${esc(email)}</strong> so they can register:</span>
+            <div style="margin-top:0.4rem;padding:0.4rem;background:var(--bg);border-radius:4px;font-family:monospace;font-size:0.68rem;word-break:break-all;user-select:all;">${esc(result.token)}</div>
+            <span style="font-size:0.62rem;color:var(--muted);">Expires in 7 days. Role: ${esc(role)} &middot; Plan: ${esc(plan)}</span>
+          </div>`;
+        document.getElementById('invite-email').value = '';
+      } catch (e) {
+        toast('Invite failed: ' + e.message);
+      }
+    }
+
+    async function loadPendingInvites() {
+      const body = document.getElementById('pending-invites-body');
+      body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading pending invites...</div>';
+      try {
+        const invites = await apiFetch(API + '/auth/invites');
+        if (!invites.length) {
+          body.innerHTML = '<div class="feed-empty">No pending invites.</div>';
+          return;
+        }
+        body.innerHTML = invites.map(inv => {
+          const isExpired = inv.expired;
+          return `
+            <div class="meta-card" style="display:flex;justify-content:space-between;align-items:center;opacity:${isExpired ? '0.5' : '1'};">
+              <div>
+                <strong>${esc(inv.email)}</strong>
+                <span style="color:var(--muted);font-size:0.72rem;margin-left:0.3rem;">Role: ${esc(inv.role)} &middot; Plan: ${esc(inv.plan)}</span>
+                ${isExpired ? '<span style="color:var(--red);font-size:0.68rem;margin-left:0.3rem;">EXPIRED</span>' : ''}
+                <div style="font-size:0.62rem;color:var(--muted);margin-top:0.1rem;font-family:monospace;word-break:break-all;">Token: ${esc(inv.token)}</div>
+                <div style="font-size:0.62rem;color:var(--muted);">Expires: ${inv.expires_at ? new Date(inv.expires_at).toLocaleString() : 'N/A'}</div>
+              </div>
+              <button class="btn-sm" style="background:var(--red);color:#fff;font-size:0.65rem;" onclick="revokeInvite('${inv.id}')">Revoke</button>
+            </div>`;
+        }).join('');
+      } catch (e) {
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">${e.message}</div>`;
+      }
+    }
+
+    async function revokeInvite(inviteId) {
+      if (!confirm('Revoke this invite?')) return;
+      try {
+        await apiFetch(API + `/auth/invites/${inviteId}`, { method: 'DELETE' });
+        toast('Invite revoked');
+        loadPendingInvites();
+      } catch (e) {
+        toast('Failed: ' + e.message);
+      }
+    }
+
+    // Wire Users tab auto-load
+    document.querySelector('[data-panel="users"]')?.addEventListener('click', () => {
+      loadUsersList();
+    });
+
+    // -----------------------------------------------------------------------
     // Free Tier — Plan Gating
     // -----------------------------------------------------------------------
     let planLimits = null;
@@ -3151,109 +3582,160 @@
     });
 
     // -----------------------------------------------------------------------
-    // Setup Wizard — Step Navigation
+    // Setup Dashboard — Card Navigation
     // -----------------------------------------------------------------------
     let currentSetupStep = 0;
-    const setupStepIds = ['setup-profile', 'setup-process', 'setup-metrics', 'setup-io', 'setup-context'];
-    const setupStepLoaders = [null, loadProcessSteps, loadThresholds, loadProcessIO, loadContextEntries];
+    const setupStepIds = ['setup-profile', 'setup-process', 'setup-metrics', 'setup-io', 'setup-context', 'setup-suggestions'];
+    const setupCardMap = {
+      'profile': { panelId: 'setup-profile', loader: null },
+      'process': { panelId: 'setup-process', loader: loadProcessSteps },
+      'metrics': { panelId: 'setup-metrics', loader: loadThresholds },
+      'io': { panelId: 'setup-io', loader: loadProcessIO },
+      'context': { panelId: 'setup-context', loader: loadContextEntries },
+      'suggestions': { panelId: 'setup-suggestions', loader: null },
+    };
+    const setupStepLoaders = [null, loadProcessSteps, loadThresholds, loadProcessIO, loadContextEntries, null];
+    let activeSetupCard = null;
 
-    function goToSetupStep(stepIndex) {
-      if (stepIndex < 0 || stepIndex >= setupStepIds.length) return;
-      currentSetupStep = stepIndex;
+    function toggleSetupCard(cardName) {
+      const info = setupCardMap[cardName];
+      if (!info) return;
+      const panel = document.getElementById(info.panelId);
+      if (!panel) return;
 
-      // Hide all sub-panels, show target
+      // If already open, close it
+      if (activeSetupCard === cardName) {
+        collapseSetupCard(cardName);
+        return;
+      }
+
+      // Close any open card
       setupStepIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.remove('active');
       });
-      const target = document.getElementById(setupStepIds[stepIndex]);
-      if (target) target.classList.add('active');
 
-      // Update stepper indicators
-      document.querySelectorAll('.wizard-step').forEach((ws, i) => {
-        ws.classList.remove('active', 'completed');
-        if (i === stepIndex) ws.classList.add('active');
-        else if (i < stepIndex) ws.classList.add('completed');
-      });
+      // Open this card's panel
+      panel.classList.add('active');
+      activeSetupCard = cardName;
 
-      // Auto-load content for the step
-      if (setupStepLoaders[stepIndex]) setupStepLoaders[stepIndex]();
+      // Highlight the card
+      document.querySelectorAll('.setup-card').forEach(c => c.classList.remove('setup-card-active'));
+      const card = document.querySelector(`.setup-card[data-card="${cardName}"]`);
+      if (card) card.classList.add('setup-card-active');
 
-      // Scroll to top of setup panel
-      const setupPanel = document.getElementById('setup');
-      if (setupPanel) setupPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Load content
+      if (info.loader) info.loader();
 
-      // Update checklist
-      updateSetupChecklist();
+      // Scroll to panel
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function collapseSetupCard(cardName) {
+      const info = setupCardMap[cardName];
+      if (!info) return;
+      const panel = document.getElementById(info.panelId);
+      if (panel) panel.classList.remove('active');
+      activeSetupCard = null;
+      document.querySelectorAll('.setup-card').forEach(c => c.classList.remove('setup-card-active'));
+      updateSetupCardSummaries();
+    }
+
+    function goToSetupStep(stepIndex) {
+      // Legacy function — map to card-based navigation
+      const cardNames = ['profile', 'process', 'metrics', 'io', 'context', 'suggestions'];
+      if (stepIndex >= 0 && stepIndex < cardNames.length) {
+        toggleSetupCard(cardNames[stepIndex]);
+      }
     }
 
     // -----------------------------------------------------------------------
-    // Setup Wizard — Progress Checklist
+    // Setup Dashboard — Progress & Card Summaries
     // -----------------------------------------------------------------------
     function updateSetupChecklist() {
       const checks = {
-        'cl-name': !!document.getElementById('ob-name')?.value.trim(),
-        'cl-industry': !!document.getElementById('ob-industry')?.value,
-        'cl-products': !!document.getElementById('ob-products')?.value.trim(),
-        'cl-process': !!document.getElementById('ob-process')?.value.trim(),
-        'cl-steps': (document.getElementById('process-steps-body')?.querySelectorAll('tr:not(:first-child)')?.length || 0) > 0
-                     || document.getElementById('process-steps-body')?.textContent.includes('Step') === false
-                     && !document.getElementById('process-steps-body')?.querySelector('.feed-empty'),
-        'cl-metrics': !document.getElementById('thresholds-body')?.querySelector('.feed-empty'),
-        'cl-inputs': !!document.getElementById('process-io-body')?.querySelector('table'),
-        'cl-outputs': !!document.getElementById('process-io-body')?.textContent.includes('OUTPUTS'),
-        'cl-context': !document.getElementById('context-entries-body')?.querySelector('.feed-empty'),
+        'profile': !!(document.getElementById('ob-name')?.value.trim() && document.getElementById('ob-industry')?.value),
+        'process': !!(document.getElementById('process-steps-body')?.querySelector('table')),
+        'metrics': !!(document.getElementById('thresholds-body') && !document.getElementById('thresholds-body').querySelector('.feed-empty')),
+        'io': !!(document.getElementById('process-io-body')?.querySelector('table')),
+        'context': !!(document.getElementById('context-entries-body') && !document.getElementById('context-entries-body').querySelector('.feed-empty') && document.getElementById('context-entries-body').textContent.trim() !== 'Loading context entries...'),
       };
-
-      // Simpler check: if the body has a table or real content, consider it done
-      const stepBody = document.getElementById('process-steps-body');
-      checks['cl-steps'] = stepBody && stepBody.querySelector('table') !== null;
-
-      const thBody = document.getElementById('thresholds-body');
-      checks['cl-metrics'] = thBody && !thBody.querySelector('.feed-empty');
-
-      const ioBody = document.getElementById('process-io-body');
-      checks['cl-inputs'] = ioBody && ioBody.querySelector('table') !== null;
-      checks['cl-outputs'] = ioBody && ioBody.textContent.includes('OUTPUTS');
-
-      const ctxBody = document.getElementById('context-entries-body');
-      checks['cl-context'] = ctxBody && !ctxBody.querySelector('.feed-empty') && ctxBody.textContent.trim() !== 'Loading context entries...';
 
       let completed = 0;
       const total = Object.keys(checks).length;
-
-      for (const [id, done] of Object.entries(checks)) {
-        const el = document.getElementById(id);
-        if (!el) continue;
-        const icon = el.querySelector('.cl-icon');
-        if (done) {
-          el.classList.add('done');
-          if (icon) icon.innerHTML = '&#10003;';
-          completed++;
-        } else {
-          el.classList.remove('done');
-          if (icon) icon.innerHTML = '&#9675;';
+      for (const [card, done] of Object.entries(checks)) {
+        const iconEl = document.getElementById(`card-icon-${card}`);
+        if (iconEl) iconEl.innerHTML = done ? '&#10003;' : '&#9675;';
+        const cardEl = document.querySelector(`.setup-card[data-card="${card}"]`);
+        if (cardEl) {
+          cardEl.classList.toggle('setup-card-done', !!done);
         }
+        if (done) completed++;
       }
 
       const pct = Math.round((completed / total) * 100);
       const compEl = document.getElementById('setup-completeness');
-      if (compEl) compEl.textContent = pct + '% complete';
+      if (compEl) compEl.textContent = pct + '%';
       const progEl = document.getElementById('setup-progress');
       if (progEl) progEl.style.width = pct + '%';
+
+      updateSetupCardSummaries();
+    }
+
+    function updateSetupCardSummaries() {
+      // Profile
+      const name = document.getElementById('ob-name')?.value.trim();
+      const industry = document.getElementById('ob-industry')?.value;
+      const profileSum = document.getElementById('card-summary-profile');
+      if (profileSum) {
+        if (name && industry) profileSum.textContent = `${name} (${industry})`;
+        else if (name) profileSum.textContent = name;
+        else profileSum.textContent = 'Not configured';
+      }
+
+      // Process
+      const stepBody = document.getElementById('process-steps-body');
+      const processSum = document.getElementById('card-summary-process');
+      if (processSum) {
+        const rows = stepBody?.querySelectorAll('table tr');
+        const stepCount = rows ? Math.max(0, rows.length - 1) : 0;
+        processSum.textContent = stepCount > 0 ? `${stepCount} step${stepCount > 1 ? 's' : ''} defined` : 'No steps defined';
+      }
+
+      // Metrics
+      const thBody = document.getElementById('thresholds-body');
+      const metricsSum = document.getElementById('card-summary-metrics');
+      if (metricsSum) {
+        const hasMetrics = thBody && !thBody.querySelector('.feed-empty');
+        const metricCards = thBody?.querySelectorAll('.threshold-card, .metric-card');
+        const count = metricCards?.length || 0;
+        metricsSum.textContent = hasMetrics ? `${count} metric${count !== 1 ? 's' : ''} configured` : 'No metrics configured';
+      }
+
+      // I/O
+      const ioBody = document.getElementById('process-io-body');
+      const ioSum = document.getElementById('card-summary-io');
+      if (ioSum) {
+        const hasIO = ioBody && ioBody.querySelector('table');
+        if (hasIO) {
+          const inputCount = ioBody.querySelectorAll('table:first-of-type tr').length - 1;
+          ioSum.textContent = `${Math.max(0, inputCount)} entries configured`;
+        } else {
+          ioSum.textContent = 'Not configured';
+        }
+      }
+
+      // Context
+      const ctxBody = document.getElementById('context-entries-body');
+      const ctxSum = document.getElementById('card-summary-context');
+      if (ctxSum) {
+        const hasCtx = ctxBody && !ctxBody.querySelector('.feed-empty') && ctxBody.textContent.trim() !== 'Loading context entries...';
+        ctxSum.textContent = hasCtx ? 'Context added' : 'No context added';
+      }
     }
 
     function toggleChecklist() {
-      const items = document.getElementById('checklist-items');
-      const icon = document.getElementById('cl-toggle-icon');
-      if (!items) return;
-      if (items.style.display === 'none') {
-        items.style.display = '';
-        if (icon) icon.innerHTML = '&#9660;';
-      } else {
-        items.style.display = 'none';
-        if (icon) icon.innerHTML = '&#9654;';
-      }
+      // Legacy — no-op in card dashboard
     }
 
     // -----------------------------------------------------------------------
@@ -3320,7 +3802,44 @@
     }
 
     // -----------------------------------------------------------------------
-    // Setup Wizard — Process Step Modal (replaces browser prompt)
+    // Setup Dashboard — Metric Tags Input
+    // -----------------------------------------------------------------------
+    let currentMetricTags = [];
+
+    function addMetricTag(value) {
+      const input = document.getElementById('ps-metric-input');
+      const val = (value || input?.value || '').trim();
+      if (!val || currentMetricTags.includes(val)) { if (input) input.value = ''; return; }
+      currentMetricTags.push(val);
+      renderMetricTags();
+      if (input) { input.value = ''; input.focus(); }
+    }
+
+    function removeMetricTag(idx) {
+      currentMetricTags.splice(idx, 1);
+      renderMetricTags();
+    }
+
+    function renderMetricTags() {
+      const container = document.getElementById('ps-metrics-tags');
+      if (!container) return;
+      const input = container.querySelector('input');
+      // Remove old tags
+      container.querySelectorAll('.metric-tag').forEach(t => t.remove());
+      // Add tags before input
+      currentMetricTags.forEach((tag, i) => {
+        const el = document.createElement('span');
+        el.className = 'metric-tag';
+        el.innerHTML = `${tag} <span class="metric-tag-remove" onclick="event.stopPropagation();removeMetricTag(${i})">&times;</span>`;
+        container.insertBefore(el, input);
+      });
+      // Sync hidden field
+      const hidden = document.getElementById('ps-metric');
+      if (hidden) hidden.value = currentMetricTags[0] || '';
+    }
+
+    // -----------------------------------------------------------------------
+    // Setup Dashboard — Process Step Modal
     // -----------------------------------------------------------------------
     function openProcessStepModal(editId) {
       // Reset form
@@ -3332,6 +3851,8 @@
       document.getElementById('ps-table').value = '';
       document.getElementById('ps-order').value = '1';
       document.getElementById('ps-edit-id').value = editId || '';
+      currentMetricTags = [];
+      renderMetricTags();
 
       if (editId) {
         // Pre-fill from existing step
@@ -3356,10 +3877,17 @@
         document.getElementById('ps-name').value = step.process_name || '';
         document.getElementById('ps-inputs').value = step.inputs || '';
         document.getElementById('ps-outputs').value = step.outputs || '';
-        document.getElementById('ps-metric').value = step.key_metric || '';
         document.getElementById('ps-range').value = step.target_range || '';
         document.getElementById('ps-table').value = step.linked_table || '';
         document.getElementById('ps-order').value = step.step_order || 1;
+        // Multi-metric: use key_metrics array if available, fallback to key_metric
+        currentMetricTags = [];
+        if (step.key_metrics && step.key_metrics.length) {
+          currentMetricTags = [...step.key_metrics];
+        } else if (step.key_metric) {
+          currentMetricTags = [step.key_metric];
+        }
+        renderMetricTags();
       } catch (e) { /* ignore */ }
     }
 
@@ -3371,7 +3899,8 @@
         process_name: name,
         inputs: document.getElementById('ps-inputs').value.trim(),
         outputs: document.getElementById('ps-outputs').value.trim(),
-        key_metric: document.getElementById('ps-metric').value.trim(),
+        key_metric: currentMetricTags[0] || '',
+        key_metrics: currentMetricTags.length ? currentMetricTags : [],
         target_range: document.getElementById('ps-range').value.trim(),
         linked_table: document.getElementById('ps-table').value.trim(),
         step_order: parseInt(document.getElementById('ps-order').value) || 1,
@@ -3522,6 +4051,7 @@
     // Auto-load Setup tab content on first visit
     document.querySelector('[data-panel="setup"]')?.addEventListener('click', () => {
       if (typeof loadOnboarding === 'function') loadOnboarding();
+      setTimeout(() => updateSetupChecklist(), 500);
     });
 
     // ---- Context Entries Management ----
@@ -3554,6 +4084,7 @@
           }
         }
         body.innerHTML = html;
+        updateSetupChecklist();
       } catch (e) {
         body.innerHTML = '<div class="feed-empty">Failed to load context entries.</div>';
       }
@@ -3626,18 +4157,25 @@
         const steps = await res.json();
         if (!steps.length) {
           body.innerHTML = '<div class="feed-empty" style="padding:0.8rem;">No process steps defined yet. Click "+ Add Step" to start mapping your production process.</div>';
+          updateSetupChecklist();
           return;
         }
-        let html = '<table class="process-table"><tr><th>#</th><th>Process</th><th>Inputs</th><th>Outputs</th><th>Key Metric</th><th>Target</th><th>Table</th><th></th></tr>';
+        let html = '<table class="process-table"><tr><th>#</th><th>Process</th><th>Inputs</th><th>Outputs</th><th>Key Metrics</th><th>Target</th><th></th></tr>';
         for (const s of steps) {
+          // Display metrics as chips
+          const metrics = s.key_metrics && s.key_metrics.length ? s.key_metrics : (s.key_metric ? [s.key_metric] : []);
+          const metricChips = metrics.length
+            ? metrics.map(m => `<span class="metric-chip">${m}</span>`).join(' ')
+            : '<span style="color:var(--muted);">-</span>';
+          // Show auto-linked table if present
+          const tableInfo = s.linked_table ? `<div class="auto-linked-hint" title="Auto-linked to ${s.linked_table}">&#128279; ${s.linked_table}</div>` : '';
           html += `<tr>
             <td>${s.step_order}</td>
-            <td>${s.process_name}</td>
+            <td>${s.process_name}${tableInfo}</td>
             <td>${s.inputs || '-'}</td>
             <td>${s.outputs || '-'}</td>
-            <td>${s.key_metric || '-'}</td>
+            <td>${metricChips}</td>
             <td>${s.target_range || '-'}</td>
-            <td>${s.linked_table || '-'}</td>
             <td style="white-space:nowrap;">
               <button class="btn-sm" onclick="editProcessStep(${s.id})" style="font-size:0.6rem;">Edit</button>
               <button class="btn-sm" onclick="deleteProcessStep(${s.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button>
@@ -3646,6 +4184,7 @@
         }
         html += '</table>';
         body.innerHTML = html;
+        updateSetupChecklist();
       } catch (e) {
         body.innerHTML = '<div class="feed-empty">Failed to load process steps.</div>';
       }
@@ -3694,6 +4233,7 @@
           html += '</table>';
         }
         body.innerHTML = html;
+        updateSetupChecklist();
       } catch (e) {
         body.innerHTML = '<div class="feed-empty">Failed to load inputs/outputs.</div>';
       }
@@ -3709,6 +4249,200 @@
 
     function showAddContextModal() {
       document.getElementById('ctx-text').focus();
+    }
+
+    // -----------------------------------------------------------------------
+    // Setup Dashboard — Auto-Scan, Auto-Link, Derived Metrics
+    // -----------------------------------------------------------------------
+    async function runAutoScan() {
+      toast('Scanning data for metrics...');
+      await loadSuggestedMetrics();
+      toggleSetupCard('metrics');
+    }
+
+    async function loadSuggestedMetrics() {
+      const body = document.getElementById('suggested-metrics-body');
+      if (!body) return;
+      body.innerHTML = '<div class="feed-empty" style="padding:0.5rem;grid-column:1/-1;font-size:0.72rem;">Scanning...</div>';
+      try {
+        const data = await apiFetch('/setup/suggest-metrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const suggestions = data.suggestions || [];
+        if (!suggestions.length) {
+          body.innerHTML = '<div class="feed-empty" style="padding:0.5rem;grid-column:1/-1;font-size:0.72rem;">No additional metrics found in your data.</div>';
+          return;
+        }
+        let html = '';
+        for (const s of suggestions) {
+          html += `<div class="suggested-metric-card">
+            <div style="font-weight:500;font-size:0.78rem;">${s.column_name}</div>
+            <div style="font-size:0.68rem;color:var(--muted);">Table: ${s.table_name}</div>
+            <div style="font-size:0.68rem;color:var(--muted);">Range: ${s.min != null ? s.min.toFixed(1) : '?'} &ndash; ${s.max != null ? s.max.toFixed(1) : '?'} (avg: ${s.avg != null ? s.avg.toFixed(1) : '?'})</div>
+            <button class="btn-sm" onclick="addSuggestedMetric('${s.table_name}','${s.column_name}')" style="margin-top:0.3rem;font-size:0.65rem;">+ Add as Metric</button>
+          </div>`;
+        }
+        body.innerHTML = html;
+      } catch (e) {
+        body.innerHTML = '<div class="feed-empty" style="padding:0.5rem;grid-column:1/-1;font-size:0.72rem;">Failed to scan. Upload data first.</div>';
+      }
+    }
+
+    async function addSuggestedMetric(tableName, columnName) {
+      try {
+        await apiFetch('/metrics/thresholds', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            metric_name: columnName,
+            table_name: tableName,
+            column_name: columnName,
+            auto_linked: true,
+            confidence: 1.0,
+          }),
+        });
+        toast(`Added ${columnName} as metric`);
+        loadThresholds();
+        loadSuggestedMetrics();
+      } catch (e) {
+        toast('Failed to add metric: ' + (e.message || 'unknown error'));
+      }
+    }
+
+    async function runAutoLink() {
+      const body = document.getElementById('auto-link-body');
+      if (!body) return;
+      body.innerHTML = '<div class="feed-empty" style="padding:0.8rem;">Running auto-link...</div>';
+      try {
+        const data = await apiFetch('/setup/auto-link-metrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        let html = '';
+        const autoLinked = data.auto_linked || [];
+        const suggestions = data.suggestions || [];
+        const unmatched = data.unmatched || [];
+
+        if (autoLinked.length) {
+          html += '<div class="metrics-section-label" style="color:var(--green);">Auto-Linked (high confidence)</div>';
+          for (const l of autoLinked) {
+            html += `<div class="auto-link-item auto-link-done">
+              <span>&#10003; <strong>${l.metric_name}</strong> &rarr; ${l.table_name}.${l.column_name}</span>
+              <span class="confidence-badge" style="background:var(--green);">${Math.round((l.confidence||1)*100)}%</span>
+            </div>`;
+          }
+        }
+        if (suggestions.length) {
+          html += '<div class="metrics-section-label" style="margin-top:0.5rem;">Suggestions (review needed)</div>';
+          for (const s of suggestions) {
+            html += `<div class="auto-link-item">
+              <span><strong>${s.metric_name}</strong> &rarr; ${s.table_name}.${s.column_name}?</span>
+              <span class="confidence-badge">${Math.round((s.confidence||0)*100)}%</span>
+              <button class="btn-sm" onclick="acceptAutoLink('${s.metric_name}','${s.table_name}','${s.column_name}')" style="font-size:0.6rem;">Accept</button>
+            </div>`;
+          }
+        }
+        if (unmatched.length) {
+          html += '<div class="metrics-section-label" style="margin-top:0.5rem;color:var(--muted);">Unmatched</div>';
+          for (const u of unmatched) {
+            html += `<div class="auto-link-item" style="opacity:0.6;"><span>${u}</span><span style="font-size:0.65rem;color:var(--muted);">No matching column found</span></div>`;
+          }
+        }
+        if (!html) html = '<div class="feed-empty" style="padding:0.8rem;">No metrics to link. Add metrics first.</div>';
+        body.innerHTML = html;
+        updateSetupCardSummaries();
+      } catch (e) {
+        body.innerHTML = '<div class="feed-empty" style="padding:0.8rem;">Auto-link failed. Ensure data is uploaded and metrics are defined.</div>';
+      }
+    }
+
+    async function acceptAutoLink(metricName, tableName, columnName) {
+      try {
+        await apiFetch('/setup/auto-link-metrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accept: { metric_name: metricName, table_name: tableName, column_name: columnName } }),
+        });
+        toast(`Linked ${metricName} to ${tableName}.${columnName}`);
+        runAutoLink();
+      } catch (e) {
+        toast('Failed to accept link');
+      }
+    }
+
+    function openDerivedMetricModal() {
+      document.getElementById('dm-name').value = '';
+      document.getElementById('dm-unit').value = '';
+      document.getElementById('dm-formula').value = '';
+      document.getElementById('dm-warn-min').value = '';
+      document.getElementById('dm-warn-max').value = '';
+      document.getElementById('dm-crit-min').value = '';
+      document.getElementById('dm-crit-max').value = '';
+      document.getElementById('derived-metric-modal').style.display = 'flex';
+      document.getElementById('dm-name').focus();
+    }
+
+    async function submitDerivedMetric() {
+      const name = document.getElementById('dm-name').value.trim();
+      const formula = document.getElementById('dm-formula').value.trim();
+      if (!name) return toast('Metric name is required');
+      if (!formula) return toast('Formula is required');
+
+      const payload = {
+        metric_name: name,
+        unit: document.getElementById('dm-unit').value.trim(),
+        formula: formula,
+        warning_min: parseFloat(document.getElementById('dm-warn-min').value) || null,
+        warning_max: parseFloat(document.getElementById('dm-warn-max').value) || null,
+        critical_min: parseFloat(document.getElementById('dm-crit-min').value) || null,
+        critical_max: parseFloat(document.getElementById('dm-crit-max').value) || null,
+      };
+
+      try {
+        const data = await apiFetch('/metrics/derived', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (data.error) {
+          toast('Error: ' + data.error);
+          return;
+        }
+        toast(`Derived metric "${name}" created`);
+        document.getElementById('derived-metric-modal').style.display = 'none';
+        loadThresholds();
+        loadDerivedMetrics();
+      } catch (e) {
+        toast('Failed: ' + (e.message || 'unknown error'));
+      }
+    }
+
+    async function loadDerivedMetrics() {
+      const body = document.getElementById('derived-metrics-body');
+      if (!body) return;
+      try {
+        const res = await fetch('/metrics/thresholds');
+        const all = await res.json();
+        const derived = (all || []).filter(m => m.is_derived);
+        if (!derived.length) {
+          body.innerHTML = '<div class="feed-empty" style="padding:0.5rem;grid-column:1/-1;font-size:0.72rem;">No derived metrics. Create formulas like <em>total_kwh / output_mt</em>.</div>';
+          return;
+        }
+        let html = '';
+        for (const m of derived) {
+          html += `<div class="derived-metric-card">
+            <div style="font-weight:500;font-size:0.78rem;">${m.metric_name}</div>
+            <div style="font-family:monospace;font-size:0.68rem;color:var(--accent);margin:0.2rem 0;">${m.formula || ''}</div>
+            ${m.unit ? `<div style="font-size:0.65rem;color:var(--muted);">Unit: ${m.unit}</div>` : ''}
+          </div>`;
+        }
+        body.innerHTML = html;
+      } catch (e) {
+        // ignore
+      }
     }
 
     // Toast
@@ -4697,6 +5431,8 @@
     // ---------------------------------------------------------------------------
     // Schema
     // ---------------------------------------------------------------------------
+    let _focusState = {}; // {table_name: is_included}
+
     async function loadSchema() {
       const body = document.getElementById('schema-body');
       body.innerHTML = '<p style="color:var(--muted)"><span class="spinner"></span> Loading...</p>';
@@ -4709,10 +5445,23 @@
           return;
         }
 
-        body.innerHTML = data.map(t => `
-          <div class="meta-card">
+        // Load focus state
+        await loadFocusState();
+
+        body.innerHTML = data.map(t => {
+          const included = _focusState[t.table_name] !== false; // default true
+          return `
+          <div class="meta-card${included ? '' : ' focus-dimmed'}" id="table-card-${esc(t.table_name)}">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-              <h3>${esc(t.table_name)}</h3>
+              <div style="display:flex;align-items:center;gap:0.5rem;">
+                <label class="focus-toggle" title="${included ? 'Included in analysis' : 'Excluded from analysis'}">
+                  <input type="checkbox" class="focus-checkbox" data-table="${esc(t.table_name)}"
+                    ${included ? 'checked' : ''}
+                    onchange="toggleFocusTable('${esc(t.table_name)}', this.checked)" />
+                  <span class="focus-slider"></span>
+                </label>
+                <h3 style="margin:0;">${esc(t.table_name)}</h3>
+              </div>
               <div style="display:flex;gap:0.4rem;">
                 <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(t.table_name)}')">View Data</button>
                 <button class="btn-sm" onclick="deleteTable('${esc(t.table_name)}')" style="background:var(--red);color:#fff;font-size:0.68rem;">Delete</button>
@@ -4724,12 +5473,102 @@
                 `<span class="col-chip"><strong>${esc(c.name)}</strong> ${esc(c.type)}</span>`
               ).join('')}
             </div>
-          </div>
-        `).join('');
+          </div>`;
+        }).join('');
       } catch (e) {
         body.innerHTML = `<p style="color:var(--red)">${e.message}</p>`;
       }
     }
+
+    // ---------------------------------------------------------------------------
+    // Focus Mode — Table Scoping
+    // ---------------------------------------------------------------------------
+
+    async function loadFocusState() {
+      try {
+        const data = await apiFetch(API + '/focus');
+        _focusState = {};
+        (data.tables || []).forEach(t => { _focusState[t.table_name] = t.is_included; });
+        updateFocusBanner(data);
+      } catch (e) {
+        _focusState = {};
+      }
+    }
+
+    function updateFocusBanner(focusData) {
+      const banner = document.getElementById('focus-banner');
+      if (!focusData || !focusData.active) {
+        banner.style.display = 'none';
+        return;
+      }
+      const included = (focusData.tables || []).filter(t => t.is_included).length;
+      const total = focusData.total || focusData.tables.length;
+      document.getElementById('focus-count').textContent = included;
+      document.getElementById('focus-total').textContent = total;
+      banner.style.display = 'flex';
+    }
+
+    async function toggleFocusTable(tableName, included) {
+      _focusState[tableName] = included;
+
+      // Update card visual
+      const card = document.getElementById('table-card-' + tableName);
+      if (card) {
+        if (included) card.classList.remove('focus-dimmed');
+        else card.classList.add('focus-dimmed');
+      }
+
+      await saveFocusState();
+    }
+
+    async function saveFocusState() {
+      const tables = Object.entries(_focusState).map(([table_name, is_included]) => ({
+        table_name, is_included,
+      }));
+
+      // If all included, treat as focus off
+      const allIncluded = tables.every(t => t.is_included);
+      if (allIncluded) {
+        try {
+          await apiFetch(API + '/focus', { method: 'DELETE' });
+          updateFocusBanner({ active: false, tables: [] });
+        } catch (e) { /* ignore */ }
+        return;
+      }
+
+      try {
+        const result = await apiFetch(API + '/focus', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tables }),
+        });
+        // Refresh banner
+        const data = await apiFetch(API + '/focus');
+        updateFocusBanner(data);
+      } catch (e) {
+        toast('Failed to save focus: ' + e.message);
+      }
+    }
+
+    async function clearFocusMode() {
+      try {
+        await apiFetch(API + '/focus', { method: 'DELETE' });
+        _focusState = {};
+        updateFocusBanner({ active: false, tables: [] });
+        // Re-check all checkboxes
+        document.querySelectorAll('.focus-checkbox').forEach(cb => {
+          cb.checked = true;
+          const card = cb.closest('.meta-card');
+          if (card) card.classList.remove('focus-dimmed');
+        });
+        toast('Focus mode cleared — analyzing all tables');
+      } catch (e) {
+        toast('Failed: ' + e.message);
+      }
+    }
+
+    // Load focus state on startup
+    loadFocusState();
 
     // ---------------------------------------------------------------------------
     // Upload (original + data tab clone)
@@ -8186,6 +9025,7 @@
           html += `</div>`;
         }
         body.innerHTML = html;
+        updateSetupChecklist();
       } catch (e) { console.error('loadThresholds:', e); }
     }
 

@@ -25,6 +25,7 @@ async def retrieve_relevant_tables(
     session: AsyncSession,
     query: str,
     top_k: int = 5,
+    allowed_tables: list[str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Given a natural language query, return the top-k most relevant table schemas
     and matching business context snippets.
@@ -58,8 +59,8 @@ async def retrieve_relevant_tables(
         await session.rollback()
         context_keywords = ""
 
-    # 2. Keyword + context matching against metadata entries
-    all_entries = await metadata_store.get_all(session)
+    # 2. Keyword + context matching against metadata entries (filtered by focus scope)
+    all_entries = await metadata_store.get_filtered(session, allowed_tables)
     query_lower = query.lower()
 
     # Build a keyword set for smarter matching (ignore stopwords)

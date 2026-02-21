@@ -214,6 +214,12 @@ class MetricThreshold(Base):
     warning_max = Column(Float, nullable=True)
     critical_min = Column(Float, nullable=True)
     critical_max = Column(Float, nullable=True)
+    # Derived metric support
+    is_derived = Column(Boolean, default=False)
+    formula = Column(Text, nullable=True)              # e.g., "total_kwh / output_mt"
+    source_columns = Column(JSON, nullable=True)       # ["table.col_a", "table.col_b"]
+    auto_linked = Column(Boolean, default=False)       # True if system auto-matched to column
+    confidence = Column(Float, nullable=True)           # confidence of auto-linking (0-1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -268,7 +274,8 @@ class ProcessStep(Base):
     process_name = Column(String(255), nullable=False)
     inputs = Column(Text, nullable=True)        # comma-separated input names
     outputs = Column(Text, nullable=True)       # comma-separated output names
-    key_metric = Column(String(255), nullable=True)
+    key_metric = Column(String(255), nullable=True)          # backward compat (singular)
+    key_metrics = Column(JSON, nullable=True)                  # NEW: multiple metrics array
     target_range = Column(String(255), nullable=True)  # e.g., "85-95%"
     linked_table = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -331,3 +338,39 @@ class InviteToken(Base):
     used = Column(Boolean, default=False)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(String(36), nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Focus Scope — Per-user table filtering
+# ---------------------------------------------------------------------------
+
+
+class FocusScope(Base):
+    """Per-user table focus/scoping — controls which tables are active for analysis."""
+
+    __tablename__ = "focus_scopes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), nullable=True)       # NULL = anonymous/session-based
+    session_id = Column(String(64), nullable=True)     # for anonymous users
+    table_name = Column(String(255), nullable=False)
+    is_included = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Process-Metric Many-to-Many Link
+# ---------------------------------------------------------------------------
+
+
+class ProcessMetricLink(Base):
+    """Links metrics to process steps (many-to-many relationship)."""
+
+    __tablename__ = "process_metric_links"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    process_step_id = Column(Integer, nullable=False)
+    metric_id = Column(Integer, nullable=False)
+    is_primary = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

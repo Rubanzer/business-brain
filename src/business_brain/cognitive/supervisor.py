@@ -167,7 +167,10 @@ class SupervisorAgent:
         if db_session:
             try:
                 from business_brain.memory.schema_rag import retrieve_relevant_tables
-                tables, contexts = await retrieve_relevant_tables(db_session, question, top_k=8)
+                tables, contexts = await retrieve_relevant_tables(
+                    db_session, question, top_k=8,
+                    allowed_tables=state.get("allowed_tables"),
+                )
                 schema_context = _build_schema_summary(tables)
                 business_context = _build_context_summary(contexts)
 

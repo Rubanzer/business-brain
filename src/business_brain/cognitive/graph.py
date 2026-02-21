@@ -41,6 +41,7 @@ class AgentState(TypedDict, total=False):
     cfo_key_metrics: list[dict]      # CFO's top metrics with verdicts
     cfo_chart_suggestions: list[dict]  # CFO's chart suggestions
     parent_finding: dict             # drill-down: the finding being investigated
+    allowed_tables: list[str]        # focus mode: only analyze these tables (None = all)
     # RAG context — populated by supervisor, reused by all downstream agents
     _rag_tables: list[dict]          # relevant table schemas from schema_rag
     _rag_contexts: list[dict]        # business context snippets from vector store
