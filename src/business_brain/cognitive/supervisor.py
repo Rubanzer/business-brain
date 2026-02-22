@@ -16,6 +16,41 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_json_array(raw: str) -> list | None:
+    """Robustly extract a JSON array from an LLM response."""
+    text = raw.strip()
+    try:
+        result = json.loads(text)
+        if isinstance(result, list):
+            return result
+    except (json.JSONDecodeError, ValueError):
+        pass
+    if "```" in text:
+        parts = text.split("```")
+        for part in parts[1::2]:
+            block = part.strip()
+            for tag in ("json", "JSON"):
+                if block.startswith(tag):
+                    block = block[len(tag):].strip()
+            try:
+                result = json.loads(block)
+                if isinstance(result, list):
+                    return result
+            except (json.JSONDecodeError, ValueError):
+                continue
+    start = text.find("[")
+    end = text.rfind("]")
+    if start >= 0 and end > start:
+        try:
+            result = json.loads(text[start:end + 1])
+            if isinstance(result, list):
+                return result
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
 SYSTEM_PROMPT = """\
 You are the Supervisor of a business analytics team at a manufacturing company.
 Given a business question, available data schemas, business context, and metric
@@ -214,12 +249,13 @@ class SupervisorAgent:
                 contents="\n".join(prompt_parts),
             )
             raw = response.text.strip()
-            # Extract JSON from possible markdown fences
-            if "```" in raw:
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            plan = json.loads(raw)
+            plan = _extract_json_array(raw)
+            if plan is None:
+                raise ValueError(f"Could not parse plan JSON: {raw[:200]}")
+            # Validate plan structure: each step must have agent and task
+            for step in plan:
+                if not isinstance(step, dict) or "agent" not in step or "task" not in step:
+                    raise ValueError(f"Invalid plan step: {step}")
         except Exception:
             logger.exception("LLM planning failed, using default plan")
             plan = [

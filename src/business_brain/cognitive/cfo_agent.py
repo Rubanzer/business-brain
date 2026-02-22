@@ -16,6 +16,35 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_json(raw: str) -> dict | None:
+    """Robustly extract a JSON object from an LLM response."""
+    text = raw.strip()
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    if "```" in text:
+        parts = text.split("```")
+        for part in parts[1::2]:
+            block = part.strip()
+            for tag in ("json", "JSON"):
+                if block.startswith(tag):
+                    block = block[len(tag):].strip()
+            try:
+                return json.loads(block)
+            except (json.JSONDecodeError, ValueError):
+                continue
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
 SYSTEM_PROMPT = """\
 You are the CFO of a secondary steel manufacturing company (induction furnace).
 You have DEEP knowledge of steel plant economics, cost structures, and financial
@@ -201,11 +230,9 @@ class CFOAgent:
                 contents=prompt,
             )
             raw = response.text.strip()
-            if "```" in raw:
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            result = json.loads(raw)
+            result = _extract_json(raw)
+            if result is None:
+                raise ValueError(f"Could not parse CFO JSON response: {raw[:200]}")
             state["approved"] = result.get("approved", False)
             state["cfo_notes"] = result.get("reasoning", "")
             state["recommendations"] = result.get("recommendations", [])

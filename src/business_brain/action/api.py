@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Business Brain API", version="3.0.0")
 
 # Background sync task handle
-_sync_task: asyncio.Task | None = None
+_sync_task: Optional[asyncio.Task] = None
 
 
 @app.on_event("startup")
@@ -113,11 +113,13 @@ async def _global_error_handler(request: Request, exc: Exception):
 async def _startup_enrich_descriptions():
     """Auto-enrich column descriptions for all tables on startup.
 
-    Uses fast pattern-matching (no LLM calls) to fill in or fix weak
-    descriptions (e.g. 'Numeric (decimal) column: yield' → 'Production
-    yield percentage').  This ensures the SQL agent always has useful column
-    descriptions, even for tables uploaded before the description logic was
-    improved.
+    Uses fast pattern-matching (no LLM calls) to fill in or fix weak/wrong
+    descriptions.  This ensures the SQL agent always has useful and ACCURATE
+    column descriptions.
+
+    Fixes:
+      - Weak generic fallbacks (e.g. "Numeric (decimal) column: yield")
+      - Misleading descriptions (e.g. "rate" described as "percentage")
     """
     try:
         from business_brain.discovery.data_dictionary import auto_describe_column
@@ -131,6 +133,9 @@ async def _startup_enrich_descriptions():
                 changed = False
                 for col in entry.columns_metadata:
                     old_desc = col.get("description", "")
+                    col_name = col.get("name", "")
+                    col_lower = col_name.lower()
+
                     # Regenerate if description is missing, or is a weak generic fallback
                     is_weak = (
                         not old_desc
@@ -139,16 +144,27 @@ async def _startup_enrich_descriptions():
                         or old_desc.startswith("Text column:")
                         or old_desc.startswith("Data column:")
                     )
-                    if is_weak:
+
+                    # Also fix WRONG descriptions — "rate" described as percentage
+                    is_wrong = False
+                    if "rate" in col_lower and "Percentage or ratio" in old_desc:
+                        is_wrong = True  # rate is price per unit, not percentage
+                    if col_lower in ("yield", "yield_pct") and "quantity" in old_desc.lower():
+                        is_wrong = True  # yield is percentage, not quantity
+
+                    if is_weak or is_wrong:
                         new_desc = auto_describe_column(
-                            col.get("name", ""),
+                            col_name,
                             col.get("type", ""),
                             {},
                         )
                         # Only update if the new description is actually better
-                        if new_desc and not new_desc.startswith(("Numeric (decimal) column:", "Integer column:", "Text column:", "Data column:")):
+                        if new_desc and not new_desc.startswith(
+                            ("Numeric (decimal) column:", "Integer column:", "Text column:", "Data column:")
+                        ):
                             col["description"] = new_desc
                             changed = True
+
                 if changed:
                     await metadata_store.upsert(
                         session,
@@ -319,6 +335,27 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
     result.setdefault("cfo_key_metrics", [])
     result.setdefault("cfo_chart_suggestions", [])
     result["session_id"] = session_id
+
+    # Include pipeline diagnostics so frontend can show what happened
+    diagnostics = result.pop("_diagnostics", [])
+    result["diagnostics"] = diagnostics
+
+    # Compute overall pipeline health from diagnostics
+    errors = [d for d in diagnostics if d.get("status") == "error"]
+    warnings = [d for d in diagnostics if d.get("status") == "warn"]
+    total_ms = sum(d.get("duration_ms", 0) for d in diagnostics)
+
+    if errors:
+        result["pipeline_status"] = "partial"
+        result["pipeline_message"] = f"{len(errors)} stage(s) had errors. Results may be incomplete."
+    elif warnings:
+        result["pipeline_status"] = "ok_with_warnings"
+        result["pipeline_message"] = f"Analysis completed with {len(warnings)} warning(s)."
+    else:
+        result["pipeline_status"] = "ok"
+        result["pipeline_message"] = "Analysis completed successfully."
+    result["pipeline_duration_ms"] = total_ms
+
     return result
 
 
