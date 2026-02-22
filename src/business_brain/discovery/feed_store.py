@@ -7,7 +7,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, text as sql_text
+from sqlalchemy import func, select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.db.discovery_models import DeployedReport, DiscoveryRun, Insight
@@ -39,8 +39,9 @@ async def get_feed(
         q = q.where(Insight.status != "dismissed")
 
     # Filter by minimum quality score to keep feed clean
+    # Use coalesce to treat NULL quality_score as 0 (filters them out)
     if min_quality > 0:
-        q = q.where(Insight.quality_score >= min_quality)
+        q = q.where(func.coalesce(Insight.quality_score, 0) >= min_quality)
 
     q = q.limit(limit)
     result = await session.execute(q)

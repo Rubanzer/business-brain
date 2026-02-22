@@ -5695,11 +5695,6 @@
       return new Response(cs.readable).blob();
     }
 
-    // Track edits made in the upload preview editor
-    var _uploadPreviewEdits = [];
-    var _uploadStagingId = null;
-    var _uploadStagedTableName = null;
-
     async function handleUpload(file, target) {
       // Detect which upload area to use: main panel or data-tab
       const isDataTab = target === 'data' || document.getElementById('data-upload')?.classList.contains('active');
@@ -5708,11 +5703,8 @@
       const body = document.getElementById(isDataTab ? 'data-upload-body' : 'upload-body');
 
       resultEl.style.display = 'block';
-      status.innerHTML = '<span class="spinner"></span> Uploading &amp; parsing...';
+      status.innerHTML = '<span class="spinner"></span> Uploading &amp; analysing...';
       body.innerHTML = '';
-      _uploadPreviewEdits = [];
-      _uploadStagingId = null;
-      _uploadStagedTableName = null;
 
       const MAX_RAW = 100 * 1024 * 1024;  // 100 MB raw limit
       if (file.size > MAX_RAW) {
@@ -5753,8 +5745,8 @@
       }
 
       try {
-        status.innerHTML = '<span class="spinner"></span> Parsing file...';
-        const data = await apiFetch(`${API}/upload/preview`, { method: 'POST', body: form });
+        status.innerHTML = '<span class="spinner"></span> Uploading &amp; processing...';
+        const data = await apiFetch(`${API}/upload`, { method: 'POST', body: form });
 
         if (data.detail || data.error) {
           status.innerHTML = '<span class="badge badge-red">ERROR</span>';
@@ -5762,142 +5754,21 @@
           return;
         }
 
-        _uploadStagingId = data.staging_id;
-        _uploadStagedTableName = data.table_name;
-
-        status.innerHTML = `<span class="badge badge-yellow">PREVIEW</span> <span class="badge badge-accent">${esc(data.file_type)}</span>`;
-        body.innerHTML = renderUploadPreview(data);
-        toast('File parsed — review data below, then commit');
-      } catch (e) {
-        status.innerHTML = '<span class="badge badge-red">ERROR</span>';
-        body.textContent = e.message;
-      }
-
-      fileInput.value = '';
-    }
-
-    function renderUploadPreview(data) {
-      const cols = data.columns || [];
-      const rows = data.preview_rows || [];
-      const colNames = cols.map(c => c.name);
-
-      let html = '';
-
-      // Summary bar
-      html += `<div style="display:flex;gap:1rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
-        <span style="color:var(--muted);font-size:0.8rem;"><strong>${data.total_rows}</strong> rows &middot; <strong>${cols.length}</strong> columns</span>
-        <span style="color:var(--muted);font-size:0.75rem;">Table: <strong style="color:var(--accent)">${esc(data.table_name)}</strong></span>
-        <span style="font-size:0.7rem;color:var(--muted);">Double-click a cell to edit</span>
-      </div>`;
-
-      // Editable data table
-      html += '<div style="overflow-x:auto;max-height:400px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">';
-      html += '<table class="data-table" style="margin:0;font-size:0.75rem;">';
-      html += '<thead style="position:sticky;top:0;z-index:1;"><tr>';
-      html += '<th style="width:40px;color:var(--muted);font-weight:400;">#</th>';
-      colNames.forEach(c => { html += `<th>${esc(c)}</th>`; });
-      html += '</tr></thead><tbody>';
-
-      rows.forEach((row, ri) => {
-        html += '<tr>';
-        html += `<td style="color:var(--muted);font-size:0.7rem;">${ri + 1}</td>`;
-        colNames.forEach(c => {
-          const val = String(row[c] ?? '');
-          html += `<td class="editable" ondblclick="startPreviewEdit(this, ${ri}, '${esc(c)}')" title="Double-click to edit">${esc(val)}</td>`;
-        });
-        html += '</tr>';
-      });
-      html += '</tbody></table></div>';
-
-      if (data.total_rows > 200) {
-        html += `<div style="text-align:center;padding:0.5rem;color:var(--muted);font-size:0.75rem;">Showing first 200 of ${data.total_rows} rows. All rows will be committed.</div>`;
-      }
-
-      // Action buttons
-      html += `<div style="display:flex;gap:0.75rem;margin-top:1rem;align-items:center;">
-        <button class="btn-primary" onclick="commitUpload()" id="commit-upload-btn">
-          Commit to Database
-        </button>
-        <button class="btn-secondary" onclick="cancelUpload()">Cancel</button>
-        <span id="upload-edit-count" style="font-size:0.75rem;color:var(--muted);"></span>
-      </div>`;
-
-      return html;
-    }
-
-    window.startPreviewEdit = function(td, rowIdx, colName) {
-      if (td.querySelector('input')) return;
-      const oldVal = td.textContent;
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.value = oldVal;
-      input.style.cssText = 'width:100%;padding:2px 4px;font-size:0.75rem;border:1px solid var(--accent);border-radius:3px;background:var(--bg);color:var(--fg);';
-      td.textContent = '';
-      td.appendChild(input);
-      input.focus();
-      input.select();
-
-      function finish() {
-        const newVal = input.value;
-        td.textContent = newVal;
-        if (newVal !== oldVal) {
-          td.style.background = 'rgba(46,204,113,0.15)';
-          _uploadPreviewEdits.push({ row: rowIdx, col: colName, value: newVal });
-          const counter = document.getElementById('upload-edit-count');
-          if (counter) counter.textContent = `${_uploadPreviewEdits.length} edit(s)`;
-        }
-      }
-
-      input.addEventListener('blur', finish);
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { input.blur(); }
-        if (e.key === 'Escape') { td.textContent = oldVal; }
-      });
-    };
-
-    window.commitUpload = async function() {
-      if (!_uploadStagingId) { toast('No staged upload to commit'); return; }
-      const btn = document.getElementById('commit-upload-btn');
-      const status = document.getElementById('upload-status');
-      const body = document.getElementById('upload-body');
-
-      btn.disabled = true;
-      btn.textContent = 'Committing...';
-      status.innerHTML = '<span class="spinner"></span> Saving to database...';
-
-      try {
-        const data = await apiFetch(`${API}/upload/commit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            staging_id: _uploadStagingId,
-            table_name: _uploadStagedTableName,
-            edits: _uploadPreviewEdits,
-          }),
-        });
-
-        if (data.error) {
-          status.innerHTML = '<span class="badge badge-red">ERROR</span>';
-          body.innerHTML = `<p style="color:var(--red)">${esc(data.error)}</p>`;
-          btn.disabled = false;
-          btn.textContent = 'Commit to Database';
-          return;
+        // Show the upload report (works for both normal and recurring uploads)
+        if (data.recurring) {
+          status.innerHTML = '<span class="badge badge-green">LOADED</span> <span class="badge badge-accent">Recurring</span>';
+          body.innerHTML = `<div class="stat-grid">
+            <div class="stat-card"><div class="stat-value">${data.rows}</div><div class="stat-label">Rows Appended</div></div>
+          </div>
+          <div class="report-section"><p>${esc(data.message || '')}</p>
+            <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(data.table_name)}')" style="margin-top:0.5rem;">View Data</button>
+          </div>`;
+        } else {
+          status.innerHTML = '<span class="badge badge-green">LOADED</span>';
+          body.innerHTML = renderUploadReport(data);
         }
 
-        status.innerHTML = '<span class="badge badge-green">COMMITTED</span>';
-        body.innerHTML = `<div class="stat-grid">
-          <div class="stat-card"><div class="stat-value">${data.rows}</div><div class="stat-label">Rows Loaded</div></div>
-          <div class="stat-card"><div class="stat-value">${data.columns}</div><div class="stat-label">Columns</div></div>
-          <div class="stat-card"><div class="stat-value">${data.edits_applied}</div><div class="stat-label">Edits Applied</div></div>
-        </div>
-        <div class="report-section" style="margin-top:0.75rem;">
-          <p>Table <strong style="color:var(--accent)">${esc(data.table_name)}</strong> is ready.
-          <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(data.table_name)}')" style="margin-left:0.5rem;">View Data</button></p>
-        </div>`;
-
-        toast('Data committed to database successfully');
-        _uploadStagingId = null;
-        _uploadPreviewEdits = [];
+        toast('File uploaded successfully');
         markFeedDirty();
         loadSchema().then(() => {
           if (document.getElementById('data-schema-body')) {
@@ -5906,19 +5777,11 @@
         });
       } catch (e) {
         status.innerHTML = '<span class="badge badge-red">ERROR</span>';
-        body.innerHTML = `<p style="color:var(--red)">${esc(e.message)}</p>`;
-        btn.disabled = false;
-        btn.textContent = 'Commit to Database';
+        body.textContent = e.message;
       }
-    };
 
-    window.cancelUpload = function() {
-      _uploadStagingId = null;
-      _uploadPreviewEdits = [];
-      const resultEl = document.getElementById('upload-result');
-      resultEl.style.display = 'none';
-      toast('Upload cancelled');
-    };
+      fileInput.value = '';
+    }
 
     function renderUploadReport(d) {
       let html = '';
