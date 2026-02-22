@@ -35,9 +35,17 @@ DOMAIN-AWARE COLUMN INTERPRETATION:
 - "sec" → Specific Energy Consumption (kWh/ton) — a KEY efficiency metric
 - "pf" → Power Factor (ratio, 0-1 scale)
 - "heat_no" → Unique identifier for a single production batch
-- "yield_pct" → Output/Input weight ratio × 100
+- "yield_pct", "yield" → Production yield percentage (output/input ratio), NOT quantity
 - "tap_to_tap" → Cycle time between furnace taps (minutes)
 - "shift" → Work period (typically 'A', 'B', 'C' for morning/afternoon/night)
+- "quantity" in purchase/procurement tables → Amount purchased (units or weight)
+- "rate" in purchase tables → Price per unit, NOT speed
+- "amount" → Total monetary value (quantity × rate)
+
+COLUMN SELECTION RULES:
+- When the user asks "how much" or "total", prefer quantity/amount/weight columns over yield/ratio columns
+- When column descriptions are provided (after --), use them to pick the right column
+- "yield" is NEVER the same as "quantity" — yield is a percentage, quantity is a count/weight
 
 IMPORTANT RULES:
 - Use CTEs for clarity when appropriate.
@@ -66,12 +74,21 @@ def _get_client() -> genai.Client:
 
 
 def _format_schema_context(tables: list[dict]) -> str:
-    """Format table schemas into a string for the LLM prompt."""
+    """Format table schemas into a string for the LLM prompt.
+
+    Includes column descriptions (when available) so the LLM can distinguish
+    between similarly-typed columns like ``quantity`` vs ``yield``.
+    """
     parts = []
     for t in tables:
-        cols = ", ".join(
-            f"{c['name']} ({c['type']})" for c in (t.get("columns") or [])
-        )
+        col_parts = []
+        for c in (t.get("columns") or []):
+            col_desc = c.get("description", "")
+            if col_desc:
+                col_parts.append(f"{c['name']} ({c['type']}) -- {col_desc}")
+            else:
+                col_parts.append(f"{c['name']} ({c['type']})")
+        cols = ", ".join(col_parts)
         desc = t.get("description") or "No description"
         rels = t.get("relationships", [])
 

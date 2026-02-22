@@ -239,7 +239,7 @@ class TestFocusErrorHandling:
     @pytest.mark.asyncio
     @patch("business_brain.action.api.metadata_store")
     async def test_put_focus_db_error(self, mock_metadata_store):
-        """DB error when validating tables in update_focus raises HTTPException or propagates."""
+        """DB error when validating tables in update_focus returns 500 JSON error."""
         mock_metadata_store.get_all = AsyncMock(
             side_effect=Exception("Cannot reach database")
         )
@@ -251,10 +251,9 @@ class TestFocusErrorHandling:
             ]
         }
 
-        # update_focus calls metadata_store.get_all for validation;
-        # if that raises, the exception propagates (no try/except).
-        with pytest.raises(Exception, match="Cannot reach database"):
-            await update_focus(body, session)
+        # update_focus catches DB errors and returns a JSONResponse with 500 status
+        result = await update_focus(body, session)
+        assert result.status_code == 500
 
 
 # ---------------------------------------------------------------------------
