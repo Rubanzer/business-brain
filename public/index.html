@@ -4073,15 +4073,19 @@
     }
 
     // Load Data tab sub-content (wiring to existing functions where possible)
-    function loadSchemaIntoData() {
+    async function loadSchemaIntoData() {
       const body = document.getElementById('data-schema-body');
       const existingSchema = document.getElementById('schema-body');
-      if (existingSchema && existingSchema.innerHTML.trim()) {
+      if (existingSchema && existingSchema.innerHTML.trim() &&
+          !existingSchema.innerHTML.includes('No metadata found')) {
         body.innerHTML = existingSchema.innerHTML;
       } else {
-        // Trigger the original schema load and copy
-        if (typeof loadSchema === 'function') loadSchema();
-        body.innerHTML = '<div class="feed-empty">Loading schema data...</div>';
+        body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading schema data...</div>';
+        await loadSchema();
+        // After loadSchema completes, copy the freshly loaded content
+        if (existingSchema) {
+          body.innerHTML = existingSchema.innerHTML;
+        }
       }
     }
 
@@ -5752,6 +5756,12 @@
         body.innerHTML = renderUploadReport(data);
         toast('File processed successfully');
         markFeedDirty();
+        // Auto-refresh schema so newly uploaded table is immediately visible
+        loadSchema().then(() => {
+          if (document.getElementById('data-schema-body')) {
+            loadSchemaIntoData();
+          }
+        });
       } catch (e) {
         status.innerHTML = '<span class="badge badge-red">ERROR</span>';
         body.textContent = e.message;
