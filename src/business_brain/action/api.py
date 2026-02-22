@@ -98,10 +98,69 @@ async def _ensure_tables():
 async def _global_error_handler(request: Request, exc: Exception):
     """Catch-all: ensure every unhandled error returns JSON, not raw HTML."""
     logger.exception("Unhandled error on %s %s: %s", request.method, request.url.path, exc)
+    # Include the actual error message so the frontend can display it
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error. Please try again or check server logs."},
+        content={
+            "detail": f"Server error: {exc}",
+            "error": str(exc),
+            "status": "failed",
+        },
     )
+
+
+@app.on_event("startup")
+async def _startup_enrich_descriptions():
+    """Auto-enrich column descriptions for all tables on startup.
+
+    Uses fast pattern-matching (no LLM calls) to fill in or fix weak
+    descriptions (e.g. 'Numeric (decimal) column: yield' → 'Production
+    yield percentage').  This ensures the SQL agent always has useful column
+    descriptions, even for tables uploaded before the description logic was
+    improved.
+    """
+    try:
+        from business_brain.discovery.data_dictionary import auto_describe_column
+
+        async with async_session() as session:
+            entries = await metadata_store.get_all(session)
+            updated_count = 0
+            for entry in entries:
+                if not entry.columns_metadata:
+                    continue
+                changed = False
+                for col in entry.columns_metadata:
+                    old_desc = col.get("description", "")
+                    # Regenerate if description is missing, or is a weak generic fallback
+                    is_weak = (
+                        not old_desc
+                        or old_desc.startswith("Numeric (decimal) column:")
+                        or old_desc.startswith("Integer column:")
+                        or old_desc.startswith("Text column:")
+                        or old_desc.startswith("Data column:")
+                    )
+                    if is_weak:
+                        new_desc = auto_describe_column(
+                            col.get("name", ""),
+                            col.get("type", ""),
+                            {},
+                        )
+                        # Only update if the new description is actually better
+                        if new_desc and not new_desc.startswith(("Numeric (decimal) column:", "Integer column:", "Text column:", "Data column:")):
+                            col["description"] = new_desc
+                            changed = True
+                if changed:
+                    await metadata_store.upsert(
+                        session,
+                        table_name=entry.table_name,
+                        description=entry.description or f"Table {entry.table_name}",
+                        columns_metadata=entry.columns_metadata,
+                    )
+                    updated_count += 1
+            if updated_count:
+                logger.info("Startup: enriched column descriptions for %d table(s)", updated_count)
+    except Exception:
+        logger.debug("Startup column description enrichment failed — non-critical")
 
 
 @app.on_event("startup")

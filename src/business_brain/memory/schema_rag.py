@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from sqlalchemy import select, text as sql_text
+from sqlalchemy import func, select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.ingestion.embeddings import embed_text
@@ -354,7 +354,7 @@ async def _get_relevant_insights(
             select(Insight)
             .where(
                 Insight.status != "dismissed",
-                Insight.quality_score >= 30,
+                func.coalesce(Insight.quality_score, 0) >= 30,
             )
             .order_by(Insight.impact_score.desc(), Insight.discovered_at.desc())
             .limit(limit * 3)  # fetch extra to filter by table overlap

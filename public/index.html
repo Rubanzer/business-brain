@@ -4619,6 +4619,19 @@
 
         lastAnalysisData = data;
 
+        // Check if the analysis pipeline returned an error
+        if (data.error || data.status === 'failed') {
+          status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+          body.innerHTML = `<div class="report-section" style="color:var(--red);">
+            <h4>Analysis Failed</h4>
+            <p>${esc(data.error || 'Unknown error occurred during analysis.')}</p>
+            <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem;">Try rephrasing your question or check if the relevant data has been uploaded.</p>
+          </div>`;
+          addChatMessage('assistant', 'Analysis failed: ' + (data.error || 'Unknown error'));
+          btn.disabled = false;
+          return;
+        }
+
         // Push to drill-down stack
         analysisStack.push({ question: q, data, finding: parentFinding || null });
 
@@ -6296,7 +6309,7 @@
 
     // Auto-load feed on page load and tab click
     // Dirty flag: reload feed when switching to it after data changes
-    let feedDirty = false;
+    var feedDirty = false;
     function markFeedDirty() { feedDirty = true; }
     document.querySelector('[data-panel="feed"]').addEventListener('click', () => {
       if (feedDirty) { feedDirty = false; loadFeed(); }
