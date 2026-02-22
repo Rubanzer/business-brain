@@ -10330,34 +10330,38 @@ async def update_focus(body: dict, session: AsyncSession = Depends(get_session))
     if not tables:
         raise HTTPException(status_code=400, detail="'tables' array is required")
 
-    # Validate that all referenced tables exist
-    all_entries = await metadata_store.get_all(session)
-    valid_names = {e.table_name for e in all_entries}
-    for t in tables:
-        if t.get("table_name") not in valid_names:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Table '{t.get('table_name')}' not found in metadata"
+    try:
+        # Validate that all referenced tables exist
+        all_entries = await metadata_store.get_all(session)
+        valid_names = {e.table_name for e in all_entries}
+        for t in tables:
+            if t.get("table_name") not in valid_names:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Table '{t.get('table_name')}' not found in metadata"
+                )
+
+        # Clear existing scope and recreate
+        from sqlalchemy import delete as sa_delete
+        await session.execute(sa_delete(FocusScope))
+
+        for t in tables:
+            scope = FocusScope(
+                table_name=t["table_name"],
+                is_included=t.get("is_included", True),
             )
+            session.add(scope)
 
-    # Clear existing scope and recreate
-    await session.execute(
-        select(FocusScope)  # Just to init; actual delete below
-    )
-    from sqlalchemy import delete as sa_delete
-    await session.execute(sa_delete(FocusScope))
+        await session.commit()
 
-    for t in tables:
-        scope = FocusScope(
-            table_name=t["table_name"],
-            is_included=t.get("is_included", True),
-        )
-        session.add(scope)
-
-    await session.commit()
-
-    included = sum(1 for t in tables if t.get("is_included", True))
-    return {"status": "updated", "total": len(tables), "included": included}
+        included = sum(1 for t in tables if t.get("is_included", True))
+        return {"status": "updated", "total": len(tables), "included": included}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error updating focus scope")
+        await session.rollback()
+        return JSONResponse({"error": "Failed to update focus scope"}, status_code=500)
 
 
 @app.delete("/focus")
@@ -10366,9 +10370,14 @@ async def clear_focus(session: AsyncSession = Depends(get_session)) -> dict:
     from business_brain.db.v3_models import FocusScope
     from sqlalchemy import delete as sa_delete
 
-    result = await session.execute(sa_delete(FocusScope))
-    await session.commit()
-    return {"status": "cleared", "rows_removed": result.rowcount}
+    try:
+        result = await session.execute(sa_delete(FocusScope))
+        await session.commit()
+        return {"status": "cleared", "rows_removed": result.rowcount}
+    except Exception:
+        logger.exception("Error clearing focus scope")
+        await session.rollback()
+        return {"status": "cleared", "rows_removed": 0}
 
 
 class RegisterRequest(BaseModel):
