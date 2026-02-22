@@ -217,7 +217,16 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
     }
     if req.parent_finding:
         invoke_state["parent_finding"] = req.parent_finding
-    result = await graph.ainvoke(invoke_state)
+    try:
+        result = await graph.ainvoke(invoke_state)
+    except Exception as exc:
+        logger.exception("Analysis pipeline failed for question: %s", req.question)
+        return {
+            "error": str(exc),
+            "question": req.question,
+            "session_id": session_id,
+            "status": "failed",
+        }
 
     # Save Q+A pair to chat history
     try:
@@ -599,164 +608,19 @@ async def upload_file(
         except Exception:
             logger.debug("Failed to register fingerprint — non-critical")
 
+        # Auto-enrich column descriptions immediately so they're available
+        # for the first query (before any discovery run)
+        try:
+            await _enrich_column_descriptions(session, table_name)
+        except Exception:
+            logger.debug("Column description enrichment failed — non-critical")
+
         # Trigger discovery in background after successful upload
         background_tasks.add_task(_run_discovery_background, f"upload:{table_name}")
 
         return report
     except Exception as exc:
         logger.exception("Upload failed")
-        return {"error": str(exc)}
-
-
-# In-memory staging area for upload previews (TTL handled by cleanup)
-_upload_staging: dict[str, dict] = {}
-
-
-@app.post("/upload/preview")
-async def upload_preview(
-    file: UploadFile = File(...),
-    user: dict | None = Depends(get_current_user),
-) -> dict:
-    """Parse an uploaded file and return a preview without committing to DB.
-
-    Returns the parsed data, suggested table name, column info, and a
-    staging_id that the client can use to commit (with optional edits).
-    """
-    import gzip
-    import uuid
-    from io import BytesIO
-
-    import pandas as pd
-
-    try:
-        file_bytes = await file.read()
-        file_name = file.filename or "upload.csv"
-
-        # Decompress if client sent gzipped file
-        if file_name.endswith(".gz"):
-            file_bytes = gzip.decompress(file_bytes)
-            file_name = file_name[:-3]
-
-        ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "csv"
-        table_name = file_name.rsplit(".", 1)[0].replace("-", "_").replace(" ", "_").lower()
-
-        if ext in ("xlsx", "xls"):
-            df = pd.read_excel(BytesIO(file_bytes))
-        else:
-            df = pd.read_csv(BytesIO(file_bytes))
-
-        # Clean column names
-        df.columns = [str(c).strip().replace(" ", "_").lower() for c in df.columns]
-
-        # Generate preview (max 200 rows for the editor, full data stored in staging)
-        preview_rows = df.head(200).fillna("").to_dict(orient="records")
-        columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
-
-        staging_id = str(uuid.uuid4())
-        _upload_staging[staging_id] = {
-            "file_bytes": file_bytes,
-            "file_name": file_name,
-            "ext": ext,
-            "table_name": table_name,
-            "uploaded_by": user.get("sub") if user else None,
-            "uploaded_by_role": user.get("role") if user else None,
-            "created_at": __import__("time").time(),
-        }
-
-        # Cleanup old staging entries (>30 min)
-        now = __import__("time").time()
-        expired = [k for k, v in _upload_staging.items() if now - v["created_at"] > 1800]
-        for k in expired:
-            del _upload_staging[k]
-
-        return {
-            "staging_id": staging_id,
-            "table_name": table_name,
-            "columns": columns,
-            "total_rows": len(df),
-            "preview_rows": preview_rows,
-            "file_type": ext.upper(),
-        }
-    except Exception as exc:
-        logger.exception("Upload preview failed")
-        return {"error": str(exc)}
-
-
-@app.post("/upload/commit")
-async def upload_commit(
-    body: dict,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
-    session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
-) -> dict:
-    """Commit a staged upload to the database.
-
-    Accepts optional row edits from the client-side editor.
-    Body: {staging_id, table_name (optional override), edits: [{row, col, value}]}
-    """
-    import gzip
-    from io import BytesIO
-
-    import pandas as pd
-    from business_brain.ingestion.csv_loader import upsert_dataframe
-
-    staging_id = body.get("staging_id")
-    if not staging_id or staging_id not in _upload_staging:
-        return JSONResponse({"error": "Invalid or expired staging_id. Please re-upload the file."}, 400)
-
-    staged = _upload_staging.pop(staging_id)
-    file_bytes = staged["file_bytes"]
-    ext = staged["ext"]
-    table_name = body.get("table_name") or staged["table_name"]
-    uploader = staged.get("uploaded_by") or (user.get("sub") if user else None)
-    uploader_role = staged.get("uploaded_by_role") or (user.get("role") if user else None)
-
-    try:
-        if ext in ("xlsx", "xls"):
-            df = pd.read_excel(BytesIO(file_bytes))
-        else:
-            df = pd.read_csv(BytesIO(file_bytes))
-
-        # Clean column names (same as preview)
-        df.columns = [str(c).strip().replace(" ", "_").lower() for c in df.columns]
-
-        # Apply client-side edits
-        edits = body.get("edits", [])
-        for edit in edits:
-            row_idx = edit.get("row")
-            col_name = edit.get("col")
-            new_val = edit.get("value")
-            if row_idx is not None and col_name in df.columns and row_idx < len(df):
-                df.at[row_idx, col_name] = new_val
-
-        rows = await upsert_dataframe(df, session, table_name)
-
-        # Register metadata
-        columns_metadata = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
-        col_preview = ", ".join(str(c) for c in df.columns[:5])
-        if len(df.columns) > 5:
-            col_preview += f" (+{len(df.columns) - 5} more)"
-
-        await metadata_store.upsert(
-            session,
-            table_name=table_name,
-            description=f"Uploaded table '{table_name}' with {len(df.columns)} columns: {col_preview}",
-            columns_metadata=columns_metadata,
-            uploaded_by=uploader,
-            uploaded_by_role=uploader_role,
-        )
-
-        background_tasks.add_task(_run_discovery_background, f"upload:{table_name}")
-
-        return {
-            "status": "committed",
-            "table_name": table_name,
-            "rows": rows,
-            "columns": len(df.columns),
-            "edits_applied": len(edits),
-        }
-    except Exception as exc:
-        logger.exception("Upload commit failed")
         return {"error": str(exc)}
 
 
@@ -1241,6 +1105,41 @@ async def _get_focus_tables(session: AsyncSession) -> list[str] | None:
         return None
 
 
+async def _enrich_column_descriptions(session: AsyncSession, table_name: str) -> None:
+    """Auto-generate column descriptions using pattern matching.
+
+    Reads the metadata entry for the table, and for each column that lacks a
+    description, generates one using data_dictionary.auto_describe_column().
+    Updates metadata_store with the enriched columns_metadata.
+    """
+    from business_brain.discovery.data_dictionary import auto_describe_column
+
+    entry = await metadata_store.get_by_table(session, table_name)
+    if not entry or not entry.columns_metadata:
+        return
+
+    changed = False
+    for col in entry.columns_metadata:
+        if not col.get("description"):
+            desc = auto_describe_column(
+                col.get("name", ""),
+                col.get("type", ""),
+                {},  # no stats available at upload time
+            )
+            if desc:
+                col["description"] = desc
+                changed = True
+
+    if changed:
+        await metadata_store.upsert(
+            session,
+            table_name=table_name,
+            description=entry.description or f"Table {table_name}",
+            columns_metadata=entry.columns_metadata,
+        )
+        logger.info("Enriched column descriptions for table '%s'", table_name)
+
+
 async def _run_discovery_background(trigger: str = "manual", table_filter: list[str] | None = None) -> None:
     """Run discovery engine in a background task with its own session."""
     from business_brain.discovery.engine import run_discovery
@@ -1270,37 +1169,86 @@ async def get_feed(session: AsyncSession = Depends(get_session)) -> list[dict]:
     """Get ranked insight feed, filtered by focus scope if active."""
     from business_brain.discovery.feed_store import get_feed as _get_feed
 
-    insights = await _get_feed(session)
+    try:
+        insights = await _get_feed(session)
 
-    # Filter by focus scope — only show insights from focused tables
-    focus_tables = await _get_focus_tables(session)
-    if focus_tables:
-        focus_set = set(focus_tables)
-        insights = [
-            i for i in insights
-            if not i.source_tables or any(t in focus_set for t in (i.source_tables or []))
+        # Filter by focus scope — only show insights from focused tables
+        focus_tables = await _get_focus_tables(session)
+        if focus_tables:
+            focus_set = set(focus_tables)
+            insights = [
+                i for i in insights
+                if not i.source_tables or any(t in focus_set for t in (i.source_tables or []))
+            ]
+
+        return [
+            {
+                "id": i.id,
+                "insight_type": i.insight_type,
+                "severity": i.severity,
+                "impact_score": i.impact_score,
+                "title": i.title,
+                "description": i.description,
+                "narrative": i.narrative,
+                "source_tables": i.source_tables,
+                "source_columns": i.source_columns,
+                "evidence": i.evidence,
+                "related_insights": i.related_insights,
+                "suggested_actions": i.suggested_actions,
+                "composite_template": i.composite_template,
+                "discovered_at": i.discovered_at.isoformat() if i.discovered_at else None,
+                "status": i.status,
+            }
+            for i in insights
         ]
+    except Exception:
+        logger.exception("Feed fetch failed")
+        await session.rollback()
+        return []
 
-    return [
-        {
-            "id": i.id,
-            "insight_type": i.insight_type,
-            "severity": i.severity,
-            "impact_score": i.impact_score,
-            "title": i.title,
-            "description": i.description,
-            "narrative": i.narrative,
-            "source_tables": i.source_tables,
-            "source_columns": i.source_columns,
-            "evidence": i.evidence,
-            "related_insights": i.related_insights,
-            "suggested_actions": i.suggested_actions,
-            "composite_template": i.composite_template,
-            "discovered_at": i.discovered_at.isoformat() if i.discovered_at else None,
-            "status": i.status,
+
+@app.post("/feed/rescore")
+async def rescore_feed(session: AsyncSession = Depends(get_session)) -> dict:
+    """Re-score existing insights that have NULL quality_score.
+
+    Runs the quality gate scoring on insights that were created before
+    the quality gate existed, assigning them a proper quality_score.
+    """
+    from sqlalchemy import select as sa_select
+
+    from business_brain.db.discovery_models import Insight
+    from business_brain.discovery.insight_quality_gate import apply_quality_gate
+
+    try:
+        result = await session.execute(
+            sa_select(Insight).where(Insight.quality_score == None)  # noqa: E711
+        )
+        null_insights = list(result.scalars().all())
+
+        if not null_insights:
+            return {"status": "ok", "rescored": 0, "message": "No insights with NULL quality_score"}
+
+        # Run through quality gate (it sets quality_score and impact_score)
+        scored = apply_quality_gate(null_insights, [])
+
+        # Update in-place (objects are already attached to session)
+        for insight in null_insights:
+            if insight not in scored:
+                # Quality gate filtered it out — mark as low quality
+                insight.quality_score = 0
+                insight.impact_score = insight.impact_score or 0
+
+        await session.commit()
+        return {
+            "status": "ok",
+            "rescored": len(null_insights),
+            "kept": len(scored),
+            "filtered": len(null_insights) - len(scored),
         }
-        for i in insights
-    ]
+    except Exception as exc:
+        logger.exception("Feed rescore failed")
+        await session.rollback()
+        return {"status": "error", "error": str(exc)}
 
 
 @app.post("/feed/dismiss-all")
