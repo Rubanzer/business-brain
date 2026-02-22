@@ -230,7 +230,10 @@ def auto_describe_column(name: str, col_type: str, stats: dict) -> str:
         label = lower.replace("_", " ")
         return f"Count/quantity of {label}."
 
-    # --- percentage ---
+    # --- yield / percentage / ratio ---
+    if lower in ("yield", "yield_pct", "yield_percent", "yield_percentage"):
+        return "Production yield percentage (output/input ratio). NOT a quantity or count — this is a ratio/percentage value."
+
     if "pct" in lower or "percent" in lower or "ratio" in lower or "rate" in lower:
         label = lower.replace("_", " ")
         return f"Percentage or ratio value for {label}."
@@ -257,8 +260,20 @@ def auto_describe_column(name: str, col_type: str, stats: dict) -> str:
     if "status" in lower or "state" in lower:
         return f"Status or state indicator for {lower.replace('_', ' ')}."
 
-    if "type" in lower or "category" in lower or "group" in lower:
+    if "type" in lower or "category" in lower or "group" in lower or "grade" in lower:
         return f"Categorical grouping field: {lower.replace('_', ' ')}."
+
+    # --- party / vendor / supplier / customer names ---
+    party_keywords = {"party", "vendor", "supplier", "customer", "buyer", "seller", "client"}
+    if any(kw in lower for kw in party_keywords):
+        label = lower.replace("_", " ")
+        return f"Business entity name: {label} (buyer, seller, vendor, or customer)."
+
+    # --- weight / volume / measure ---
+    measure_keywords = {"weight", "volume", "length", "width", "height", "size", "area"}
+    if any(kw in lower for kw in measure_keywords):
+        label = lower.replace("_", " ")
+        return f"Physical measurement value: {label}."
 
     # --- description / notes / comment ---
     if "desc" in lower or "note" in lower or "comment" in lower:
