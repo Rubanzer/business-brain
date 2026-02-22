@@ -406,7 +406,7 @@ class PythonAnalystAgent:
             state["python_analysis"] = {
                 "code": code,
                 "computations": [],
-                "narrative": "",
+                "narrative": f"Python analysis encountered an error: {exec_result['error']}. The SQL data was returned but could not be fully analysed.",
                 "error": f"Execution error: {exec_result['error']}",
             }
             return state

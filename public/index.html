@@ -4619,12 +4619,31 @@
 
         lastAnalysisData = data;
 
+        // Check if the analysis pipeline returned an error
+        if (data.error || data.status === 'failed') {
+          status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+          body.innerHTML = `<div class="report-section" style="color:var(--red);">
+            <h4>Analysis Failed</h4>
+            <p>${esc(data.error || 'Unknown error occurred during analysis.')}</p>
+            <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem;">Try rephrasing your question or check if the relevant data has been uploaded.</p>
+          </div>`;
+          addChatMessage('assistant', 'Analysis failed: ' + (data.error || 'Unknown error'));
+          btn.disabled = false;
+          return;
+        }
+
         // Push to drill-down stack
         analysisStack.push({ question: q, data, finding: parentFinding || null });
 
-        status.innerHTML = data.approved
-          ? '<span class="badge badge-green">APPROVED</span>'
-          : '<span class="badge badge-red">REJECTED</span>';
+        // Status badge: approved, partial, or rejected
+        const pipeStatus = data.pipeline_status || 'ok';
+        if (pipeStatus === 'partial') {
+          status.innerHTML = '<span class="badge badge-yellow">PARTIAL</span>';
+        } else {
+          status.innerHTML = data.approved
+            ? '<span class="badge badge-green">APPROVED</span>'
+            : '<span class="badge badge-red">REJECTED</span>';
+        }
         body.innerHTML = renderAnalysis(data);
 
         // Add assistant message to chat
@@ -4672,6 +4691,17 @@
             html += `<span class="crumb-current">${esc(label)}</span>`;
           }
         });
+        html += `</div>`;
+      }
+
+      // Pipeline warning banner (if partial results)
+      if (d.pipeline_status === 'partial') {
+        html += `<div style="background:rgba(255,107,107,0.1);border:1px solid var(--red);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--red);">`;
+        html += `<strong>Partial Results:</strong> ${esc(d.pipeline_message || 'Some pipeline stages had errors.')} Check Details for diagnostics.`;
+        html += `</div>`;
+      } else if (d.pipeline_status === 'ok_with_warnings') {
+        html += `<div style="background:rgba(254,202,87,0.1);border:1px solid var(--yellow);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--yellow);">`;
+        html += `${esc(d.pipeline_message || 'Analysis completed with warnings.')}`;
         html += `</div>`;
       }
 
@@ -4827,6 +4857,21 @@
         html += `<div class="step"><div class="step-label">Generated Python Code</div>`;
         html += `<div class="sql-block">${esc(d.python_analysis.code)}</div>`;
         html += `</div>`;
+      }
+
+      // Pipeline diagnostics
+      if (d.diagnostics?.length) {
+        html += `<div class="step"><div class="step-label">Pipeline Diagnostics</div>`;
+        if (d.pipeline_message) {
+          const pColor = d.pipeline_status === 'ok' ? 'var(--green)' : d.pipeline_status === 'partial' ? 'var(--red)' : 'var(--yellow)';
+          html += `<p style="color:${pColor};font-size:0.75rem;margin-bottom:0.3rem;">${esc(d.pipeline_message)} (${d.pipeline_duration_ms || 0}ms)</p>`;
+        }
+        html += `<div style="font-size:0.7rem;font-family:monospace;">`;
+        d.diagnostics.forEach(diag => {
+          const icon = diag.status === 'ok' ? '\u2705' : diag.status === 'warn' ? '\u26a0\ufe0f' : diag.status === 'error' ? '\u274c' : '\u23ed\ufe0f';
+          html += `<div style="margin-bottom:0.15rem;">${icon} <strong>${esc(diag.stage)}</strong> (${diag.duration_ms || 0}ms) ${esc(diag.detail || '')}</div>`;
+        });
+        html += `</div></div>`;
       }
 
       html += `</div></details></div>`;
@@ -6296,7 +6341,7 @@
 
     // Auto-load feed on page load and tab click
     // Dirty flag: reload feed when switching to it after data changes
-    let feedDirty = false;
+    var feedDirty = false;
     function markFeedDirty() { feedDirty = true; }
     document.querySelector('[data-panel="feed"]').addEventListener('click', () => {
       if (feedDirty) { feedDirty = false; loadFeed(); }

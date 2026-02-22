@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Business Brain API", version="3.0.0")
 
 # Background sync task handle
-_sync_task: asyncio.Task | None = None
+_sync_task: Optional[asyncio.Task] = None
 
 
 @app.on_event("startup")
@@ -98,10 +98,85 @@ async def _ensure_tables():
 async def _global_error_handler(request: Request, exc: Exception):
     """Catch-all: ensure every unhandled error returns JSON, not raw HTML."""
     logger.exception("Unhandled error on %s %s: %s", request.method, request.url.path, exc)
+    # Include the actual error message so the frontend can display it
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error. Please try again or check server logs."},
+        content={
+            "detail": f"Server error: {exc}",
+            "error": str(exc),
+            "status": "failed",
+        },
     )
+
+
+@app.on_event("startup")
+async def _startup_enrich_descriptions():
+    """Auto-enrich column descriptions for all tables on startup.
+
+    Uses fast pattern-matching (no LLM calls) to fill in or fix weak/wrong
+    descriptions.  This ensures the SQL agent always has useful and ACCURATE
+    column descriptions.
+
+    Fixes:
+      - Weak generic fallbacks (e.g. "Numeric (decimal) column: yield")
+      - Misleading descriptions (e.g. "rate" described as "percentage")
+    """
+    try:
+        from business_brain.discovery.data_dictionary import auto_describe_column
+
+        async with async_session() as session:
+            entries = await metadata_store.get_all(session)
+            updated_count = 0
+            for entry in entries:
+                if not entry.columns_metadata:
+                    continue
+                changed = False
+                for col in entry.columns_metadata:
+                    old_desc = col.get("description", "")
+                    col_name = col.get("name", "")
+                    col_lower = col_name.lower()
+
+                    # Regenerate if description is missing, or is a weak generic fallback
+                    is_weak = (
+                        not old_desc
+                        or old_desc.startswith("Numeric (decimal) column:")
+                        or old_desc.startswith("Integer column:")
+                        or old_desc.startswith("Text column:")
+                        or old_desc.startswith("Data column:")
+                    )
+
+                    # Also fix WRONG descriptions — "rate" described as percentage
+                    is_wrong = False
+                    if "rate" in col_lower and "Percentage or ratio" in old_desc:
+                        is_wrong = True  # rate is price per unit, not percentage
+                    if col_lower in ("yield", "yield_pct") and "quantity" in old_desc.lower():
+                        is_wrong = True  # yield is percentage, not quantity
+
+                    if is_weak or is_wrong:
+                        new_desc = auto_describe_column(
+                            col_name,
+                            col.get("type", ""),
+                            {},
+                        )
+                        # Only update if the new description is actually better
+                        if new_desc and not new_desc.startswith(
+                            ("Numeric (decimal) column:", "Integer column:", "Text column:", "Data column:")
+                        ):
+                            col["description"] = new_desc
+                            changed = True
+
+                if changed:
+                    await metadata_store.upsert(
+                        session,
+                        table_name=entry.table_name,
+                        description=entry.description or f"Table {entry.table_name}",
+                        columns_metadata=entry.columns_metadata,
+                    )
+                    updated_count += 1
+            if updated_count:
+                logger.info("Startup: enriched column descriptions for %d table(s)", updated_count)
+    except Exception:
+        logger.debug("Startup column description enrichment failed — non-critical")
 
 
 @app.on_event("startup")
@@ -260,6 +335,27 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
     result.setdefault("cfo_key_metrics", [])
     result.setdefault("cfo_chart_suggestions", [])
     result["session_id"] = session_id
+
+    # Include pipeline diagnostics so frontend can show what happened
+    diagnostics = result.pop("_diagnostics", [])
+    result["diagnostics"] = diagnostics
+
+    # Compute overall pipeline health from diagnostics
+    errors = [d for d in diagnostics if d.get("status") == "error"]
+    warnings = [d for d in diagnostics if d.get("status") == "warn"]
+    total_ms = sum(d.get("duration_ms", 0) for d in diagnostics)
+
+    if errors:
+        result["pipeline_status"] = "partial"
+        result["pipeline_message"] = f"{len(errors)} stage(s) had errors. Results may be incomplete."
+    elif warnings:
+        result["pipeline_status"] = "ok_with_warnings"
+        result["pipeline_message"] = f"Analysis completed with {len(warnings)} warning(s)."
+    else:
+        result["pipeline_status"] = "ok"
+        result["pipeline_message"] = "Analysis completed successfully."
+    result["pipeline_duration_ms"] = total_ms
+
     return result
 
 
@@ -284,8 +380,8 @@ ROLE_LEVELS = {"viewer": 0, "operator": 1, "manager": 2, "admin": 3, "owner": 4}
 
 
 async def _get_accessible_tables(
-    session: AsyncSession, user: dict | None
-) -> list[str] | None:
+    session: AsyncSession, user: Optional[dict] = None
+) -> Optional[list]:
     """Return table names the user can access based on role hierarchy.
 
     - owner/admin or no auth: None (all tables — backward compat)
@@ -361,7 +457,7 @@ def _create_jwt(user_id: str, email: str, role: str, plan: str) -> str:
     return f"{header}.{payload}.{signature}"
 
 
-def _decode_jwt(token: str) -> dict | None:
+def _decode_jwt(token: str) -> Optional[dict]:
     """Decode and verify a JWT token."""
     import base64
     import json as _json
@@ -392,7 +488,7 @@ def _decode_jwt(token: str) -> dict | None:
         return None
 
 
-async def get_current_user(authorization: str = Header(default="")) -> dict | None:
+async def get_current_user(authorization: str = Header(default="")) -> Optional[dict]:
     """Extract user from JWT token in Authorization header. Returns None if no auth."""
     if not authorization or not authorization.startswith("Bearer "):
         return None
@@ -428,7 +524,7 @@ def require_role(min_role: str):
 async def upload_csv(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
     """Upload a CSV or Excel file for quick ingestion into the database."""
     import gzip
@@ -485,7 +581,7 @@ async def upload_file(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
     """Smart file upload — parse, clean, load, and auto-generate metadata.
 
@@ -668,7 +764,7 @@ async def upload_context_file(
 @app.get("/metadata")
 async def list_metadata(
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> list[dict]:
     """List table metadata filtered by user's access level."""
     try:
@@ -694,7 +790,7 @@ async def list_metadata(
 async def get_table_metadata(
     table: str,
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
     """Get metadata for a single table (access-controlled)."""
     try:
@@ -904,7 +1000,7 @@ async def get_table_data(
     sort_by: Optional[str] = None,
     sort_dir: str = "asc",
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
     """Paginated read-only access to any uploaded table (access-controlled)."""
     from sqlalchemy import text as sql_text
@@ -1085,7 +1181,7 @@ async def generate_chart(body: dict) -> dict:
 # Background discovery helper
 # ---------------------------------------------------------------------------
 
-async def _get_focus_tables(session: AsyncSession) -> list[str] | None:
+async def _get_focus_tables(session: AsyncSession) -> Optional[list]:
     """Return list of included table names if focus mode is active, else None.
 
     If no FocusScope rows exist for the current context, returns None (= all tables).
@@ -1140,7 +1236,7 @@ async def _enrich_column_descriptions(session: AsyncSession, table_name: str) ->
         logger.info("Enriched column descriptions for table '%s'", table_name)
 
 
-async def _run_discovery_background(trigger: str = "manual", table_filter: list[str] | None = None) -> None:
+async def _run_discovery_background(trigger: str = "manual", table_filter: Optional[list] = None) -> None:
     """Run discovery engine in a background task with its own session."""
     from business_brain.discovery.engine import run_discovery
 
@@ -2284,7 +2380,7 @@ async def export_feed(session: AsyncSession = Depends(get_session)):
 # ---------------------------------------------------------------------------
 
 # Track sync loop health
-_last_sync_check: str | None = None
+_last_sync_check: Optional[str] = None
 _sync_sources_count: int = 0
 
 
@@ -3329,7 +3425,7 @@ async def cohort_analysis(
 @app.post("/tables/{table_name}/validate")
 async def validate_table(
     table_name: str,
-    body: dict | None = None,
+    body: Optional[dict] = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Validate table data against auto-generated or custom rules.
@@ -3579,7 +3675,7 @@ class ScenarioRequest(BaseModel):
 class WhatIfRequest(BaseModel):
     scenarios: list[ScenarioRequest]
     formula: str
-    base_values: dict[str, float] | None = None
+    base_values: Optional[dict] = None
 
 
 @app.post("/scenarios/evaluate")

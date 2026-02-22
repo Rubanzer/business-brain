@@ -203,6 +203,12 @@ def auto_describe_column(name: str, col_type: str, stats: dict) -> str:
     ``stats`` may carry ``unique_pct``, ``null_pct``, ``min_value``,
     ``max_value``, ``mean_value`` -- they are used to enrich the text
     when available.
+
+    IMPORTANT: Order of pattern checks matters!  More specific patterns must
+    come before generic ones.  In business/manufacturing contexts:
+      - "rate" = price per unit (NOT percentage/ratio)
+      - "yield" = production yield % (NOT quantity)
+      - "quantity" = weight/count (NOT yield)
     """
     lower = name.lower()
 
@@ -218,22 +224,67 @@ def auto_describe_column(name: str, col_type: str, stats: dict) -> str:
         event = event or "the event"
         return f"Timestamp for when {event} occurred."
 
+    # --- yield / production yield (BEFORE monetary/count to avoid misclassification) ---
+    if lower in ("yield", "yield_pct", "yield_percent", "yield_percentage"):
+        return "Production yield percentage (output/input ratio). NOT a quantity or count — this is a ratio/percentage value."
+
+    # --- rate disambiguation (price-per-unit vs percentage/ratio) ---
+    # Monetary rate: "rate" alone, or preceded by business/pricing qualifier
+    _monetary_rate_prefixes = {"basic", "unit", "purchase", "selling", "billing",
+                               "market", "contract", "avg", "net", "landed", "effective"}
+    # Ratio rate: preceded by quality/performance qualifier → treat as percentage
+    _ratio_rate_prefixes = {"success", "failure", "rejection", "defect", "interest",
+                            "conversion", "growth", "attrition", "error", "churn",
+                            "click", "bounce", "open", "close", "win", "hit",
+                            "utilization", "occupancy", "fill", "pass", "fail"}
+    if lower.endswith("_rate") or lower == "rate":
+        prefix = lower.rsplit("_rate", 1)[0] if lower != "rate" else ""
+        if prefix in _ratio_rate_prefixes:
+            label = lower.replace("_", " ")
+            return f"Percentage or ratio value for {label}."
+        elif prefix in _monetary_rate_prefixes or lower == "rate" or prefix == "":
+            label = lower.replace("_", " ")
+            return f"Price per unit / rate value for {label}. This is a monetary rate (₹/unit), NOT a percentage."
+        else:
+            # Unknown prefix: default to price in manufacturing context
+            label = lower.replace("_", " ")
+            return f"Rate value for {label} (likely price per unit in manufacturing context)."
+
     # --- monetary patterns ---
-    money_keywords = {"amount", "cost", "price", "revenue", "salary", "fee", "total", "balance", "payment"}
+    money_keywords = {"amount", "cost", "price", "revenue", "salary", "fee", "total",
+                      "balance", "payment", "invoice", "charge", "freight", "discount",
+                      "debit", "credit", "expense", "income", "margin", "profit", "loss"}
     if any(kw in lower for kw in money_keywords):
         label = lower.replace("_", " ")
         return f"Monetary value representing {label}."
 
-    # --- count / quantity ---
-    count_keywords = {"count", "qty", "quantity", "num", "number_of"}
+    # --- count / quantity / weight (physical amounts) ---
+    count_keywords = {"count", "qty", "quantity", "num", "number_of", "pieces", "bags",
+                      "bundles", "units", "tons", "tonnes", "mt"}
     if any(kw in lower for kw in count_keywords):
         label = lower.replace("_", " ")
-        return f"Count/quantity of {label}."
+        return f"Count/quantity of {label} (physical amount or weight)."
 
-    # --- percentage ---
-    if "pct" in lower or "percent" in lower or "ratio" in lower or "rate" in lower:
+    # --- percentage / ratio (explicit patterns only — "rate" is excluded) ---
+    if "pct" in lower or "percent" in lower or "ratio" in lower:
         label = lower.replace("_", " ")
         return f"Percentage or ratio value for {label}."
+
+    # --- energy / power metrics (manufacturing domain) ---
+    _energy_patterns = {"kwh", "kva", "kvar", "sec", "power", "energy", "consumption",
+                        "pf", "power_factor", "mwh", "unit_consumed"}
+    if any(kw == lower or kw in lower.split("_") for kw in _energy_patterns):
+        label = lower.replace("_", " ")
+        return f"Energy/power metric: {label}."
+
+    # --- production / manufacturing metrics ---
+    _prod_patterns = {"heat_no", "heat", "tap_to_tap", "cycle_time", "furnace",
+                      "melt", "melting", "tapping", "ladle", "ingot", "billet",
+                      "sponge", "scrap", "alloy", "fesi", "femn", "rejection",
+                      "slag", "refractory", "lining"}
+    if any(kw == lower or kw in lower.split("_") for kw in _prod_patterns):
+        label = lower.replace("_", " ")
+        return f"Manufacturing/production field: {label}."
 
     # --- name fields ---
     if "name" in lower:
@@ -242,11 +293,11 @@ def auto_describe_column(name: str, col_type: str, stats: dict) -> str:
 
     # --- email ---
     if "email" in lower or "e_mail" in lower:
-        return f"Email address field."
+        return "Email address field."
 
     # --- phone ---
     if "phone" in lower or "tel" in lower or "mobile" in lower:
-        return f"Phone/telephone number."
+        return "Phone/telephone number."
 
     # --- address ---
     if "address" in lower or "street" in lower or "city" in lower or "zip" in lower or "postal" in lower:
@@ -257,12 +308,25 @@ def auto_describe_column(name: str, col_type: str, stats: dict) -> str:
     if "status" in lower or "state" in lower:
         return f"Status or state indicator for {lower.replace('_', ' ')}."
 
-    if "type" in lower or "category" in lower or "group" in lower:
+    if "type" in lower or "category" in lower or "group" in lower or "grade" in lower:
         return f"Categorical grouping field: {lower.replace('_', ' ')}."
 
+    # --- party / vendor / supplier / customer names ---
+    party_keywords = {"party", "vendor", "supplier", "customer", "buyer", "seller", "client"}
+    if any(kw in lower for kw in party_keywords):
+        label = lower.replace("_", " ")
+        return f"Business entity name: {label} (buyer, seller, vendor, or customer)."
+
+    # --- weight / volume / measure ---
+    measure_keywords = {"weight", "volume", "length", "width", "height", "size", "area",
+                        "diameter", "thickness", "depth"}
+    if any(kw in lower for kw in measure_keywords):
+        label = lower.replace("_", " ")
+        return f"Physical measurement value: {label}."
+
     # --- description / notes / comment ---
-    if "desc" in lower or "note" in lower or "comment" in lower:
-        return f"Free-text description or notes field."
+    if "desc" in lower or "note" in lower or "comment" in lower or "remark" in lower:
+        return "Free-text description or notes field."
 
     # --- boolean-ish names ---
     if lower.startswith("is_") or lower.startswith("has_") or lower.startswith("can_"):

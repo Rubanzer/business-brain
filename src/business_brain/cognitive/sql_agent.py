@@ -29,7 +29,7 @@ to retrieve the required data.
 Use the business context to understand domain-specific terms, acronyms, and
 business rules that inform correct query logic.
 
-DOMAIN-AWARE COLUMN INTERPRETATION:
+DOMAIN-AWARE COLUMN INTERPRETATION (AUTHORITATIVE — these override column descriptions):
 - "fe_t", "fe_mz", "fe_content" → Iron content (different measurement points)
 - "kva" → Apparent power (KVA), "kwh" → Real energy consumption
 - "sec" → Specific Energy Consumption (kWh/ton) — a KEY efficiency metric
@@ -38,14 +38,22 @@ DOMAIN-AWARE COLUMN INTERPRETATION:
 - "yield_pct", "yield" → Production yield percentage (output/input ratio), NOT quantity
 - "tap_to_tap" → Cycle time between furnace taps (minutes)
 - "shift" → Work period (typically 'A', 'B', 'C' for morning/afternoon/night)
-- "quantity" in purchase/procurement tables → Amount purchased (units or weight)
-- "rate" in purchase tables → Price per unit, NOT speed
-- "amount" → Total monetary value (quantity × rate)
+- "quantity" in any table → Physical amount purchased/produced (weight in MT/kg or count)
+- "rate" in any table → Price per unit (₹/unit or ₹/MT), NOT a percentage or speed
+- "amount" → Total monetary value (typically quantity × rate)
+- "basic_rate", "purchase_rate", "selling_rate" → Always monetary price per unit
+- "party", "party_name" → Business entity name (customer, vendor, supplier)
+- "sponge" → Sponge iron (a type of raw material input)
+- "scrap" → Steel scrap (a type of raw material input)
 
-COLUMN SELECTION RULES:
-- When the user asks "how much" or "total", prefer quantity/amount/weight columns over yield/ratio columns
-- When column descriptions are provided (after --), use them to pick the right column
-- "yield" is NEVER the same as "quantity" — yield is a percentage, quantity is a count/weight
+COLUMN SELECTION RULES (follow strictly):
+1. When the user asks "how much" or "total" → use quantity/amount/weight, NEVER yield
+2. "yield" is NEVER the same as "quantity" — yield is a %, quantity is weight/count
+3. "rate" is NEVER a percentage — it is always price per unit
+4. Column descriptions (after --) are hints, but YOUR domain knowledge takes priority
+   if the description seems generic or contradicts manufacturing conventions
+5. When in doubt about a column's meaning, prefer the interpretation that matches
+   the steel manufacturing domain
 
 IMPORTANT RULES:
 - Use CTEs for clarity when appropriate.
@@ -61,6 +69,7 @@ IMPORTANT RULES:
 - For aggregations, always include COUNT(*) so analysts know sample sizes.
 - When querying for "efficiency", include SEC, yield, and power factor together.
 - When querying for "cost", include both scrap cost and energy cost components.
+- Always quote table names with double quotes to handle case sensitivity.
 """
 
 _client: genai.Client | None = None
@@ -117,6 +126,26 @@ def _strip_sql_fences(raw: str) -> str:
     if sql.startswith("```"):
         sql = sql.split("\n", 1)[1].rsplit("```", 1)[0].strip()
     return sql
+
+
+def _validate_sql(sql: str) -> str | None:
+    """Basic SQL validation.  Returns error string or None if OK."""
+    upper = sql.upper().strip()
+
+    # Must be a SELECT/WITH statement
+    if not upper.startswith(("SELECT", "WITH")):
+        return f"Generated SQL does not start with SELECT/WITH: {sql[:50]}"
+
+    # Block dangerous operations
+    _BLOCKED = {"DELETE", "DROP", "ALTER", "INSERT", "UPDATE", "TRUNCATE", "CREATE"}
+    # Split by whitespace and check first-level keywords
+    tokens = upper.split()
+    for token in tokens:
+        cleaned = token.strip("(;,)")
+        if cleaned in _BLOCKED:
+            return f"Dangerous SQL keyword detected: {cleaned}"
+
+    return None
 
 
 class SQLAgent:
@@ -195,6 +224,16 @@ class SQLAgent:
         except Exception:
             logger.exception("SQL generation failed")
             result = {"query": "", "rows": [], "error": "SQL generation failed"}
+            state["sql_result"] = result
+            state.setdefault("sql_results", []).append(result)
+            state["current_query_index"] = idx + 1
+            return state
+
+        # Validate generated SQL before execution
+        validation_error = _validate_sql(sql)
+        if validation_error:
+            logger.warning("SQL validation failed: %s", validation_error)
+            result = {"query": sql, "rows": [], "error": validation_error, "task": task}
             state["sql_result"] = result
             state.setdefault("sql_results", []).append(result)
             state["current_query_index"] = idx + 1

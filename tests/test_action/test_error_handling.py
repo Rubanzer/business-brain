@@ -334,4 +334,6 @@ class TestGlobalExceptionHandler:
 
         body = json.loads(response.body.decode("utf-8"))
         assert "detail" in body
-        assert body["detail"] == "Internal server error. Please try again or check server logs."
+        assert "Unexpected kaboom" in body["detail"]
+        assert "error" in body
+        assert body["status"] == "failed"

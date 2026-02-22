@@ -16,6 +16,48 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_json(raw: str) -> dict | None:
+    """Robustly extract a JSON object from an LLM response.
+
+    Handles:
+      - Raw JSON
+      - JSON wrapped in ```json ... ``` fences
+      - JSON embedded in prose text
+    """
+    text = raw.strip()
+
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Try extracting from markdown fences
+    if "```" in text:
+        parts = text.split("```")
+        for part in parts[1::2]:  # odd-indexed parts are inside fences
+            block = part.strip()
+            for tag in ("json", "JSON"):
+                if block.startswith(tag):
+                    block = block[len(tag):].strip()
+            try:
+                return json.loads(block)
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+    # Try finding JSON object in the text
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    return None
+
+
 SYSTEM_PROMPT = """\
 You are a senior data analyst with DEEP EXPERTISE in manufacturing operations,
 especially secondary steel manufacturing (induction furnace). Given SQL query results,
@@ -256,11 +298,21 @@ class AnalystAgent:
                     contents=use_prompt,
                 )
                 raw = response.text.strip()
-                if "```" in raw:
-                    raw = raw.split("```")[1]
-                    if raw.startswith("json"):
-                        raw = raw[4:]
-                parsed = json.loads(raw)
+                # Robust JSON extraction from LLM response
+                parsed = _extract_json(raw)
+                if parsed is None:
+                    logger.warning("Could not parse analyst JSON (attempt %d): %s",
+                                   attempt, raw[:200])
+                    if attempt == 0:
+                        continue
+                    # Last resort: wrap the raw text as a finding
+                    analysis = {
+                        "findings": [{"type": "insight", "description": raw[:500], "confidence": 0.3}],
+                        "summary": raw[:200],
+                        "chart_suggestions": [],
+                    }
+                    break
+
                 # Validate: must have findings list and summary
                 if parsed.get("findings") and parsed.get("summary"):
                     analysis = parsed
@@ -277,9 +329,13 @@ class AnalystAgent:
 
         if analysis is None:
             analysis = {
-                "findings": [{"type": "insight", "description": f"Retrieved {total_rows} rows.", "confidence": 0.5}],
-                "summary": f"Query returned {total_rows} rows but automated analysis failed.",
+                "findings": [{"type": "insight", "description": f"Retrieved {total_rows} rows but automated analysis could not complete.", "confidence": 0.3}],
+                "summary": f"Query returned {total_rows} rows. Automated analysis failed — see SQL results in the details section for raw data.",
+                "chart_suggestions": [],
             }
+
+        # Ensure chart_suggestions always exists (frontend expects it)
+        analysis.setdefault("chart_suggestions", [])
 
         state["analysis"] = analysis
         return state

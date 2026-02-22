@@ -106,19 +106,40 @@ async def _profile_table(
         session.add(profile)
 
     # Auto-generate column descriptions and persist to metadata_store
+    # IMPORTANT: Preserve existing Gemini-generated descriptions — only fill in
+    # blanks using pattern matching (auto_describe_column).
     try:
         from business_brain.discovery.data_dictionary import auto_describe_column, infer_column_type
 
+        existing_meta = await metadata_store.get_by_table(session, safe_table)
+        # Build a lookup of existing descriptions (from Gemini or previous enrichment)
+        existing_descs: dict[str, str] = {}
+        if existing_meta and existing_meta.columns_metadata:
+            for c in existing_meta.columns_metadata:
+                name = c.get("name", "")
+                desc = c.get("description", "")
+                if name and desc:
+                    existing_descs[name] = desc
+
         updated_columns = []
+        changed = False
         for col_name in columns:
             col_values = [row.get(col_name) for row in sample_rows]
             col_type = infer_column_type(col_values)
             non_null = [v for v in col_values if v is not None]
-            desc = auto_describe_column(col_name, col_type, {
-                "unique_pct": len(set(non_null)) / max(len(non_null), 1) * 100,
-                "null_pct": (len(col_values) - len(non_null)) / max(len(col_values), 1) * 100,
-            })
             original_type = col_types.get(col_name, col_type)
+
+            # Prefer existing description (from Gemini), only generate if missing
+            existing_desc = existing_descs.get(col_name, "")
+            if existing_desc:
+                desc = existing_desc
+            else:
+                desc = auto_describe_column(col_name, col_type, {
+                    "unique_pct": len(set(non_null)) / max(len(non_null), 1) * 100,
+                    "null_pct": (len(col_values) - len(non_null)) / max(len(col_values), 1) * 100,
+                })
+                changed = True
+
             updated_columns.append({
                 "name": col_name,
                 "type": original_type,
@@ -126,8 +147,7 @@ async def _profile_table(
             })
 
         # Update metadata with enriched column descriptions
-        existing_meta = await metadata_store.get_by_table(session, safe_table)
-        if existing_meta:
+        if existing_meta and (changed or not existing_meta.columns_metadata):
             existing_meta.columns_metadata = updated_columns
             await session.flush()
             logger.info("Updated column descriptions for table: %s (%d columns)", safe_table, len(updated_columns))
