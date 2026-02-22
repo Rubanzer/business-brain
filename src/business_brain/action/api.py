@@ -34,29 +34,64 @@ _sync_task: asyncio.Task | None = None
 
 @app.on_event("startup")
 async def _ensure_tables():
-    """Create any missing tables and ensure schema migrations are applied."""
+    """Create missing tables and add any columns missing from existing tables.
+
+    Base.metadata.create_all only creates NEW tables — it never ALTERs existing
+    ones to add columns.  We run idempotent ALTER TABLE ADD COLUMN IF NOT EXISTS
+    statements so that every deployment picks up schema changes automatically.
+    """
     from sqlalchemy import text as sql_text
 
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-        # Ensure columns added after initial table creation exist.
-        # Base.metadata.create_all only creates NEW tables; it does NOT
-        # ALTER existing ones to add new columns.
-        async with engine.begin() as conn:
-            await conn.execute(sql_text(
-                'ALTER TABLE metadata_entries '
-                'ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(36)'
-            ))
-            await conn.execute(sql_text(
-                'ALTER TABLE metadata_entries '
-                'ADD COLUMN IF NOT EXISTS uploaded_by_role VARCHAR(20)'
-            ))
+        # Migrate columns added to ORM models after initial table creation.
+        # Each statement is idempotent — IF NOT EXISTS makes it a no-op when
+        # the column already exists.
+        _migrations = [
+            # business_contexts — versioning / lifecycle columns
+            "ALTER TABLE business_contexts ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1",
+            "ALTER TABLE business_contexts ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE",
+            "ALTER TABLE business_contexts ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ",
+            "ALTER TABLE business_contexts ADD COLUMN IF NOT EXISTS last_validated_at TIMESTAMPTZ",
+            # metadata_entries — access control columns
+            "ALTER TABLE metadata_entries ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(36)",
+            "ALTER TABLE metadata_entries ADD COLUMN IF NOT EXISTS uploaded_by_role VARCHAR(20)",
+            # process_steps — multi-metric support
+            "ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS key_metrics JSON",
+            "ALTER TABLE process_steps ADD COLUMN IF NOT EXISTS target_ranges JSON",
+            # insights — newer feature columns
+            "ALTER TABLE insights ADD COLUMN IF NOT EXISTS quality_score INTEGER DEFAULT 0",
+            "ALTER TABLE insights ADD COLUMN IF NOT EXISTS narrative TEXT",
+            "ALTER TABLE insights ADD COLUMN IF NOT EXISTS related_insights JSON",
+            "ALTER TABLE insights ADD COLUMN IF NOT EXISTS suggested_actions JSON",
+            "ALTER TABLE insights ADD COLUMN IF NOT EXISTS composite_template VARCHAR(100)",
+            "ALTER TABLE insights ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'new'",
+            "ALTER TABLE insights ADD COLUMN IF NOT EXISTS session_id VARCHAR(64)",
+            # deployed_reports — session + lifecycle columns
+            "ALTER TABLE deployed_reports ADD COLUMN IF NOT EXISTS session_id VARCHAR(64)",
+            "ALTER TABLE deployed_reports ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE",
+            "ALTER TABLE deployed_reports ADD COLUMN IF NOT EXISTS refresh_frequency VARCHAR(20) DEFAULT 'manual'",
+            # data_sources — access control columns
+            "ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS session_id VARCHAR(64)",
+            "ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(36)",
+            "ALTER TABLE data_sources ADD COLUMN IF NOT EXISTS uploaded_by_role VARCHAR(20)",
+            # metric_thresholds — derived metric columns
+            "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS is_derived BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS formula TEXT",
+            "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS source_columns JSON",
+            "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS auto_linked BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS confidence FLOAT",
+        ]
 
-        logger.info("Database tables and columns ensured")
+        async with engine.begin() as conn:
+            for stmt in _migrations:
+                await conn.execute(sql_text(stmt))
+
+        logger.info("Database tables and columns ensured (%d migrations)", len(_migrations))
     except Exception:
-        logger.exception("Failed to auto-create tables — chat history may be unavailable")
+        logger.exception("Failed to ensure database schema")
 
 
 @app.exception_handler(Exception)
