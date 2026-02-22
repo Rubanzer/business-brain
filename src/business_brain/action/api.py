@@ -608,6 +608,158 @@ async def upload_file(
         return {"error": str(exc)}
 
 
+# In-memory staging area for upload previews (TTL handled by cleanup)
+_upload_staging: dict[str, dict] = {}
+
+
+@app.post("/upload/preview")
+async def upload_preview(
+    file: UploadFile = File(...),
+    user: dict | None = Depends(get_current_user),
+) -> dict:
+    """Parse an uploaded file and return a preview without committing to DB.
+
+    Returns the parsed data, suggested table name, column info, and a
+    staging_id that the client can use to commit (with optional edits).
+    """
+    import gzip
+    import uuid
+    from io import BytesIO
+
+    import pandas as pd
+
+    try:
+        file_bytes = await file.read()
+        file_name = file.filename or "upload.csv"
+
+        # Decompress if client sent gzipped file
+        if file_name.endswith(".gz"):
+            file_bytes = gzip.decompress(file_bytes)
+            file_name = file_name[:-3]
+
+        ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "csv"
+        table_name = file_name.rsplit(".", 1)[0].replace("-", "_").replace(" ", "_").lower()
+
+        if ext in ("xlsx", "xls"):
+            df = pd.read_excel(BytesIO(file_bytes))
+        else:
+            df = pd.read_csv(BytesIO(file_bytes))
+
+        # Clean column names
+        df.columns = [str(c).strip().replace(" ", "_").lower() for c in df.columns]
+
+        # Generate preview (max 200 rows for the editor, full data stored in staging)
+        preview_rows = df.head(200).fillna("").to_dict(orient="records")
+        columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+
+        staging_id = str(uuid.uuid4())
+        _upload_staging[staging_id] = {
+            "file_bytes": file_bytes,
+            "file_name": file_name,
+            "ext": ext,
+            "table_name": table_name,
+            "uploaded_by": user.get("sub") if user else None,
+            "uploaded_by_role": user.get("role") if user else None,
+            "created_at": __import__("time").time(),
+        }
+
+        # Cleanup old staging entries (>30 min)
+        now = __import__("time").time()
+        expired = [k for k, v in _upload_staging.items() if now - v["created_at"] > 1800]
+        for k in expired:
+            del _upload_staging[k]
+
+        return {
+            "staging_id": staging_id,
+            "table_name": table_name,
+            "columns": columns,
+            "total_rows": len(df),
+            "preview_rows": preview_rows,
+            "file_type": ext.upper(),
+        }
+    except Exception as exc:
+        logger.exception("Upload preview failed")
+        return {"error": str(exc)}
+
+
+@app.post("/upload/commit")
+async def upload_commit(
+    body: dict,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    session: AsyncSession = Depends(get_session),
+    user: dict | None = Depends(get_current_user),
+) -> dict:
+    """Commit a staged upload to the database.
+
+    Accepts optional row edits from the client-side editor.
+    Body: {staging_id, table_name (optional override), edits: [{row, col, value}]}
+    """
+    import gzip
+    from io import BytesIO
+
+    import pandas as pd
+    from business_brain.ingestion.csv_loader import upsert_dataframe
+
+    staging_id = body.get("staging_id")
+    if not staging_id or staging_id not in _upload_staging:
+        return JSONResponse({"error": "Invalid or expired staging_id. Please re-upload the file."}, 400)
+
+    staged = _upload_staging.pop(staging_id)
+    file_bytes = staged["file_bytes"]
+    ext = staged["ext"]
+    table_name = body.get("table_name") or staged["table_name"]
+    uploader = staged.get("uploaded_by") or (user.get("sub") if user else None)
+    uploader_role = staged.get("uploaded_by_role") or (user.get("role") if user else None)
+
+    try:
+        if ext in ("xlsx", "xls"):
+            df = pd.read_excel(BytesIO(file_bytes))
+        else:
+            df = pd.read_csv(BytesIO(file_bytes))
+
+        # Clean column names (same as preview)
+        df.columns = [str(c).strip().replace(" ", "_").lower() for c in df.columns]
+
+        # Apply client-side edits
+        edits = body.get("edits", [])
+        for edit in edits:
+            row_idx = edit.get("row")
+            col_name = edit.get("col")
+            new_val = edit.get("value")
+            if row_idx is not None and col_name in df.columns and row_idx < len(df):
+                df.at[row_idx, col_name] = new_val
+
+        rows = await upsert_dataframe(df, session, table_name)
+
+        # Register metadata
+        columns_metadata = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+        col_preview = ", ".join(str(c) for c in df.columns[:5])
+        if len(df.columns) > 5:
+            col_preview += f" (+{len(df.columns) - 5} more)"
+
+        await metadata_store.upsert(
+            session,
+            table_name=table_name,
+            description=f"Uploaded table '{table_name}' with {len(df.columns)} columns: {col_preview}",
+            columns_metadata=columns_metadata,
+            uploaded_by=uploader,
+            uploaded_by_role=uploader_role,
+        )
+
+        background_tasks.add_task(_run_discovery_background, f"upload:{table_name}")
+
+        return {
+            "status": "committed",
+            "table_name": table_name,
+            "rows": rows,
+            "columns": len(df.columns),
+            "edits_applied": len(edits),
+        }
+    except Exception as exc:
+        logger.exception("Upload commit failed")
+        return {"error": str(exc)}
+
+
 @app.post("/context/file")
 async def upload_context_file(
     file: UploadFile = File(...), session: AsyncSession = Depends(get_session)
@@ -1085,6 +1237,7 @@ async def _get_focus_tables(session: AsyncSession) -> list[str] | None:
         return tables if tables else None  # None means focus mode is off
     except Exception:
         logger.debug("Focus scope query failed, defaulting to all tables")
+        await session.rollback()
         return None
 
 
@@ -3047,6 +3200,7 @@ async def get_profile_report(
     session: AsyncSession = Depends(get_session),
 ):
     """Generate a comprehensive profile report for a table."""
+    from sqlalchemy import select as sa_select
     from business_brain.discovery.profile_report import (
         compute_report_priority,
         format_report_text,
@@ -3235,6 +3389,7 @@ async def validate_table(
     Body (optional): {"rules": [{"name": "...", "column": "...", "rule_type": "not_null"}]}
     If no rules provided, auto-generates from column profile.
     """
+    from sqlalchemy import select as sa_select
     from business_brain.discovery.validation_rules import (
         auto_generate_rules,
         create_rule,
@@ -3301,6 +3456,7 @@ async def validate_table(
 @app.get("/recommendations")
 async def get_recommendations(session: AsyncSession = Depends(get_session)):
     """Get analysis recommendations based on current data state."""
+    from sqlalchemy import select as sa_select
     from business_brain.discovery.insight_recommender import (
         compute_coverage,
         recommend_analyses,
@@ -3937,6 +4093,77 @@ async def variance_analysis(
         "waterfall": waterfall,
         "root_causes": causes,
     }
+
+
+# ---------------------------------------------------------------------------
+# Schema Re-describe — generate column descriptions for existing tables
+# ---------------------------------------------------------------------------
+
+
+@app.post("/schema/redescribe")
+async def redescribe_schema(
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Re-generate column descriptions for all tables using data dictionary heuristics.
+
+    This enriches metadata with human-readable column descriptions so the SQL
+    agent can distinguish between similarly-typed columns (e.g. quantity vs yield).
+    No LLM calls — uses fast pattern-matching from the data dictionary module.
+    """
+    from sqlalchemy import text as sql_text
+
+    from business_brain.discovery.data_dictionary import (
+        auto_describe_column,
+        infer_column_type,
+    )
+
+    try:
+        entries = await metadata_store.get_all(session)
+        updated = 0
+        for entry in entries:
+            try:
+                # Sample rows to infer column types
+                result = await session.execute(
+                    sql_text(f'SELECT * FROM "{entry.table_name}" LIMIT 100')
+                )
+                sample_rows = [dict(r._mapping) for r in result.fetchall()]
+                if not sample_rows:
+                    continue
+
+                columns_meta = []
+                for col_name in sample_rows[0].keys():
+                    col_values = [row.get(col_name) for row in sample_rows]
+                    col_type = infer_column_type(col_values)
+                    non_null = [v for v in col_values if v is not None]
+                    desc = auto_describe_column(col_name, col_type, {
+                        "unique_pct": len(set(non_null)) / max(len(non_null), 1) * 100,
+                        "null_pct": (len(col_values) - len(non_null)) / max(len(col_values), 1) * 100,
+                    })
+                    # Preserve original type from existing metadata
+                    orig_type = col_type
+                    if entry.columns_metadata:
+                        for cm in entry.columns_metadata:
+                            if cm.get("name") == col_name:
+                                orig_type = cm.get("type", col_type)
+                                break
+                    columns_meta.append({
+                        "name": col_name,
+                        "type": orig_type,
+                        "description": desc,
+                    })
+
+                entry.columns_metadata = columns_meta
+                updated += 1
+            except Exception:
+                logger.debug("Failed to redescribe table %s", entry.table_name)
+                await session.rollback()
+
+        await session.commit()
+        return {"status": "completed", "tables_updated": updated, "total_tables": len(entries)}
+    except Exception:
+        logger.exception("Schema redescribe failed")
+        await session.rollback()
+        return JSONResponse({"error": "Schema redescribe failed"}, 500)
 
 
 # ---------------------------------------------------------------------------
