@@ -34,11 +34,27 @@ _sync_task: asyncio.Task | None = None
 
 @app.on_event("startup")
 async def _ensure_tables():
-    """Create any missing tables (e.g. chat_messages) on first deploy."""
+    """Create any missing tables and ensure schema migrations are applied."""
+    from sqlalchemy import text as sql_text
+
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables ensured")
+
+        # Ensure columns added after initial table creation exist.
+        # Base.metadata.create_all only creates NEW tables; it does NOT
+        # ALTER existing ones to add new columns.
+        async with engine.begin() as conn:
+            await conn.execute(sql_text(
+                'ALTER TABLE metadata_entries '
+                'ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(36)'
+            ))
+            await conn.execute(sql_text(
+                'ALTER TABLE metadata_entries '
+                'ADD COLUMN IF NOT EXISTS uploaded_by_role VARCHAR(20)'
+            ))
+
+        logger.info("Database tables and columns ensured")
     except Exception:
         logger.exception("Failed to auto-create tables — chat history may be unavailable")
 
@@ -507,7 +523,11 @@ async def upload_file(
                             uploaded_by_role=user.get("role") if user else None,
                         )
                     except Exception:
-                        logger.debug("Failed to update metadata for recurring upload — non-critical")
+                        logger.warning(
+                            "Failed to update metadata for recurring upload to '%s'",
+                            match.table_name,
+                            exc_info=True,
+                        )
 
                     background_tasks.add_task(_run_discovery_background, f"recurring:{match.table_name}")
 
