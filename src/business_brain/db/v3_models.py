@@ -36,6 +36,8 @@ class DataSource(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     active = Column(Boolean, default=True)
     session_id = Column(String(64), nullable=True)
+    uploaded_by = Column(String(36), nullable=True)       # user_id of uploader
+    uploaded_by_role = Column(String(20), nullable=True)   # role at upload time
 
 
 class DataChangeLog(Base):
@@ -276,7 +278,8 @@ class ProcessStep(Base):
     outputs = Column(Text, nullable=True)       # comma-separated output names
     key_metric = Column(String(255), nullable=True)          # backward compat (singular)
     key_metrics = Column(JSON, nullable=True)                  # NEW: multiple metrics array
-    target_range = Column(String(255), nullable=True)  # e.g., "85-95%"
+    target_range = Column(String(255), nullable=True)  # e.g., "85-95%" (backward compat)
+    target_ranges = Column(JSON, nullable=True)        # {"SEC": "500-625 kWh/ton", "Yield %": "85-95%"}
     linked_table = Column(String(255), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
