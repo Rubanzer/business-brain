@@ -2807,8 +2807,9 @@
 
     <!-- Schema Panel -->
     <div id="schema" class="panel">
-      <div class="input-group">
+      <div class="input-group" style="display:flex;gap:0.5rem;">
         <button onclick="loadSchema()">Refresh Schema</button>
+        <button onclick="cleanupOrphanedTables()" style="background:var(--orange,#e67e22);color:#fff;">Cleanup Unused Tables</button>
       </div>
       <div id="schema-body"></div>
     </div>
@@ -5834,6 +5835,30 @@
         }
       } catch (e) {
         toast('Delete failed: ' + e.message);
+      }
+    }
+
+    async function cleanupOrphanedTables() {
+      if (!confirm('This will drop PostgreSQL tables that have no metadata entry (orphaned/unused) and remove stale metadata.\n\nContinue?')) return;
+      try {
+        const data = await apiFetch(`${API}/tables/cleanup`, { method: 'POST' });
+        if (data.error) {
+          toast('Cleanup failed: ' + data.error);
+        } else {
+          const dropped = (data.orphaned_tables_dropped || []).length;
+          const stale = (data.stale_metadata_removed || []).length;
+          if (dropped || stale) {
+            const parts = [];
+            if (dropped) parts.push(`${dropped} orphaned table${dropped > 1 ? 's' : ''} dropped`);
+            if (stale) parts.push(`${stale} stale metadata entr${stale > 1 ? 'ies' : 'y'} removed`);
+            toast('Cleanup complete: ' + parts.join(', '));
+          } else {
+            toast('No orphaned tables or stale metadata found — database is clean');
+          }
+          loadSchema();
+        }
+      } catch (e) {
+        toast('Cleanup failed: ' + e.message);
       }
     }
 
