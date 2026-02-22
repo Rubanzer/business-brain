@@ -380,8 +380,8 @@ ROLE_LEVELS = {"viewer": 0, "operator": 1, "manager": 2, "admin": 3, "owner": 4}
 
 
 async def _get_accessible_tables(
-    session: AsyncSession, user: dict | None
-) -> list[str] | None:
+    session: AsyncSession, user: Optional[dict] = None
+) -> Optional[list]:
     """Return table names the user can access based on role hierarchy.
 
     - owner/admin or no auth: None (all tables — backward compat)
@@ -457,7 +457,7 @@ def _create_jwt(user_id: str, email: str, role: str, plan: str) -> str:
     return f"{header}.{payload}.{signature}"
 
 
-def _decode_jwt(token: str) -> dict | None:
+def _decode_jwt(token: str) -> Optional[dict]:
     """Decode and verify a JWT token."""
     import base64
     import json as _json
@@ -488,7 +488,7 @@ def _decode_jwt(token: str) -> dict | None:
         return None
 
 
-async def get_current_user(authorization: str = Header(default="")) -> dict | None:
+async def get_current_user(authorization: str = Header(default="")) -> Optional[dict]:
     """Extract user from JWT token in Authorization header. Returns None if no auth."""
     if not authorization or not authorization.startswith("Bearer "):
         return None
@@ -524,7 +524,7 @@ def require_role(min_role: str):
 async def upload_csv(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
     """Upload a CSV or Excel file for quick ingestion into the database."""
     import gzip
@@ -581,7 +581,7 @@ async def upload_file(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
     """Smart file upload — parse, clean, load, and auto-generate metadata.
 
@@ -764,7 +764,7 @@ async def upload_context_file(
 @app.get("/metadata")
 async def list_metadata(
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> list[dict]:
     """List table metadata filtered by user's access level."""
     try:
@@ -790,7 +790,7 @@ async def list_metadata(
 async def get_table_metadata(
     table: str,
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
     """Get metadata for a single table (access-controlled)."""
     try:
@@ -1000,7 +1000,7 @@ async def get_table_data(
     sort_by: Optional[str] = None,
     sort_dir: str = "asc",
     session: AsyncSession = Depends(get_session),
-    user: dict | None = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
     """Paginated read-only access to any uploaded table (access-controlled)."""
     from sqlalchemy import text as sql_text
@@ -1181,7 +1181,7 @@ async def generate_chart(body: dict) -> dict:
 # Background discovery helper
 # ---------------------------------------------------------------------------
 
-async def _get_focus_tables(session: AsyncSession) -> list[str] | None:
+async def _get_focus_tables(session: AsyncSession) -> Optional[list]:
     """Return list of included table names if focus mode is active, else None.
 
     If no FocusScope rows exist for the current context, returns None (= all tables).
@@ -1236,7 +1236,7 @@ async def _enrich_column_descriptions(session: AsyncSession, table_name: str) ->
         logger.info("Enriched column descriptions for table '%s'", table_name)
 
 
-async def _run_discovery_background(trigger: str = "manual", table_filter: list[str] | None = None) -> None:
+async def _run_discovery_background(trigger: str = "manual", table_filter: Optional[list] = None) -> None:
     """Run discovery engine in a background task with its own session."""
     from business_brain.discovery.engine import run_discovery
 
@@ -2380,7 +2380,7 @@ async def export_feed(session: AsyncSession = Depends(get_session)):
 # ---------------------------------------------------------------------------
 
 # Track sync loop health
-_last_sync_check: str | None = None
+_last_sync_check: Optional[str] = None
 _sync_sources_count: int = 0
 
 
@@ -3425,7 +3425,7 @@ async def cohort_analysis(
 @app.post("/tables/{table_name}/validate")
 async def validate_table(
     table_name: str,
-    body: dict | None = None,
+    body: Optional[dict] = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Validate table data against auto-generated or custom rules.
@@ -3675,7 +3675,7 @@ class ScenarioRequest(BaseModel):
 class WhatIfRequest(BaseModel):
     scenarios: list[ScenarioRequest]
     formula: str
-    base_values: dict[str, float] | None = None
+    base_values: Optional[dict] = None
 
 
 @app.post("/scenarios/evaluate")

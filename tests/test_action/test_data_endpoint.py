@@ -3,6 +3,7 @@
 Covers paginated read access, inline cell editing, access control,
 input validation, sorting, and error handling.
 """
+from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
