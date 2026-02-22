@@ -608,6 +608,158 @@ async def upload_file(
         return {"error": str(exc)}
 
 
+# In-memory staging area for upload previews (TTL handled by cleanup)
+_upload_staging: dict[str, dict] = {}
+
+
+@app.post("/upload/preview")
+async def upload_preview(
+    file: UploadFile = File(...),
+    user: dict | None = Depends(get_current_user),
+) -> dict:
+    """Parse an uploaded file and return a preview without committing to DB.
+
+    Returns the parsed data, suggested table name, column info, and a
+    staging_id that the client can use to commit (with optional edits).
+    """
+    import gzip
+    import uuid
+    from io import BytesIO
+
+    import pandas as pd
+
+    try:
+        file_bytes = await file.read()
+        file_name = file.filename or "upload.csv"
+
+        # Decompress if client sent gzipped file
+        if file_name.endswith(".gz"):
+            file_bytes = gzip.decompress(file_bytes)
+            file_name = file_name[:-3]
+
+        ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "csv"
+        table_name = file_name.rsplit(".", 1)[0].replace("-", "_").replace(" ", "_").lower()
+
+        if ext in ("xlsx", "xls"):
+            df = pd.read_excel(BytesIO(file_bytes))
+        else:
+            df = pd.read_csv(BytesIO(file_bytes))
+
+        # Clean column names
+        df.columns = [str(c).strip().replace(" ", "_").lower() for c in df.columns]
+
+        # Generate preview (max 200 rows for the editor, full data stored in staging)
+        preview_rows = df.head(200).fillna("").to_dict(orient="records")
+        columns = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+
+        staging_id = str(uuid.uuid4())
+        _upload_staging[staging_id] = {
+            "file_bytes": file_bytes,
+            "file_name": file_name,
+            "ext": ext,
+            "table_name": table_name,
+            "uploaded_by": user.get("sub") if user else None,
+            "uploaded_by_role": user.get("role") if user else None,
+            "created_at": __import__("time").time(),
+        }
+
+        # Cleanup old staging entries (>30 min)
+        now = __import__("time").time()
+        expired = [k for k, v in _upload_staging.items() if now - v["created_at"] > 1800]
+        for k in expired:
+            del _upload_staging[k]
+
+        return {
+            "staging_id": staging_id,
+            "table_name": table_name,
+            "columns": columns,
+            "total_rows": len(df),
+            "preview_rows": preview_rows,
+            "file_type": ext.upper(),
+        }
+    except Exception as exc:
+        logger.exception("Upload preview failed")
+        return {"error": str(exc)}
+
+
+@app.post("/upload/commit")
+async def upload_commit(
+    body: dict,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    session: AsyncSession = Depends(get_session),
+    user: dict | None = Depends(get_current_user),
+) -> dict:
+    """Commit a staged upload to the database.
+
+    Accepts optional row edits from the client-side editor.
+    Body: {staging_id, table_name (optional override), edits: [{row, col, value}]}
+    """
+    import gzip
+    from io import BytesIO
+
+    import pandas as pd
+    from business_brain.ingestion.csv_loader import upsert_dataframe
+
+    staging_id = body.get("staging_id")
+    if not staging_id or staging_id not in _upload_staging:
+        return JSONResponse({"error": "Invalid or expired staging_id. Please re-upload the file."}, 400)
+
+    staged = _upload_staging.pop(staging_id)
+    file_bytes = staged["file_bytes"]
+    ext = staged["ext"]
+    table_name = body.get("table_name") or staged["table_name"]
+    uploader = staged.get("uploaded_by") or (user.get("sub") if user else None)
+    uploader_role = staged.get("uploaded_by_role") or (user.get("role") if user else None)
+
+    try:
+        if ext in ("xlsx", "xls"):
+            df = pd.read_excel(BytesIO(file_bytes))
+        else:
+            df = pd.read_csv(BytesIO(file_bytes))
+
+        # Clean column names (same as preview)
+        df.columns = [str(c).strip().replace(" ", "_").lower() for c in df.columns]
+
+        # Apply client-side edits
+        edits = body.get("edits", [])
+        for edit in edits:
+            row_idx = edit.get("row")
+            col_name = edit.get("col")
+            new_val = edit.get("value")
+            if row_idx is not None and col_name in df.columns and row_idx < len(df):
+                df.at[row_idx, col_name] = new_val
+
+        rows = await upsert_dataframe(df, session, table_name)
+
+        # Register metadata
+        columns_metadata = [{"name": col, "type": str(df[col].dtype)} for col in df.columns]
+        col_preview = ", ".join(str(c) for c in df.columns[:5])
+        if len(df.columns) > 5:
+            col_preview += f" (+{len(df.columns) - 5} more)"
+
+        await metadata_store.upsert(
+            session,
+            table_name=table_name,
+            description=f"Uploaded table '{table_name}' with {len(df.columns)} columns: {col_preview}",
+            columns_metadata=columns_metadata,
+            uploaded_by=uploader,
+            uploaded_by_role=uploader_role,
+        )
+
+        background_tasks.add_task(_run_discovery_background, f"upload:{table_name}")
+
+        return {
+            "status": "committed",
+            "table_name": table_name,
+            "rows": rows,
+            "columns": len(df.columns),
+            "edits_applied": len(edits),
+        }
+    except Exception as exc:
+        logger.exception("Upload commit failed")
+        return {"error": str(exc)}
+
+
 @app.post("/context/file")
 async def upload_context_file(
     file: UploadFile = File(...), session: AsyncSession = Depends(get_session)
@@ -3047,6 +3199,7 @@ async def get_profile_report(
     session: AsyncSession = Depends(get_session),
 ):
     """Generate a comprehensive profile report for a table."""
+    from sqlalchemy import select as sa_select
     from business_brain.discovery.profile_report import (
         compute_report_priority,
         format_report_text,
@@ -3235,6 +3388,7 @@ async def validate_table(
     Body (optional): {"rules": [{"name": "...", "column": "...", "rule_type": "not_null"}]}
     If no rules provided, auto-generates from column profile.
     """
+    from sqlalchemy import select as sa_select
     from business_brain.discovery.validation_rules import (
         auto_generate_rules,
         create_rule,
@@ -3301,6 +3455,7 @@ async def validate_table(
 @app.get("/recommendations")
 async def get_recommendations(session: AsyncSession = Depends(get_session)):
     """Get analysis recommendations based on current data state."""
+    from sqlalchemy import select as sa_select
     from business_brain.discovery.insight_recommender import (
         compute_coverage,
         recommend_analyses,
