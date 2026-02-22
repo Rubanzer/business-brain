@@ -77,9 +77,11 @@ def test_context(mock_ingest, client):
     assert data["chunks"] == 1
 
 
+@patch("business_brain.action.api.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
-def test_upload_csv(mock_upsert, client):
+def test_upload_csv(mock_upsert, mock_metadata_store, client):
     mock_upsert.return_value = 3
+    mock_metadata_store.upsert = AsyncMock(return_value=MagicMock())
 
     csv_content = b"id,name,value\n1,alpha,10\n2,beta,20\n3,gamma,30"
     resp = client.post("/csv", files={"file": ("sales.csv", csv_content, "text/csv")})
@@ -89,6 +91,7 @@ def test_upload_csv(mock_upsert, client):
     assert data["table"] == "sales"
     assert data["rows"] == 3
     mock_upsert.assert_called_once()
+    mock_metadata_store.upsert.assert_called_once()
 
 
 @patch("business_brain.cognitive.data_engineer_agent.DataEngineerAgent.invoke")

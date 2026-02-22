@@ -395,6 +395,25 @@ async def upload_csv(
             df = pd.read_csv(StringIO(contents.decode("utf-8")))
 
         rows = await upsert_dataframe(df, session, table_name)
+
+        # Register in metadata store for UI visibility + access control
+        columns_metadata = [
+            {"name": col, "type": str(df[col].dtype)} for col in df.columns
+        ]
+        col_preview = ", ".join(str(c) for c in df.columns[:5])
+        if len(df.columns) > 5:
+            col_preview += f" (+{len(df.columns) - 5} more)"
+        description = f"Uploaded table '{table_name}' with {len(df.columns)} columns: {col_preview}"
+
+        await metadata_store.upsert(
+            session,
+            table_name=table_name,
+            description=description,
+            columns_metadata=columns_metadata,
+            uploaded_by=user.get("sub") if user else None,
+            uploaded_by_role=user.get("role") if user else None,
+        )
+
         return {"status": "loaded", "table": table_name, "rows": rows}
     except Exception as exc:
         logger.exception("CSV upload failed")
@@ -473,6 +492,22 @@ async def upload_file(
                     rows = await upsert_dataframe(df, session, match.table_name)
                     match.match_count += 1
                     await session.commit()
+
+                    # Update metadata on recurring upload (preserves original uploader)
+                    try:
+                        columns_metadata = [
+                            {"name": col, "type": str(df[col].dtype)} for col in df.columns
+                        ]
+                        await metadata_store.upsert(
+                            session,
+                            table_name=match.table_name,
+                            description=f"Recurring upload to '{match.table_name}' ({rows} rows appended)",
+                            columns_metadata=columns_metadata,
+                            uploaded_by=user.get("sub") if user else None,
+                            uploaded_by_role=user.get("role") if user else None,
+                        )
+                    except Exception:
+                        logger.debug("Failed to update metadata for recurring upload — non-critical")
 
                     background_tasks.add_task(_run_discovery_background, f"recurring:{match.table_name}")
 
@@ -730,6 +765,66 @@ async def drop_table_cascade(table_name: str, session: AsyncSession = Depends(ge
     return {"status": "deleted", "table": table_name, "removed": removed}
 
 
+@app.post("/tables/cleanup")
+async def cleanup_orphaned_tables(session: AsyncSession = Depends(get_session)) -> dict:
+    """Drop PostgreSQL tables that have no metadata entry (orphaned/unnecessary tables).
+
+    Also cleans up metadata entries for tables that no longer exist in the DB.
+    Skips known system tables (ORM-managed models, alembic, pg_*).
+    """
+    from sqlalchemy import text as sql_text
+
+    from business_brain.db.models import Base as ModelsBase
+    from business_brain.db.discovery_models import Base as DiscoveryBase
+    from business_brain.db.v3_models import Base as V3Base
+
+    # Collect all ORM-managed table names (system tables we must not drop)
+    system_tables: set[str] = set()
+    for base in (ModelsBase, DiscoveryBase, V3Base):
+        for table_obj in base.metadata.tables.values():
+            system_tables.add(table_obj.name)
+    system_tables.add("alembic_version")
+
+    try:
+        # 1. Get actual PostgreSQL tables in public schema
+        result = await session.execute(
+            sql_text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+        )
+        actual_tables = {row[0] for row in result.fetchall()}
+
+        # 2. Get all metadata entries
+        all_metadata = await metadata_store.get_all(session)
+        metadata_tables = {e.table_name for e in all_metadata}
+
+        # 3. Find orphaned data tables (exist in DB but no metadata, not system)
+        orphaned = actual_tables - metadata_tables - system_tables
+        dropped: list[str] = []
+        for tbl in sorted(orphaned):
+            try:
+                await session.execute(sql_text(f'DROP TABLE IF EXISTS "{tbl}" CASCADE'))
+                dropped.append(tbl)
+                logger.info("Dropped orphaned table: %s", tbl)
+            except Exception:
+                logger.warning("Failed to drop orphaned table: %s", tbl)
+
+        # 4. Clean up stale metadata (metadata exists but table doesn't)
+        stale_removed = await metadata_store.validate_tables(session)
+
+        if dropped or stale_removed:
+            await session.commit()
+
+        return {
+            "status": "cleanup_complete",
+            "orphaned_tables_dropped": dropped,
+            "stale_metadata_removed": stale_removed,
+            "system_tables_preserved": len(system_tables & actual_tables),
+        }
+    except Exception as exc:
+        logger.exception("Table cleanup failed")
+        await session.rollback()
+        return {"error": str(exc)}
+
+
 @app.get("/data/{table}")
 async def get_table_data(
     table: str,
@@ -806,18 +901,61 @@ async def update_cell(
 
     safe_col = re.sub(r"[^a-zA-Z0-9_]", "", column)
 
-    # Get the primary key column (first column) from metadata
-    entry = await metadata_store.get_by_table(session, safe_table)
-    if entry and entry.columns_metadata:
-        pk_col = entry.columns_metadata[0]["name"]
-    else:
-        pk_col = "id"  # fallback
+    # Detect the actual primary key column from the database
+    # Tables with non-unique first columns use a synthetic _row_id SERIAL PRIMARY KEY
+    try:
+        pk_result = await session.execute(sql_text(
+            "SELECT a.attname FROM pg_index i "
+            "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
+            "WHERE i.indrelid = :tbl::regclass AND i.indisprimary"
+        ), {"tbl": safe_table})
+        pk_row = pk_result.fetchone()
+        pk_col = pk_row[0] if pk_row else None
+    except Exception:
+        pk_col = None
+
+    if not pk_col:
+        # Fallback: check metadata, then default to "id"
+        entry = await metadata_store.get_by_table(session, safe_table)
+        if entry and entry.columns_metadata:
+            pk_col = entry.columns_metadata[0]["name"]
+        else:
+            pk_col = "id"
 
     safe_pk = re.sub(r"[^a-zA-Z0-9_]", "", pk_col)
 
     try:
+        # Fetch old value for change log
+        old_value = None
+        try:
+            old_result = await session.execute(
+                sql_text(f'SELECT "{safe_col}" FROM "{safe_table}" WHERE "{safe_pk}" = :pk'),
+                {"pk": row_id},
+            )
+            old_row = old_result.fetchone()
+            if old_row:
+                old_value = str(old_row[0]) if old_row[0] is not None else None
+        except Exception:
+            pass  # non-critical — proceed with update even if old value fetch fails
+
         query = f'UPDATE "{safe_table}" SET "{safe_col}" = :val WHERE "{safe_pk}" = :pk'
         await session.execute(sql_text(query), {"val": value, "pk": row_id})
+
+        # Log the change for audit trail
+        try:
+            from business_brain.db.v3_models import DataChangeLog
+            change_entry = DataChangeLog(
+                change_type="row_modified",
+                table_name=safe_table,
+                row_identifier=str(row_id),
+                column_name=safe_col,
+                old_value=old_value,
+                new_value=str(value) if value is not None else None,
+            )
+            session.add(change_entry)
+        except Exception:
+            logger.debug("Failed to log cell change — non-critical")
+
         await session.commit()
         return {"status": "updated", "table": safe_table, "row_id": row_id, "column": safe_col}
     except Exception as exc:
