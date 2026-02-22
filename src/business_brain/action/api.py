@@ -1237,6 +1237,7 @@ async def _get_focus_tables(session: AsyncSession) -> list[str] | None:
         return tables if tables else None  # None means focus mode is off
     except Exception:
         logger.debug("Focus scope query failed, defaulting to all tables")
+        await session.rollback()
         return None
 
 
@@ -4092,6 +4093,77 @@ async def variance_analysis(
         "waterfall": waterfall,
         "root_causes": causes,
     }
+
+
+# ---------------------------------------------------------------------------
+# Schema Re-describe — generate column descriptions for existing tables
+# ---------------------------------------------------------------------------
+
+
+@app.post("/schema/redescribe")
+async def redescribe_schema(
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Re-generate column descriptions for all tables using data dictionary heuristics.
+
+    This enriches metadata with human-readable column descriptions so the SQL
+    agent can distinguish between similarly-typed columns (e.g. quantity vs yield).
+    No LLM calls — uses fast pattern-matching from the data dictionary module.
+    """
+    from sqlalchemy import text as sql_text
+
+    from business_brain.discovery.data_dictionary import (
+        auto_describe_column,
+        infer_column_type,
+    )
+
+    try:
+        entries = await metadata_store.get_all(session)
+        updated = 0
+        for entry in entries:
+            try:
+                # Sample rows to infer column types
+                result = await session.execute(
+                    sql_text(f'SELECT * FROM "{entry.table_name}" LIMIT 100')
+                )
+                sample_rows = [dict(r._mapping) for r in result.fetchall()]
+                if not sample_rows:
+                    continue
+
+                columns_meta = []
+                for col_name in sample_rows[0].keys():
+                    col_values = [row.get(col_name) for row in sample_rows]
+                    col_type = infer_column_type(col_values)
+                    non_null = [v for v in col_values if v is not None]
+                    desc = auto_describe_column(col_name, col_type, {
+                        "unique_pct": len(set(non_null)) / max(len(non_null), 1) * 100,
+                        "null_pct": (len(col_values) - len(non_null)) / max(len(col_values), 1) * 100,
+                    })
+                    # Preserve original type from existing metadata
+                    orig_type = col_type
+                    if entry.columns_metadata:
+                        for cm in entry.columns_metadata:
+                            if cm.get("name") == col_name:
+                                orig_type = cm.get("type", col_type)
+                                break
+                    columns_meta.append({
+                        "name": col_name,
+                        "type": orig_type,
+                        "description": desc,
+                    })
+
+                entry.columns_metadata = columns_meta
+                updated += 1
+            except Exception:
+                logger.debug("Failed to redescribe table %s", entry.table_name)
+                await session.rollback()
+
+        await session.commit()
+        return {"status": "completed", "tables_updated": updated, "total_tables": len(entries)}
+    except Exception:
+        logger.exception("Schema redescribe failed")
+        await session.rollback()
+        return JSONResponse({"error": "Schema redescribe failed"}, 500)
 
 
 # ---------------------------------------------------------------------------
