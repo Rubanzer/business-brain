@@ -613,12 +613,14 @@ class DataEngineerAgent:
         table_description = gemini_meta.get("table_description", f"Uploaded: {table_name}")
         business_context = gemini_meta.get("business_context", "")
 
-        # Store metadata
+        # Store metadata (with uploader tracking if provided)
         await metadata_store.upsert(
             db_session,
             table_name=table_name,
             description=table_description,
             columns_metadata=columns_metadata,
+            uploaded_by=state.get("uploaded_by"),
+            uploaded_by_role=state.get("uploaded_by_role"),
         )
 
         # Store business context

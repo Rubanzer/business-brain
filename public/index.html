@@ -2536,8 +2536,13 @@
           <input type="text" id="ps-metric-input" placeholder="Type a metric and press Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();addMetricTag()}" />
         </div>
         <input type="hidden" id="ps-metric" value="" />
+        <div id="ps-ranges-container">
+          <label>Target Ranges <span style="font-size:0.65rem;color:var(--muted);">(per metric)</span></label>
+          <div id="ps-ranges-list">
+            <input type="text" id="ps-range" placeholder="e.g., 500-625 kWh/ton" />
+          </div>
+        </div>
         <div class="form-row">
-          <div><label>Target Range</label><input type="text" id="ps-range" placeholder="e.g., 500-625 kWh/ton" /></div>
           <div><label>Step Order</label><input type="number" id="ps-order" value="1" min="1" /></div>
         </div>
         <input type="hidden" id="ps-edit-id" value="" />
@@ -3079,6 +3084,14 @@
         throw new Error('Session expired. Please log in again.');
       }
 
+      if (res.status === 403) {
+        if (ct.includes('application/json')) {
+          const d = await res.json();
+          throw new Error(d.detail || 'Insufficient permissions');
+        }
+        throw new Error('Access denied. You do not have permission for this action.');
+      }
+
       if (!res.ok) {
         if (ct.includes('application/json')) {
           const d = await res.json();
@@ -3228,6 +3241,7 @@
         'alerts': ['alerts'],
         'whatif': ['whatif'],
         'sources': ['data'],
+        'users': ['users'],
       };
 
       document.querySelectorAll('.tab, .tab-menu-item').forEach(tab => {
@@ -3284,6 +3298,10 @@
 
     async function loadUsersList() {
       const body = document.getElementById('users-list-body');
+      if (!currentUser || !['admin','owner'].includes(currentUser.role)) {
+        body.innerHTML = '<div class="feed-empty">Admin or owner access required to view team members.</div>';
+        return;
+      }
       body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading team members...</div>';
       try {
         const users = await apiFetch(API + '/users');
@@ -3379,6 +3397,10 @@
 
     async function loadPendingInvites() {
       const body = document.getElementById('pending-invites-body');
+      if (!currentUser || !['admin','owner'].includes(currentUser.role)) {
+        body.innerHTML = '<div class="feed-empty">Admin or owner access required to view invites.</div>';
+        return;
+      }
       body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading pending invites...</div>';
       try {
         const invites = await apiFetch(API + '/auth/invites');
@@ -3805,6 +3827,7 @@
     // Setup Dashboard — Metric Tags Input
     // -----------------------------------------------------------------------
     let currentMetricTags = [];
+    let currentMetricRanges = {};
 
     function addMetricTag(value) {
       const input = document.getElementById('ps-metric-input');
@@ -3836,6 +3859,27 @@
       // Sync hidden field
       const hidden = document.getElementById('ps-metric');
       if (hidden) hidden.value = currentMetricTags[0] || '';
+      // Re-render per-metric range inputs
+      renderMetricRanges();
+    }
+
+    function renderMetricRanges() {
+      const container = document.getElementById('ps-ranges-list');
+      if (!container) return;
+      if (currentMetricTags.length === 0) {
+        container.innerHTML = '<input type="text" id="ps-range" placeholder="e.g., 500-625 kWh/ton" />';
+        return;
+      }
+      container.innerHTML = currentMetricTags.map(tag => {
+        const safeTag = tag.replace(/'/g, "\\'");
+        return `<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.3rem;">
+          <span style="min-width:120px;font-size:0.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(tag)}">${esc(tag)}:</span>
+          <input type="text" class="metric-range-input" data-metric="${esc(tag)}"
+            placeholder="e.g., 85-95%" value="${esc(currentMetricRanges[tag] || '')}"
+            oninput="currentMetricRanges['${safeTag}']=this.value"
+            style="flex:1;" />
+        </div>`;
+      }).join('');
     }
 
     // -----------------------------------------------------------------------
@@ -3852,6 +3896,7 @@
       document.getElementById('ps-order').value = '1';
       document.getElementById('ps-edit-id').value = editId || '';
       currentMetricTags = [];
+      currentMetricRanges = {};
       renderMetricTags();
 
       if (editId) {
@@ -3877,7 +3922,6 @@
         document.getElementById('ps-name').value = step.process_name || '';
         document.getElementById('ps-inputs').value = step.inputs || '';
         document.getElementById('ps-outputs').value = step.outputs || '';
-        document.getElementById('ps-range').value = step.target_range || '';
         document.getElementById('ps-table').value = step.linked_table || '';
         document.getElementById('ps-order').value = step.step_order || 1;
         // Multi-metric: use key_metrics array if available, fallback to key_metric
@@ -3887,6 +3931,12 @@
         } else if (step.key_metric) {
           currentMetricTags = [step.key_metric];
         }
+        // Per-metric ranges
+        currentMetricRanges = step.target_ranges || {};
+        // Backward compat: if no target_ranges but has single target_range, map to first metric
+        if (!Object.keys(currentMetricRanges).length && step.target_range && currentMetricTags.length) {
+          currentMetricRanges = { [currentMetricTags[0]]: step.target_range };
+        }
         renderMetricTags();
       } catch (e) { /* ignore */ }
     }
@@ -3895,13 +3945,22 @@
       const name = document.getElementById('ps-name').value.trim();
       if (!name) return toast('Process name is required');
 
+      // Build target_ranges from per-metric range inputs, or fallback to single range
+      const singleRange = document.getElementById('ps-range')?.value?.trim() || '';
+      const targetRanges = Object.keys(currentMetricRanges).length ? { ...currentMetricRanges } : {};
+      // If single range input was used (no per-metric inputs) and we have metrics, map it
+      if (singleRange && !Object.keys(targetRanges).length && currentMetricTags.length) {
+        targetRanges[currentMetricTags[0]] = singleRange;
+      }
+
       const payload = {
         process_name: name,
         inputs: document.getElementById('ps-inputs').value.trim(),
         outputs: document.getElementById('ps-outputs').value.trim(),
         key_metric: currentMetricTags[0] || '',
         key_metrics: currentMetricTags.length ? currentMetricTags : [],
-        target_range: document.getElementById('ps-range').value.trim(),
+        target_range: singleRange || (currentMetricTags.length ? (currentMetricRanges[currentMetricTags[0]] || '') : ''),
+        target_ranges: targetRanges,
         linked_table: document.getElementById('ps-table').value.trim(),
         step_order: parseInt(document.getElementById('ps-order').value) || 1,
       };
@@ -4175,7 +4234,15 @@
             <td>${s.inputs || '-'}</td>
             <td>${s.outputs || '-'}</td>
             <td>${metricChips}</td>
-            <td>${s.target_range || '-'}</td>
+            <td>${(() => {
+              const ranges = s.target_ranges || {};
+              if (Object.keys(ranges).length > 0) {
+                return Object.entries(ranges).map(([m, r]) =>
+                  `<div style="font-size:0.68rem;"><span style="color:var(--muted);">${m}:</span> ${r}</div>`
+                ).join('');
+              }
+              return s.target_range || '-';
+            })()}</td>
             <td style="white-space:nowrap;">
               <button class="btn-sm" onclick="editProcessStep(${s.id})" style="font-size:0.6rem;">Edit</button>
               <button class="btn-sm" onclick="deleteProcessStep(${s.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button>
@@ -5476,7 +5543,10 @@
           </div>`;
         }).join('');
       } catch (e) {
-        body.innerHTML = `<p style="color:var(--red)">${e.message}</p>`;
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red)">
+          Failed to load tables: ${e.message}<br>
+          <small style="color:var(--muted)">Try refreshing the page or uploading data first.</small>
+        </div>`;
       }
     }
 

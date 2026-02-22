@@ -1,14 +1,20 @@
 """FastAPI application with external trigger endpoints."""
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
+import secrets
+import time
 import uuid
+from datetime import datetime, timedelta
 from io import StringIO
 from typing import Optional
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +41,16 @@ async def _ensure_tables():
         logger.info("Database tables ensured")
     except Exception:
         logger.exception("Failed to auto-create tables — chat history may be unavailable")
+
+
+@app.exception_handler(Exception)
+async def _global_error_handler(request: Request, exc: Exception):
+    """Catch-all: ensure every unhandled error returns JSON, not raw HTML."""
+    logger.exception("Unhandled error on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. Please try again or check server logs."},
+    )
 
 
 @app.on_event("startup")
@@ -194,8 +210,166 @@ async def submit_context(req: ContextRequest, session: AsyncSession = Depends(ge
     return {"status": "created", "ids": ids, "chunks": len(ids), "source": req.source}
 
 
+# ---------------------------------------------------------------------------
+# Access Control — JWT Authentication & Role Helpers (moved before endpoints)
+# ---------------------------------------------------------------------------
+
+# Simple JWT implementation (no dependency on python-jose)
+_JWT_SECRET = secrets.token_hex(32)
+_JWT_ALGORITHM = "HS256"
+_JWT_EXPIRE_DAYS = 7
+
+# Role hierarchy (higher index = more permissions)
+ROLE_LEVELS = {"viewer": 0, "operator": 1, "manager": 2, "admin": 3, "owner": 4}
+
+
+async def _get_accessible_tables(
+    session: AsyncSession, user: dict | None
+) -> list[str] | None:
+    """Return table names the user can access based on role hierarchy.
+
+    - owner/admin or no auth: None (all tables — backward compat)
+    - manager: own uploads + uploads by operator/viewer + legacy (no uploader)
+    - operator: own uploads + uploads by viewer + legacy
+    - viewer: own uploads + legacy (no uploader recorded)
+    """
+    if user is None:
+        return None  # no auth → all tables (backward compat)
+
+    role = user.get("role", "viewer")
+    if role in ("owner", "admin"):
+        return None  # full access
+
+    user_id = user.get("sub")
+    user_level = ROLE_LEVELS.get(role, 0)
+
+    try:
+        entries = await metadata_store.get_all(session)
+    except Exception:
+        logger.exception("Failed to fetch metadata for access control")
+        return None  # fail-open
+
+    accessible = []
+    for entry in entries:
+        uploaded_by = getattr(entry, "uploaded_by", None)
+        uploaded_role = getattr(entry, "uploaded_by_role", None)
+
+        if uploaded_by is None:
+            accessible.append(entry.table_name)  # legacy data, allow
+        elif uploaded_by == user_id:
+            accessible.append(entry.table_name)  # own upload
+        elif uploaded_role is not None:
+            uploader_level = ROLE_LEVELS.get(uploaded_role, 0)
+            if uploader_level <= user_level:
+                accessible.append(entry.table_name)  # equal or lower role
+    return accessible
+
+
+def _hash_password(password: str) -> str:
+    """Hash password using SHA-256 with a salt."""
+    salt = secrets.token_hex(16)
+    hashed = hashlib.sha256((salt + password).encode()).hexdigest()
+    return f"{salt}:{hashed}"
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    """Verify password against hash."""
+    try:
+        salt, hashed = password_hash.split(":")
+        return hashlib.sha256((salt + password).encode()).hexdigest() == hashed
+    except Exception:
+        return False
+
+
+def _create_jwt(user_id: str, email: str, role: str, plan: str) -> str:
+    """Create a simple JWT token."""
+    import base64
+    import json as _json
+
+    header = base64.urlsafe_b64encode(_json.dumps({"alg": "HS256", "typ": "JWT"}).encode()).decode().rstrip("=")
+    now = int(time.time())
+    payload_data = {
+        "sub": user_id,
+        "email": email,
+        "role": role,
+        "plan": plan,
+        "iat": now,
+        "exp": now + (_JWT_EXPIRE_DAYS * 86400),
+    }
+    payload = base64.urlsafe_b64encode(_json.dumps(payload_data).encode()).decode().rstrip("=")
+    signature = hmac.new(_JWT_SECRET.encode(), f"{header}.{payload}".encode(), hashlib.sha256).hexdigest()
+    return f"{header}.{payload}.{signature}"
+
+
+def _decode_jwt(token: str) -> dict | None:
+    """Decode and verify a JWT token."""
+    import base64
+    import json as _json
+
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        header, payload, signature = parts
+
+        # Verify signature
+        expected_sig = hmac.new(
+            _JWT_SECRET.encode(), f"{header}.{payload}".encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected_sig):
+            return None
+
+        # Decode payload (add padding)
+        payload += "=" * (4 - len(payload) % 4)
+        data = _json.loads(base64.urlsafe_b64decode(payload))
+
+        # Check expiration
+        if data.get("exp", 0) < int(time.time()):
+            return None
+
+        return data
+    except Exception:
+        return None
+
+
+async def get_current_user(authorization: str = Header(default="")) -> dict | None:
+    """Extract user from JWT token in Authorization header. Returns None if no auth."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization[7:]
+    user_data = _decode_jwt(token)
+    return user_data
+
+
+def require_role(min_role: str):
+    """Dependency that checks the user has at least the specified role level."""
+    min_level = ROLE_LEVELS.get(min_role, 0)
+
+    async def check(authorization: str = Header(default="")) -> dict:
+        user = await get_current_user(authorization)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        user_level = ROLE_LEVELS.get(user.get("role", "viewer"), 0)
+        if user_level < min_level:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Requires '{min_role}' role or higher. You have '{user.get('role')}'.",
+            )
+        return user
+
+    return check
+
+
+# ---------------------------------------------------------------------------
+# File Upload Endpoints
+# ---------------------------------------------------------------------------
+
 @app.post("/csv")
-async def upload_csv(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)) -> dict:
+async def upload_csv(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    user: dict | None = Depends(get_current_user),
+) -> dict:
     """Upload a CSV or Excel file for quick ingestion into the database."""
     import gzip
     from io import BytesIO
@@ -232,6 +406,7 @@ async def upload_file(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     session: AsyncSession = Depends(get_session),
+    user: dict | None = Depends(get_current_user),
 ) -> dict:
     """Smart file upload — parse, clean, load, and auto-generate metadata.
 
@@ -319,6 +494,8 @@ async def upload_file(
             "file_bytes": file_bytes,
             "file_name": file_name,
             "db_session": session,
+            "uploaded_by": user.get("sub") if user else None,
+            "uploaded_by_role": user.get("role") if user else None,
         })
 
         # Register fingerprint for future recurring detection
@@ -383,10 +560,17 @@ async def upload_context_file(
 
 
 @app.get("/metadata")
-async def list_metadata(session: AsyncSession = Depends(get_session)) -> list[dict]:
-    """List all table metadata."""
+async def list_metadata(
+    session: AsyncSession = Depends(get_session),
+    user: dict | None = Depends(get_current_user),
+) -> list[dict]:
+    """List table metadata filtered by user's access level."""
     try:
-        entries = await metadata_store.get_all(session)
+        accessible = await _get_accessible_tables(session, user)
+        if accessible is None:
+            entries = await metadata_store.get_all(session)
+        else:
+            entries = await metadata_store.get_filtered(session, accessible)
         return [
             {
                 "table_name": e.table_name,
@@ -401,9 +585,18 @@ async def list_metadata(session: AsyncSession = Depends(get_session)) -> list[di
 
 
 @app.get("/metadata/{table}")
-async def get_table_metadata(table: str, session: AsyncSession = Depends(get_session)) -> dict:
-    """Get metadata for a single table."""
+async def get_table_metadata(
+    table: str,
+    session: AsyncSession = Depends(get_session),
+    user: dict | None = Depends(get_current_user),
+) -> dict:
+    """Get metadata for a single table (access-controlled)."""
     try:
+        # Check access
+        accessible = await _get_accessible_tables(session, user)
+        if accessible is not None and table not in accessible:
+            return {"error": "Table not found"}
+
         entry = await metadata_store.get_by_table(session, table)
         if entry is None:
             return {"error": "Table not found"}
@@ -545,14 +738,20 @@ async def get_table_data(
     sort_by: Optional[str] = None,
     sort_dir: str = "asc",
     session: AsyncSession = Depends(get_session),
+    user: dict | None = Depends(get_current_user),
 ) -> dict:
-    """Paginated read-only access to any uploaded table."""
+    """Paginated read-only access to any uploaded table (access-controlled)."""
     from sqlalchemy import text as sql_text
     import re
 
     safe_table = re.sub(r"[^a-zA-Z0-9_]", "", table)
     if not safe_table:
         return {"error": "Invalid table name"}
+
+    # Access control check
+    accessible = await _get_accessible_tables(session, user)
+    if accessible is not None and safe_table not in accessible:
+        return {"error": f"Access denied to table '{safe_table}'"}
 
     try:
         # Get total count
@@ -683,6 +882,7 @@ async def _get_focus_tables(session: AsyncSession) -> list[str] | None:
     If no FocusScope rows exist for the current context, returns None (= all tables).
     """
     try:
+        from sqlalchemy import select
         from business_brain.db.v3_models import FocusScope
 
         result = await session.execute(
@@ -9053,8 +9253,9 @@ class ProcessStepRequest(BaseModel):
     inputs: str = ""
     outputs: str = ""
     key_metric: str = ""
-    key_metrics: list[str] = []    # NEW: multiple metrics
+    key_metrics: list[str] = []    # multiple metrics
     target_range: str = ""
+    target_ranges: dict[str, str] = {}  # per-metric ranges: {"SEC": "500-625 kWh/ton"}
     linked_table: str = ""
 
 
@@ -9078,6 +9279,7 @@ async def list_process_steps(session: AsyncSession = Depends(get_session)) -> li
             "key_metric": s.key_metric,
             "key_metrics": s.key_metrics or ([s.key_metric] if s.key_metric else []),
             "target_range": s.target_range,
+            "target_ranges": s.target_ranges or {},
             "linked_table": s.linked_table,
         }
         for s in steps
@@ -9096,6 +9298,11 @@ async def create_process_step(
     key_metrics = req.key_metrics if req.key_metrics else ([req.key_metric] if req.key_metric else [])
     key_metric_single = key_metrics[0] if key_metrics else req.key_metric
 
+    # Per-metric ranges with backward compat
+    target_ranges = req.target_ranges or {}
+    if req.target_range and not target_ranges and key_metrics:
+        target_ranges = {key_metrics[0]: req.target_range}
+
     step = ProcessStep(
         step_order=req.step_order,
         process_name=req.process_name,
@@ -9103,7 +9310,8 @@ async def create_process_step(
         outputs=req.outputs,
         key_metric=key_metric_single,
         key_metrics=key_metrics,
-        target_range=req.target_range,
+        target_range=req.target_range or (target_ranges.get(key_metrics[0], "") if key_metrics else ""),
+        target_ranges=target_ranges,
         linked_table=req.linked_table,
     )
     session.add(step)
@@ -9136,13 +9344,19 @@ async def update_process_step(
     key_metrics = req.key_metrics if req.key_metrics else ([req.key_metric] if req.key_metric else [])
     key_metric_single = key_metrics[0] if key_metrics else req.key_metric
 
+    # Per-metric ranges with backward compat
+    target_ranges = req.target_ranges or {}
+    if req.target_range and not target_ranges and key_metrics:
+        target_ranges = {key_metrics[0]: req.target_range}
+
     step.step_order = req.step_order
     step.process_name = req.process_name
     step.inputs = req.inputs
     step.outputs = req.outputs
     step.key_metric = key_metric_single
     step.key_metrics = key_metrics
-    step.target_range = req.target_range
+    step.target_range = req.target_range or (target_ranges.get(key_metrics[0], "") if key_metrics else "")
+    step.target_ranges = target_ranges
     step.linked_table = req.linked_table
     await session.commit()
 
@@ -9304,6 +9518,7 @@ async def auto_link_metrics(session: AsyncSession = Depends(get_session)) -> dic
     Uses fuzzy matching of metric names against column names across all tables.
     High-confidence matches (>=0.8) are auto-linked; lower ones returned as suggestions.
     """
+    from sqlalchemy import select
     from business_brain.db.v3_models import MetricThreshold
 
     # Get unlinked metrics
@@ -9392,6 +9607,7 @@ async def auto_link_metrics(session: AsyncSession = Depends(get_session)) -> dic
 @app.post("/setup/suggest-metrics")
 async def suggest_metrics(session: AsyncSession = Depends(get_session)) -> dict:
     """Analyze uploaded data and suggest trackable metrics from numeric columns."""
+    from sqlalchemy import select
     from business_brain.db.v3_models import MetricThreshold
 
     all_entries = await metadata_store.get_all(session)
@@ -9490,6 +9706,7 @@ async def link_metrics_to_step(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Link one or more metrics to a process step."""
+    from sqlalchemy import select
     from business_brain.db.v3_models import ProcessStep, ProcessMetricLink, MetricThreshold
 
     # Validate step exists
@@ -9538,6 +9755,7 @@ async def get_step_metrics(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     """Get all metrics linked to a process step."""
+    from sqlalchemy import select
     from business_brain.db.v3_models import ProcessMetricLink, MetricThreshold
 
     result = await session.execute(
@@ -9885,6 +10103,7 @@ async def get_plan_limits(
 @app.get("/focus")
 async def get_focus(session: AsyncSession = Depends(get_session)) -> dict:
     """Get current focus scope (which tables are included/excluded)."""
+    from sqlalchemy import select
     from business_brain.db.v3_models import FocusScope
 
     try:
@@ -9911,6 +10130,7 @@ async def get_focus(session: AsyncSession = Depends(get_session)) -> dict:
 @app.put("/focus")
 async def update_focus(body: dict, session: AsyncSession = Depends(get_session)) -> dict:
     """Update focus scope — set which tables are included/excluded."""
+    from sqlalchemy import select
     from business_brain.db.v3_models import FocusScope
 
     tables = body.get("tables", [])
@@ -9956,123 +10176,6 @@ async def clear_focus(session: AsyncSession = Depends(get_session)) -> dict:
     result = await session.execute(sa_delete(FocusScope))
     await session.commit()
     return {"status": "cleared", "rows_removed": result.rowcount}
-
-
-# ---------------------------------------------------------------------------
-# Access Control — JWT Authentication & User Management
-# ---------------------------------------------------------------------------
-
-import hashlib
-import hmac
-import time
-import secrets
-from datetime import datetime, timedelta
-
-from fastapi import Header, HTTPException, status
-from fastapi.responses import JSONResponse
-
-# Simple JWT implementation (no dependency on python-jose)
-_JWT_SECRET = secrets.token_hex(32)
-_JWT_ALGORITHM = "HS256"
-_JWT_EXPIRE_DAYS = 7
-
-# Role hierarchy (higher index = more permissions)
-ROLE_LEVELS = {"viewer": 0, "operator": 1, "manager": 2, "admin": 3, "owner": 4}
-
-
-def _hash_password(password: str) -> str:
-    """Hash password using SHA-256 with a salt."""
-    salt = secrets.token_hex(16)
-    hashed = hashlib.sha256((salt + password).encode()).hexdigest()
-    return f"{salt}:{hashed}"
-
-
-def _verify_password(password: str, password_hash: str) -> bool:
-    """Verify password against hash."""
-    try:
-        salt, hashed = password_hash.split(":")
-        return hashlib.sha256((salt + password).encode()).hexdigest() == hashed
-    except Exception:
-        return False
-
-
-def _create_jwt(user_id: str, email: str, role: str, plan: str) -> str:
-    """Create a simple JWT token."""
-    import base64
-    import json as _json
-
-    header = base64.urlsafe_b64encode(_json.dumps({"alg": "HS256", "typ": "JWT"}).encode()).decode().rstrip("=")
-    now = int(time.time())
-    payload_data = {
-        "sub": user_id,
-        "email": email,
-        "role": role,
-        "plan": plan,
-        "iat": now,
-        "exp": now + (_JWT_EXPIRE_DAYS * 86400),
-    }
-    payload = base64.urlsafe_b64encode(_json.dumps(payload_data).encode()).decode().rstrip("=")
-    signature = hmac.new(_JWT_SECRET.encode(), f"{header}.{payload}".encode(), hashlib.sha256).hexdigest()
-    return f"{header}.{payload}.{signature}"
-
-
-def _decode_jwt(token: str) -> dict | None:
-    """Decode and verify a JWT token."""
-    import base64
-    import json as _json
-
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return None
-        header, payload, signature = parts
-
-        # Verify signature
-        expected_sig = hmac.new(
-            _JWT_SECRET.encode(), f"{header}.{payload}".encode(), hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(signature, expected_sig):
-            return None
-
-        # Decode payload (add padding)
-        payload += "=" * (4 - len(payload) % 4)
-        data = _json.loads(base64.urlsafe_b64decode(payload))
-
-        # Check expiration
-        if data.get("exp", 0) < int(time.time()):
-            return None
-
-        return data
-    except Exception:
-        return None
-
-
-async def get_current_user(authorization: str = Header(default="")) -> dict | None:
-    """Extract user from JWT token in Authorization header. Returns None if no auth."""
-    if not authorization or not authorization.startswith("Bearer "):
-        return None
-    token = authorization[7:]
-    user_data = _decode_jwt(token)
-    return user_data
-
-
-def require_role(min_role: str):
-    """Dependency that checks the user has at least the specified role level."""
-    min_level = ROLE_LEVELS.get(min_role, 0)
-
-    async def check(authorization: str = Header(default="")) -> dict:
-        user = await get_current_user(authorization)
-        if user is None:
-            raise HTTPException(status_code=401, detail="Authentication required")
-        user_level = ROLE_LEVELS.get(user.get("role", "viewer"), 0)
-        if user_level < min_level:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Requires '{min_role}' role or higher. You have '{user.get('role')}'.",
-            )
-        return user
-
-    return check
 
 
 class RegisterRequest(BaseModel):

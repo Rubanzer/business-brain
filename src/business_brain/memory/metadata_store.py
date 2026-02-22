@@ -62,17 +62,22 @@ async def upsert(
     table_name: str,
     description: str,
     columns_metadata: list[dict] | None = None,
+    uploaded_by: str | None = None,
+    uploaded_by_role: str | None = None,
 ) -> MetadataEntry:
     try:
         existing = await get_by_table(session, table_name)
         if existing:
             existing.description = description
             existing.columns_metadata = columns_metadata
+            # Don't overwrite original uploader on update
         else:
             existing = MetadataEntry(
                 table_name=table_name,
                 description=description,
                 columns_metadata=columns_metadata,
+                uploaded_by=uploaded_by,
+                uploaded_by_role=uploaded_by_role,
             )
             session.add(existing)
         await session.commit()

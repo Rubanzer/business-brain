@@ -19,6 +19,8 @@ class MetadataEntry(Base):
     table_name = Column(String(255), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     columns_metadata = Column(JSON, nullable=True)  # [{name, type, description}, ...]
+    uploaded_by = Column(String(36), nullable=True)       # user_id of uploader
+    uploaded_by_role = Column(String(20), nullable=True)   # role at upload time
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
