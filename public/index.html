@@ -4705,6 +4705,37 @@
         html += `</div>`;
       }
 
+      // v4: Confidence indicator + "Investigate Deeper" prompt
+      const confidence = d.query_confidence || 0.5;
+      const queryType = d.query_type || 'custom';
+      if (confidence < 0.3) {
+        html += `<div style="background:rgba(254,202,87,0.15);border:1px solid var(--yellow);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--yellow);display:flex;align-items:center;gap:0.5rem;">`;
+        html += `<span style="font-size:1rem;">&#9888;</span>`;
+        html += `<span><strong>Low Confidence (${(confidence*100).toFixed(0)}%)</strong> — The available data may not fully answer this question. Consider providing more context or uploading relevant data.</span>`;
+        html += `</div>`;
+      } else if (confidence < 0.6) {
+        html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">`;
+        html += `<span style="font-size:0.65rem;color:var(--muted);background:rgba(108,92,231,0.1);padding:2px 8px;border-radius:10px;">`;
+        html += `${queryType} &middot; ${(confidence*100).toFixed(0)}% confidence</span>`;
+        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
+        html += `</div>`;
+      } else {
+        html += `<div style="margin-bottom:0.5rem;">`;
+        html += `<span style="font-size:0.6rem;color:var(--muted);background:rgba(0,206,201,0.1);padding:2px 8px;border-radius:10px;">`;
+        html += `${queryType} &middot; ${(confidence*100).toFixed(0)}% confidence</span>`;
+        html += `</div>`;
+      }
+
+      // v4: Leakage pattern alerts
+      if (d.leakage_patterns?.length) {
+        html += `<div style="background:rgba(255,107,107,0.1);border:1px solid var(--red);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;">`;
+        html += `<strong style="color:var(--red);">&#128680; Leakage Patterns Detected:</strong><ul style="margin:0.25rem 0 0 1rem;padding:0;">`;
+        d.leakage_patterns.forEach(p => {
+          html += `<li style="color:var(--text);">${esc(p)}</li>`;
+        });
+        html += `</ul></div>`;
+      }
+
       // Analysis Actions Bar (Feed-parity)
       html += `<div style="display:flex;gap:0.4rem;margin-bottom:0.75rem;flex-wrap:wrap;">`;
       html += `<button class="btn-sm" onclick="deployFullAnalysis()">Deploy Full Analysis</button>`;
@@ -5161,6 +5192,18 @@
         : '<span class="badge badge-red">REJECTED</span>';
       body.innerHTML = renderAnalysis(entry.data);
       autoRenderCharts(entry.data);
+    }
+
+    function investigateDeeper() {
+      // v4: Request a deeper analysis with more context
+      const lastQ = analysisStack.length > 0
+        ? analysisStack[analysisStack.length - 1].question
+        : '';
+      if (!lastQ) return;
+      const deepQ = `Investigate deeper: ${lastQ}. Provide more detailed breakdown with additional data dimensions.`;
+      document.getElementById('question').value = deepQ;
+      // Trigger the analysis
+      document.getElementById('analyze-btn').click();
     }
 
     function drillFromMetric(metric) {
