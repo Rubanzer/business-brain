@@ -54,6 +54,17 @@
     { "src": "/scenarios/(.*)", "dest": "api/index.py" },
     { "src": "/goals/(.*)", "dest": "api/index.py" },
     { "src": "/goals", "dest": "api/index.py" },
+    { "src": "/quarantine/(.*)", "dest": "api/index.py" },
+    { "src": "/quarantine", "dest": "api/index.py" },
+    { "src": "/deep-tier/(.*)", "dest": "api/index.py" },
+    { "src": "/deep-tier", "dest": "api/index.py" },
+    { "src": "/auth/(.*)", "dest": "api/index.py" },
+    { "src": "/users/(.*)", "dest": "api/index.py" },
+    { "src": "/users", "dest": "api/index.py" },
+    { "src": "/plan/(.*)", "dest": "api/index.py" },
+    { "src": "/export/(.*)", "dest": "api/index.py" },
+    { "src": "/process-steps/(.*)", "dest": "api/index.py" },
+    { "src": "/process-steps", "dest": "api/index.py" },
     { "src": "/(.*)", "dest": "public/$1" }
   ]
 }

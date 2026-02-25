@@ -101,8 +101,9 @@ async def _ensure_tables():
     from sqlalchemy import text as sql_text
 
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        async with asyncio.timeout(8):
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
 
         _migrations = [
             "ALTER TABLE business_contexts ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1",
@@ -162,7 +163,7 @@ async def _startup_enrich_descriptions():
     try:
         from business_brain.discovery.data_dictionary import auto_describe_column
 
-        async with async_session() as session:
+        async with asyncio.timeout(8), async_session() as session:
             entries = await metadata_store.get_all(session)
             updated_count = 0
             for entry in entries:
@@ -622,3 +623,28 @@ from business_brain.action.routers.focus import (  # noqa: F401, E402
 _decode_jwt = decode_jwt  # noqa: F841
 _get_focus_tables = get_focus_tables  # noqa: F841
 _get_accessible_tables = get_accessible_tables  # noqa: F841
+
+# ---------------------------------------------------------------------------
+# Local development: serve frontend from public/
+# ---------------------------------------------------------------------------
+# On Vercel, static files are served by @vercel/static (vercel.json routes).
+# Locally, we serve public/ directly and use a catch-all for SPA routing.
+from pathlib import Path as _Path
+from fastapi.responses import FileResponse as _FileResponse
+
+_public_dir = _Path(__file__).resolve().parent.parent.parent.parent / "public"
+
+if _public_dir.is_dir() and not os.environ.get("VERCEL"):
+    from fastapi.staticfiles import StaticFiles as _StaticFiles
+
+    # Serve static assets (favicon, images, etc.)
+    app.mount("/assets", _StaticFiles(directory=str(_public_dir)), name="public-assets")
+
+    # SPA catch-all — MUST be the last route registered
+    @app.get("/{path:path}", include_in_schema=False)
+    async def _serve_spa(path: str):
+        """Serve frontend files; fall back to index.html for SPA routing."""
+        file_path = _public_dir / path
+        if file_path.is_file() and _public_dir in file_path.resolve().parents:
+            return _FileResponse(str(file_path))
+        return _FileResponse(str(_public_dir / "index.html"))

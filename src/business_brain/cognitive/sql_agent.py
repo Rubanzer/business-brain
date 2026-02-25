@@ -7,6 +7,7 @@ Reuses RAG context from state (populated by Query Router).
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from google import genai
@@ -149,6 +150,74 @@ def _validate_sql(sql: str) -> str | None:
     return None
 
 
+_MISSING_OBJECT_RE = re.compile(
+    r'relation "(.+?)" does not exist'
+    r'|column "(.+?)" does not exist'
+    r'|table "(.+?)" does not exist'
+    r"|UndefinedTable"
+    r"|UndefinedColumn",
+    re.IGNORECASE,
+)
+
+
+def _is_missing_object_error(error: str) -> bool:
+    """Check if a SQL error is about a missing table or column."""
+    return bool(_MISSING_OBJECT_RE.search(error))
+
+
+async def _build_expanded_schema(
+    db_session: AsyncSession,
+    existing_tables: list[dict],
+) -> str:
+    """Build an expanded schema string that includes ALL known tables.
+
+    When a SQL query fails because a table/column is missing from the schema
+    context, we expand the schema to include every table in the metadata store
+    plus all discovered relationships.
+    """
+    from business_brain.memory import metadata_store
+    from business_brain.memory.schema_rag import _get_relationships
+
+    all_entries = await metadata_store.get_all(db_session)
+    existing_names = {t["table_name"] for t in existing_tables}
+
+    # Start with existing tables (they already have relationship info)
+    expanded = list(existing_tables)
+
+    # Add all tables not already in the set
+    for entry in all_entries:
+        if entry.table_name not in existing_names:
+            expanded.append({
+                "table_name": entry.table_name,
+                "description": entry.description,
+                "columns": entry.columns_metadata,
+            })
+
+    # Fetch all relationships and enrich all tables
+    try:
+        relationships = await _get_relationships(db_session)
+        all_names = {t["table_name"] for t in expanded}
+        for table_info in expanded:
+            if "relationships" in table_info:
+                continue  # already enriched
+            related = []
+            for rel in relationships:
+                if rel["table_a"] == table_info["table_name"] and rel["table_b"] in all_names:
+                    related.append(
+                        f"{rel['table_a']}.{rel['column_a']} → {rel['table_b']}.{rel['column_b']}"
+                    )
+                elif rel["table_b"] == table_info["table_name"] and rel["table_a"] in all_names:
+                    related.append(
+                        f"{rel['table_a']}.{rel['column_a']} → {rel['table_b']}.{rel['column_b']}"
+                    )
+            if related:
+                table_info["relationships"] = related
+    except Exception:
+        logger.debug("Failed to enrich expanded schema with relationships")
+
+    return _format_schema_context(expanded)
+
+
 class SQLAgent:
     """Translates natural language questions into SQL and returns results.
 
@@ -244,10 +313,20 @@ class SQLAgent:
                 logger.warning("SQL execution failed (attempt %d): %s", attempt, last_error)
                 await db_session.rollback()
                 if attempt < max_retries:
+                    # If error is about a missing table/column, expand the schema
+                    # to include ALL known tables + relationships
+                    retry_schema = schema_context
+                    if _is_missing_object_error(last_error):
+                        logger.info("Missing table/column detected — expanding schema for retry")
+                        try:
+                            retry_schema = await _build_expanded_schema(db_session, tables)
+                        except Exception:
+                            logger.debug("Schema expansion failed, using original schema")
+
                     # Ask Gemini to fix the query — include business context
                     retry_prompt = (
                         f"{SYSTEM_PROMPT}\n\n"
-                        f"Schema:\n{schema_context}\n\n"
+                        f"Schema:\n{retry_schema}\n\n"
                     )
                     if biz_context:
                         retry_prompt += f"Business Context:\n{biz_context}\n\n"

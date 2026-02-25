@@ -29,6 +29,9 @@ Given a business question and available data schemas, your job is to:
 AVAILABLE DATA:
 {schema_context}
 
+DISCOVERED TABLE RELATIONSHIPS (use these for cross-table queries):
+{relationships}
+
 BUSINESS CONTEXT:
 {business_context}
 
@@ -39,6 +42,18 @@ CLASSIFICATION GUIDE:
 - anomaly: "Any unusual patterns?" / "Find outliers" — statistical deviation
 - drill_down: Investigating a specific previous finding deeper
 - custom: Complex multi-dimensional question not fitting above categories
+
+MULTI-TABLE QUERIES (IMPORTANT):
+Many business questions require combining data from 2+ tables. Examples:
+- "Which customer paid on time?" → needs sales/invoices table + payments/bank table
+- "Compare purchase cost with production output" → needs procurement + production tables
+- "What is the profit margin per product?" → needs sales + costs tables
+
+When the question requires data from multiple tables:
+- Your sql_task MUST explicitly name ALL tables needed
+- Your sql_task MUST specify the JOIN conditions (using the relationships above)
+- Your sql_task MUST specify which columns from each table are needed
+- Set confidence to 0.7+ if good relationship paths exist between needed tables
 
 CONFIDENCE SCORING:
 - 1.0: Exact table+column match, simple query
@@ -66,6 +81,9 @@ Business Impact: {finding_impact}
 AVAILABLE DATA:
 {schema_context}
 
+DISCOVERED TABLE RELATIONSHIPS (use these for cross-table queries):
+{relationships}
+
 BUSINESS CONTEXT:
 {business_context}
 
@@ -73,12 +91,14 @@ The user's follow-up question is: {question}
 
 Generate a focused SQL task that digs deeper into this specific insight.
 The task should retrieve granular data to validate, explain, or contradict the finding.
+When the investigation requires data from multiple tables, use the relationships above
+to specify explicit JOIN conditions in the sql_task.
 
 Return ONLY a JSON object:
 {{
   "query_type": "drill_down",
   "confidence": 0.0-1.0,
-  "sql_task": "Detailed SQL task for investigating this finding — reference specific tables/columns",
+  "sql_task": "Detailed SQL task for investigating this finding — reference specific tables/columns and JOIN conditions",
   "reasoning": "Brief explanation of the investigation strategy"
 }}
 """
@@ -150,6 +170,20 @@ def _build_schema_summary(tables: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def _build_relationships_summary(tables: list[dict]) -> str:
+    """Build a relationships summary from RAG table data for the router prompt."""
+    rels_seen: set[str] = set()
+    parts: list[str] = []
+    for t in tables:
+        for rel in t.get("relationships", []):
+            if rel not in rels_seen:
+                rels_seen.add(rel)
+                parts.append(f"  {rel}")
+    if not parts:
+        return "No discovered relationships yet. Tables may still be joinable on matching column names."
+    return "\n".join(parts)
+
+
 def _build_context_summary(contexts: list[dict]) -> str:
     """Build a business context summary for the router prompt."""
     if not contexts:
@@ -184,6 +218,8 @@ class QueryRouter:
         schema_context = "No tables available."
         business_context = "No business context available."
 
+        relationships_summary = "No discovered relationships yet."
+
         if db_session:
             try:
                 from business_brain.memory.schema_rag import retrieve_relevant_tables
@@ -194,6 +230,7 @@ class QueryRouter:
                 )
                 schema_context = _build_schema_summary(tables)
                 business_context = _build_context_summary(contexts)
+                relationships_summary = _build_relationships_summary(tables)
 
                 # Store in state for downstream agents
                 state["_rag_tables"] = tables
@@ -209,11 +246,13 @@ class QueryRouter:
                 finding_impact=parent_finding.get("business_impact", ""),
                 question=question,
                 schema_context=schema_context,
+                relationships=relationships_summary,
                 business_context=business_context,
             )
         else:
             prompt = ROUTER_PROMPT.format(
                 schema_context=schema_context,
+                relationships=relationships_summary,
                 business_context=business_context,
             )
 
