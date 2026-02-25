@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def retrieve_relevant_tables(
     session: AsyncSession,
     query: str,
-    top_k: int = 5,
+    top_k: int = 8,
     allowed_tables: list[str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Given a natural language query, return the top-k most relevant table schemas
@@ -122,37 +122,43 @@ async def retrieve_relevant_tables(
                 "score": score,
             }
 
-    # 3. Boost tables that have relationships with already-matched tables
+    # 3. Aggressively expand via discovered relationships
+    #    For EVERY matched table, pull in ALL related tables — even if they
+    #    scored 0 on keywords.  This is critical for multi-table JOIN queries
+    #    (e.g. "which customer paid on time?" needs both sales + bank_statements).
     if results:
         try:
             relationships = await _get_relationships(session)
-            matched_tables = set(results.keys())
+            # Iterate over a snapshot of current matches so we can mutate `results`
+            seed_tables = set(results.keys())
             for rel in relationships:
-                # If table_a is matched, boost table_b (and vice versa)
-                if rel["table_a"] in matched_tables and rel["table_b"] not in results:
+                confidence = rel.get("confidence", 0.5)
+                # table_a matched → unconditionally include table_b
+                if rel["table_a"] in seed_tables and rel["table_b"] not in results:
                     entry = _find_entry(all_entries, rel["table_b"])
                     if entry:
                         results[rel["table_b"]] = {
                             "table_name": entry.table_name,
                             "description": entry.description,
                             "columns": entry.columns_metadata,
-                            "score": 1.5 * rel.get("confidence", 0.5),
+                            "score": 2.0 * confidence,
                         }
-                elif rel["table_b"] in matched_tables and rel["table_a"] not in results:
+                # table_b matched → unconditionally include table_a
+                if rel["table_b"] in seed_tables and rel["table_a"] not in results:
                     entry = _find_entry(all_entries, rel["table_a"])
                     if entry:
                         results[rel["table_a"]] = {
                             "table_name": entry.table_name,
                             "description": entry.description,
                             "columns": entry.columns_metadata,
-                            "score": 1.5 * rel.get("confidence", 0.5),
+                            "score": 2.0 * confidence,
                         }
                 # Boost already-matched related tables
                 if rel["table_a"] in results and rel["table_b"] in results:
                     results[rel["table_a"]]["score"] += 0.5
                     results[rel["table_b"]]["score"] += 0.5
         except Exception:
-            logger.debug("Relationship boost failed, continuing without it")
+            logger.debug("Relationship expansion failed, continuing without it")
 
     # If no matches, return all entries as fallback
     if not results:
@@ -240,8 +246,9 @@ async def _get_relationships(session: AsyncSession) -> list[dict]:
         from business_brain.db.discovery_models import DiscoveredRelationship
         result = await session.execute(
             select(DiscoveredRelationship).where(
-                DiscoveredRelationship.confidence >= 0.5
-            ).limit(50)
+                DiscoveredRelationship.confidence >= 0.4
+            ).order_by(DiscoveredRelationship.confidence.desc())
+            .limit(80)
         )
         rels = result.scalars().all()
         return [

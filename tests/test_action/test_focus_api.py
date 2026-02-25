@@ -81,7 +81,7 @@ class TestGetFocusTables:
 
 class TestGetFocusEndpoint:
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.focus.metadata_store")
     async def test_get_focus_empty(self, mock_metadata_store):
         """No focus scopes returns {active: False}."""
         session = AsyncMock()
@@ -105,7 +105,7 @@ class TestGetFocusEndpoint:
 
 class TestUpdateFocusEndpoint:
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.focus.metadata_store")
     async def test_put_focus_saves(self, mock_metadata_store):
         """Saves focus scope entries and returns update confirmation."""
         session = AsyncMock()

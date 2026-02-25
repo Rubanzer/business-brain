@@ -82,6 +82,44 @@ class Insight(Base):
     session_id = Column(String(64), nullable=True)
 
 
+# ---------------------------------------------------------------------------
+# Deep Tier — Analysis Task Queue
+# ---------------------------------------------------------------------------
+
+
+class AnalysisTask(Base):
+    """Task queue for Deep Tier analysis (Claude API).
+
+    Created automatically when Fast Tier confidence < threshold,
+    or manually via the 'Investigate Deeper' button.
+    """
+
+    __tablename__ = "analysis_tasks"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    question = Column(Text, nullable=False)
+    source_tier = Column(String(10), nullable=False, default="fast")  # fast / manual
+    status = Column(String(20), nullable=False, default="pending")
+    # pending / running / completed / failed
+    priority = Column(Integer, default=0)  # higher = more important
+    # Input context from Fast Tier
+    fast_tier_result = Column(JSON, nullable=True)  # summary of fast tier analysis
+    sql_query = Column(Text, nullable=True)  # SQL used by fast tier
+    sql_data = Column(JSON, nullable=True)  # rows from fast tier (anonymized)
+    tables_used = Column(JSON, nullable=True)  # ["table1", "table2"]
+    fast_confidence = Column(Float, nullable=True)  # confidence from router
+    session_id = Column(String(64), nullable=True)
+    # Deep Tier output
+    result = Column(JSON, nullable=True)  # full Claude analysis
+    error = Column(Text, nullable=True)
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    # Audit
+    requested_by = Column(String(255), nullable=True)  # user_id or "auto"
+
+
 class DeployedReport(Base):
     """Persistent reports created from insights."""
 

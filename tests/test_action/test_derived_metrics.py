@@ -20,7 +20,7 @@ class TestCreateDerivedMetric:
     """Tests for the POST /metrics/derived endpoint."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_create_derived_valid_formula(self, mock_store):
         """Creates a derived metric with a valid formula referencing existing columns."""
         session = AsyncMock()
@@ -60,7 +60,7 @@ class TestCreateDerivedMetric:
         session.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_invalid_column_rejected(self, mock_store):
         """Referencing a nonexistent column raises HTTPException 400."""
         session = AsyncMock()
@@ -81,7 +81,7 @@ class TestCreateDerivedMetric:
         assert "nonexistent_col" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_invalid_table_rejected(self, mock_store):
         """Referencing a nonexistent table raises HTTPException 400."""
         session = AsyncMock()
@@ -102,7 +102,7 @@ class TestCreateDerivedMetric:
         assert "nonexistent_table" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_stored_correctly(self, mock_store):
         """Derived metric is stored with is_derived=True, formula, and source_columns."""
         session = AsyncMock()
@@ -178,7 +178,7 @@ class TestCreateDerivedMetric:
         assert "metric_name" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_formula_no_table_refs(self, mock_store):
         """Formula with no table.column references stores empty source_columns."""
         session = AsyncMock()
@@ -205,7 +205,7 @@ class TestCreateDerivedMetric:
         assert added.is_derived is True
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_in_thresholds_list(self, mock_store):
         """Derived metrics appear correctly alongside normal metrics
         when stored as MetricThreshold."""

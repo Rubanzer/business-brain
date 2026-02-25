@@ -22,7 +22,7 @@ def _mock_session_override():
 @pytest.fixture()
 def client():
     """Create a TestClient that skips real DB startup events and background discovery."""
-    with patch("business_brain.action.api._run_discovery_background", new_callable=AsyncMock):
+    with patch("business_brain.action.routers.data.run_discovery_background", new_callable=AsyncMock):
         from business_brain.action.api import app
 
         original_startup = list(app.router.on_startup)
@@ -45,7 +45,7 @@ def client():
 @pytest.fixture()
 def client_with_auth():
     """TestClient with an authenticated user injected via dependency override."""
-    with patch("business_brain.action.api._run_discovery_background", new_callable=AsyncMock):
+    with patch("business_brain.action.routers.data.run_discovery_background", new_callable=AsyncMock):
         from business_brain.action.api import app, get_current_user
 
         original_startup = list(app.router.on_startup)
@@ -90,7 +90,7 @@ HEADERS_ONLY_CSV = _make_csv("id,name,value")
 class TestCsvUploadMetadataUpsert:
     """Verify that /csv calls metadata_store.upsert() with correct arguments."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_calls_metadata_upsert(self, mock_upsert_df, mock_meta, client):
         """metadata_store.upsert is called exactly once with the correct table_name."""
@@ -104,7 +104,7 @@ class TestCsvUploadMetadataUpsert:
         _, kwargs = mock_meta.upsert.call_args
         assert kwargs["table_name"] == "sales"
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_metadata_columns_match_df(self, mock_upsert_df, mock_meta, client):
         """columns_metadata matches the DataFrame columns and their dtypes."""
@@ -124,7 +124,7 @@ class TestCsvUploadMetadataUpsert:
             assert isinstance(c["type"], str)
             assert len(c["type"]) > 0
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_metadata_description_generated(self, mock_upsert_df, mock_meta, client):
         """description is non-empty and contains the table name."""
@@ -138,7 +138,7 @@ class TestCsvUploadMetadataUpsert:
         assert len(desc) > 0
         assert "revenue" in desc
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_metadata_upsert_receives_session(self, mock_upsert_df, mock_meta, client):
         """The first positional argument to metadata_store.upsert is the DB session."""
@@ -151,7 +151,7 @@ class TestCsvUploadMetadataUpsert:
         # First positional arg should be the AsyncMock session from our override
         assert isinstance(args[0], AsyncMock)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_response_format(self, mock_upsert_df, mock_meta, client):
         """Response JSON has status, table, and rows keys with correct values."""
@@ -173,7 +173,7 @@ class TestCsvUploadMetadataUpsert:
 class TestCsvUploadAuthMetadata:
     """Verify uploaded_by and uploaded_by_role are passed correctly based on auth."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_with_auth_passes_uploaded_by(
         self, mock_upsert_df, mock_meta, client_with_auth
@@ -191,7 +191,7 @@ class TestCsvUploadAuthMetadata:
         assert kwargs["uploaded_by"] == "user-42"
         assert kwargs["uploaded_by_role"] == "admin"
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_without_auth_passes_none(self, mock_upsert_df, mock_meta, client):
         """When user is None (no auth), uploaded_by=None and uploaded_by_role=None."""
@@ -213,7 +213,7 @@ class TestCsvUploadAuthMetadata:
 class TestCsvUploadDescriptionFormatting:
     """Verify the description string formats column previews correctly."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_metadata_description_with_many_columns(
         self, mock_upsert_df, mock_meta, client
@@ -231,7 +231,7 @@ class TestCsvUploadDescriptionFormatting:
         desc = kwargs["description"]
         assert "(+3 more)" in desc
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_exactly_five_columns_no_plus_more(self, mock_upsert_df, mock_meta, client):
         """Exactly 5 columns should NOT have '(+N more)' in the description."""
@@ -248,7 +248,7 @@ class TestCsvUploadDescriptionFormatting:
         assert "(+" not in desc
         assert "5 columns" in desc
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_six_columns_shows_plus_more(self, mock_upsert_df, mock_meta, client):
         """6 columns should show '(+1 more)' in the description."""
@@ -273,7 +273,7 @@ class TestCsvUploadDescriptionFormatting:
 class TestCsvUploadTableNameSanitisation:
     """Verify filename-to-table-name conversion handles special characters."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_table_name_sanitized(self, mock_upsert_df, mock_meta, client):
         """Hyphens and spaces in filename are replaced with underscores."""
@@ -289,7 +289,7 @@ class TestCsvUploadTableNameSanitisation:
         _, kwargs = mock_meta.upsert.call_args
         assert kwargs["table_name"] == "my_data_file"
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_special_chars_in_filename_sanitized(self, mock_upsert_df, mock_meta, client):
         """Multiple hyphens and spaces are each replaced with underscores."""
@@ -313,7 +313,7 @@ class TestCsvUploadTableNameSanitisation:
 class TestCsvUploadColumnTypes:
     """Verify that column dtype strings are passed correctly in columns_metadata."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_metadata_column_types_correct(self, mock_upsert_df, mock_meta, client):
         """int64, float64, and object columns are mapped to correct dtype strings."""
@@ -338,7 +338,7 @@ class TestCsvUploadColumnTypes:
 class TestCsvUploadCallOrdering:
     """Verify metadata_store.upsert is called after upsert_dataframe."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_metadata_upsert_called_after_data_upsert(
         self, mock_upsert_df, mock_meta, client
@@ -369,7 +369,7 @@ class TestCsvUploadCallOrdering:
 class TestCsvUploadEdgeCases:
     """Edge cases: empty files, single columns, many rows, corrupt data."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_upload_empty_df(self, mock_upsert_df, mock_meta, client):
         """CSV with headers and no data rows results in rows=0."""
@@ -385,7 +385,7 @@ class TestCsvUploadEdgeCases:
         assert data["rows"] == 0
         mock_meta.upsert.assert_called_once()
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_corrupt_binary_returns_error(self, mock_upsert_df, mock_meta, client):
         """Uploading random binary data returns an error response."""
@@ -398,7 +398,7 @@ class TestCsvUploadEdgeCases:
         # metadata_store.upsert should NOT have been called since parsing failed
         mock_meta.upsert.assert_not_called()
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_empty_file_returns_error(self, mock_upsert_df, mock_meta, client):
         """Uploading a zero-byte file returns an error response."""
@@ -408,7 +408,7 @@ class TestCsvUploadEdgeCases:
         assert "error" in data
         mock_meta.upsert.assert_not_called()
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_headers_only_zero_rows(self, mock_upsert_df, mock_meta, client):
         """CSV with only headers results in rows=0 and metadata is still registered."""
@@ -426,7 +426,7 @@ class TestCsvUploadEdgeCases:
         col_names = [c["name"] for c in kwargs["columns_metadata"]]
         assert col_names == ["id", "name", "value"]
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_single_column_file(self, mock_upsert_df, mock_meta, client):
         """A single-column CSV is handled correctly."""
@@ -445,7 +445,7 @@ class TestCsvUploadEdgeCases:
         assert kwargs["columns_metadata"][0]["name"] == "score"
         assert "(+" not in kwargs["description"]
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
     def test_csv_many_rows(self, mock_upsert_df, mock_meta, client):
         """A CSV with many rows returns the correct row count."""

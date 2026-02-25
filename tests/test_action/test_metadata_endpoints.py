@@ -45,7 +45,7 @@ def _user(sub, role):
 @pytest.fixture()
 def client():
     """Create a TestClient that skips real DB startup events and background discovery."""
-    with patch("business_brain.action.api._run_discovery_background", new_callable=AsyncMock):
+    with patch("business_brain.action.routers.data.run_discovery_background", new_callable=AsyncMock):
         from business_brain.action.api import app
 
         original_startup = list(app.router.on_startup)
@@ -73,7 +73,7 @@ def client():
 class TestListMetadata:
     """Tests for the GET /metadata endpoint."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_list_metadata_no_auth_returns_all(self, mock_store, client):
         """No auth (user=None) returns all metadata entries via get_all."""
         entries = [
@@ -95,7 +95,7 @@ class TestListMetadata:
         # When user=None, _get_accessible_tables returns None, so get_all is used
         mock_store.get_all.assert_called_once()
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_list_metadata_admin_returns_all(self, mock_store, client):
         """Admin role gets full access (None from _get_accessible_tables) -> get_all."""
         from business_brain.action.api import app, get_current_user
@@ -121,7 +121,7 @@ class TestListMetadata:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_list_metadata_viewer_filters(self, mock_store, client):
         """Viewer gets filtered results: only own uploads and legacy tables."""
         from business_brain.action.api import app, get_current_user
@@ -158,7 +158,7 @@ class TestListMetadata:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_list_metadata_operator_sees_lower_roles(self, mock_store, client):
         """Operator sees own + viewer uploads + legacy, but not admin/manager."""
         from business_brain.action.api import app, get_current_user
@@ -211,7 +211,7 @@ class TestListMetadata:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_list_metadata_empty_store(self, mock_store, client):
         """No metadata entries in store returns empty list."""
         mock_store.get_all = AsyncMock(return_value=[])
@@ -222,7 +222,7 @@ class TestListMetadata:
         data = resp.json()
         assert data == []
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_list_metadata_response_format(self, mock_store, client):
         """Each entry in the response has exactly table_name, description, columns keys."""
         entries = [
@@ -242,7 +242,7 @@ class TestListMetadata:
             assert isinstance(entry["description"], str)
             assert isinstance(entry["columns"], list)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_list_metadata_db_error_returns_empty(self, mock_store, client):
         """Database exception in list_metadata returns empty list (graceful degradation)."""
         mock_store.get_all = AsyncMock(side_effect=RuntimeError("DB connection failed"))
@@ -262,7 +262,7 @@ class TestListMetadata:
 class TestGetTableMetadata:
     """Tests for the GET /metadata/{table} endpoint."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_get_metadata_no_auth_succeeds(self, mock_store, client):
         """No auth (user=None) can access any table metadata."""
         entry = _make_entry("sales")
@@ -276,7 +276,7 @@ class TestGetTableMetadata:
         assert data["description"] == "Description of sales"
         mock_store.get_by_table.assert_called_once()
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_get_metadata_admin_succeeds(self, mock_store, client):
         """Admin can access any table metadata regardless of uploader."""
         from business_brain.action.api import app, get_current_user
@@ -296,7 +296,7 @@ class TestGetTableMetadata:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_get_metadata_viewer_blocked(self, mock_store, client):
         """Viewer cannot see admin-uploaded table -> 'Table not found'."""
         from business_brain.action.api import app, get_current_user
@@ -320,7 +320,7 @@ class TestGetTableMetadata:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_get_metadata_viewer_own_table(self, mock_store, client):
         """Viewer can see their own uploaded table."""
         from business_brain.action.api import app, get_current_user
@@ -346,7 +346,7 @@ class TestGetTableMetadata:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_get_metadata_viewer_sees_legacy(self, mock_store, client):
         """Viewer can see legacy table (no uploader recorded)."""
         from business_brain.action.api import app, get_current_user
@@ -372,7 +372,7 @@ class TestGetTableMetadata:
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_get_metadata_nonexistent(self, mock_store, client):
         """Requesting a nonexistent table returns 'Table not found'."""
         mock_store.get_by_table = AsyncMock(return_value=None)
@@ -383,7 +383,7 @@ class TestGetTableMetadata:
         data = resp.json()
         assert data["error"] == "Table not found"
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_get_metadata_response_format(self, mock_store, client):
         """Successful response has exactly table_name, description, columns keys."""
         entry = _make_entry("formatted_table")
@@ -407,7 +407,7 @@ class TestGetTableMetadata:
 class TestDeleteTableMetadata:
     """Tests for the DELETE /metadata/{table} endpoint."""
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_delete_metadata_existing(self, mock_store, client):
         """Deleting an existing table returns status=deleted."""
         mock_store.delete = AsyncMock(return_value=True)
@@ -418,7 +418,7 @@ class TestDeleteTableMetadata:
         data = resp.json()
         assert data == {"status": "deleted", "table": "old_report"}
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_delete_metadata_nonexistent(self, mock_store, client):
         """Deleting a nonexistent table returns 'Table not found' error."""
         mock_store.delete = AsyncMock(return_value=False)
@@ -429,7 +429,7 @@ class TestDeleteTableMetadata:
         data = resp.json()
         assert data == {"error": "Table not found"}
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_delete_metadata_db_error(self, mock_store, client):
         """Database exception during delete returns error dict."""
         mock_store.delete = AsyncMock(side_effect=RuntimeError("Connection lost"))
@@ -440,7 +440,7 @@ class TestDeleteTableMetadata:
         data = resp.json()
         assert data == {"error": "Failed to delete table metadata"}
 
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     def test_delete_metadata_calls_store_delete(self, mock_store, client):
         """Verify metadata_store.delete is called with session and correct table name."""
         mock_store.delete = AsyncMock(return_value=True)

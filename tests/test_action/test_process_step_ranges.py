@@ -102,7 +102,7 @@ class TestCreateProcessStepRanges:
     """Tests for POST /process-steps — target_ranges behaviour."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_create_with_target_ranges_dict(self, mock_regen):
         """Send key_metrics + target_ranges, verify both are stored on the ORM object."""
         session, captured = _make_session_for_create()
@@ -124,7 +124,7 @@ class TestCreateProcessStepRanges:
         assert step.target_range == "500-625 kWh/ton"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_create_backward_compat_single_range(self, mock_regen):
         """Send key_metrics + target_range (singular, no target_ranges dict).
 
@@ -145,7 +145,7 @@ class TestCreateProcessStepRanges:
         assert step.target_range == "500-625"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_create_target_ranges_overrides_target_range(self, mock_regen):
         """When both target_range and target_ranges provided, target_ranges wins."""
         session, captured = _make_session_for_create()
@@ -165,7 +165,7 @@ class TestCreateProcessStepRanges:
         assert step.target_range == "old-value"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_create_no_metrics_no_ranges(self, mock_regen):
         """Empty key_metrics and no ranges => target_ranges should be {}."""
         session, captured = _make_session_for_create()
@@ -178,7 +178,7 @@ class TestCreateProcessStepRanges:
         assert step.target_range == ""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_create_target_range_auto_set_from_first_metric(self, mock_regen):
         """target_range (singular) is auto-set from the first metric's range in target_ranges."""
         session, captured = _make_session_for_create()
@@ -195,7 +195,7 @@ class TestCreateProcessStepRanges:
         assert step.target_range == "1100-1200 C"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_create_three_metrics_three_ranges(self, mock_regen):
         """Three metrics with three individual ranges — all stored correctly."""
         session, captured = _make_session_for_create()
@@ -231,7 +231,7 @@ class TestUpdateProcessStepRanges:
     """Tests for PUT /process-steps/{step_id} — target_ranges behaviour."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_update_replaces_target_ranges(self, mock_regen):
         """Update step with new target_ranges, verify old replaced."""
         existing = _make_step_mock(
@@ -252,7 +252,7 @@ class TestUpdateProcessStepRanges:
         assert existing.key_metrics == ["SEC", "Yield"]
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_update_backward_compat(self, mock_regen):
         """Update with single target_range, auto-maps to first metric."""
         existing = _make_step_mock(
@@ -274,7 +274,7 @@ class TestUpdateProcessStepRanges:
         assert existing.target_range == "600-700"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_update_step_not_found(self, mock_regen):
         """Returns error dict when step doesn't exist."""
         session = _make_session_for_update(None)
@@ -362,7 +362,7 @@ class TestTargetRangesEdgeCases:
     """Edge cases for target_ranges handling."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_extra_keys_in_target_ranges(self, mock_regen):
         """target_ranges with keys not in key_metrics should be stored, not rejected."""
         session, captured = _make_session_for_create()
@@ -384,7 +384,7 @@ class TestTargetRangesEdgeCases:
         assert step.target_ranges["SEC"] == "500-625"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_unicode_metric_names_in_ranges(self, mock_regen):
         """Metric names with special/unicode characters work without error."""
         session, captured = _make_session_for_create()
@@ -405,7 +405,7 @@ class TestTargetRangesEdgeCases:
         assert step.target_ranges["CO2 Emission"] == "50-80 kg/ton"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_empty_range_values(self, mock_regen):
         """target_ranges={"SEC": ""} is valid — empty range string accepted."""
         session, captured = _make_session_for_create()

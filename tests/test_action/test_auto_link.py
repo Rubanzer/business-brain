@@ -34,7 +34,7 @@ class TestAutoLinkMetrics:
     """Tests for the POST /setup/auto-link-metrics endpoint."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_exact_match_high_confidence(self, mock_store):
         """Exact name match gets 1.0 confidence and is auto-linked."""
         session = AsyncMock()
@@ -65,7 +65,7 @@ class TestAutoLinkMetrics:
         session.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_case_insensitive_match(self, mock_store):
         """'Power_Consumption' matches 'power_consumption' at 0.95 confidence."""
         session = AsyncMock()
@@ -91,7 +91,7 @@ class TestAutoLinkMetrics:
         assert linked["column_name"] == "power_consumption"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_no_match_returns_unmatched(self, mock_store):
         """Unrecognized metric with no column matches goes to unmatched list."""
         session = AsyncMock()
@@ -116,7 +116,7 @@ class TestAutoLinkMetrics:
         assert result["unmatched"][0]["metric_name"] == "xyzzyx_unknown_metric"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_fuzzy_match_substring(self, mock_store):
         """'consumption' is a substring of 'power_consumption' -> 0.7 confidence (suggestion)."""
         session = AsyncMock()
@@ -143,7 +143,7 @@ class TestAutoLinkMetrics:
         assert candidates[0]["confidence"] == 0.7
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_auto_link_no_tables_uploaded(self, mock_store):
         """Empty metadata (no tables uploaded) returns empty results."""
         session = AsyncMock()
@@ -163,7 +163,7 @@ class TestAutoLinkMetrics:
         session.commit.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_multiple_candidates_sorted(self, mock_store):
         """Multiple matches are sorted by confidence descending."""
         session = AsyncMock()
@@ -191,7 +191,7 @@ class TestAutoLinkMetrics:
         assert result["auto_linked"][0]["column_name"] == "power"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_no_unlinked_metrics(self, mock_store):
         """When all metrics already have table_name, nothing to do."""
         session = AsyncMock()
@@ -212,7 +212,7 @@ class TestAutoLinkMetrics:
         session.commit.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_word_overlap_low_confidence(self, mock_store):
         """Word overlap produces a lower confidence score."""
         session = AsyncMock()

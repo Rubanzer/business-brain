@@ -1,4 +1,4 @@
-"""Tests for the SQL agent — multi-query, retry, business context, edge cases."""
+"""Tests for the SQL agent — v4 single-query, retry, business context, edge cases."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +9,7 @@ from business_brain.cognitive.sql_agent import (
     _format_business_context,
     _format_schema_context,
     _strip_sql_fences,
+    _validate_sql,
 )
 
 
@@ -50,6 +51,34 @@ class TestFormatHelpers:
         result = _format_schema_context([])
         assert result == ""
 
+    def test_format_schema_context_with_column_descriptions(self):
+        tables = [
+            {
+                "table_name": "heats",
+                "description": "Production heats",
+                "columns": [
+                    {"name": "sec", "type": "FLOAT", "description": "Specific Energy Consumption (kWh/ton)"},
+                    {"name": "yield_pct", "type": "FLOAT", "description": "Production yield percentage"},
+                ],
+            },
+        ]
+        result = _format_schema_context(tables)
+        assert "sec (FLOAT) -- Specific Energy Consumption" in result
+        assert "yield_pct (FLOAT) -- Production yield" in result
+
+    def test_format_schema_context_with_joins(self):
+        tables = [
+            {
+                "table_name": "orders",
+                "description": "Orders",
+                "columns": [{"name": "id", "type": "INT"}],
+                "relationships": ["orders.customer_id = customers.id"],
+            },
+        ]
+        result = _format_schema_context(tables)
+        assert "Joins:" in result
+        assert "orders.customer_id = customers.id" in result
+
     def test_format_business_context(self):
         contexts = [
             {"content": "Revenue is tracked quarterly", "source": "manual"},
@@ -90,20 +119,11 @@ class TestStripSQLFences:
         assert "WHERE x > 1" in result
 
     def test_no_newline_after_backticks(self):
-        """Edge case: backticks with no newline — split fails gracefully."""
         raw = "```SELECT 1```"
-        # split("\n", 1) on "SELECT 1```" -> ["SELECT 1```"], [1] out of range
-        # This edge case would actually work because split("\n", 1)[1] would fail
-        # But the code does: sql.split("\n", 1)[1].rsplit("```", 1)[0]
-        # "```SELECT 1```" -> starts with ``` -> split("\n", 1) -> ["```SELECT 1```"]
-        # This raises IndexError — caught by the caller's try/except
-        # Let's verify the function handles it
         try:
             result = _strip_sql_fences(raw)
-            # If it doesn't crash, the result should be reasonable
             assert isinstance(result, str)
         except (IndexError, Exception):
-            # This is an expected failure path
             pass
 
     def test_empty_string(self):
@@ -118,45 +138,87 @@ class TestStripSQLFences:
 
 
 # ---------------------------------------------------------------------------
-# SQLAgent multi-query tests
+# SQL validation tests
 # ---------------------------------------------------------------------------
 
 
-class TestSQLAgentMultiQuery:
+class TestValidateSQL:
+    def test_valid_select(self):
+        assert _validate_sql("SELECT * FROM t") is None
+
+    def test_valid_with(self):
+        assert _validate_sql("WITH cte AS (SELECT 1) SELECT * FROM cte") is None
+
+    def test_blocks_delete(self):
+        error = _validate_sql("DELETE FROM t WHERE id = 1")
+        assert error is not None
+        assert "DELETE" in error
+
+    def test_blocks_drop(self):
+        error = _validate_sql("DROP TABLE sales")
+        assert error is not None
+        assert "DROP" in error
+
+    def test_blocks_insert(self):
+        error = _validate_sql("INSERT INTO t VALUES (1)")
+        assert error is not None
+        assert "INSERT" in error
+
+    def test_blocks_update(self):
+        error = _validate_sql("UPDATE t SET x = 1")
+        assert error is not None
+        assert "UPDATE" in error
+
+    def test_blocks_truncate(self):
+        error = _validate_sql("TRUNCATE TABLE t")
+        assert error is not None
+        assert "TRUNCATE" in error
+
+    def test_rejects_non_select(self):
+        error = _validate_sql("GRANT ALL ON t TO user")
+        assert error is not None
+
+    def test_nested_dangerous_keyword(self):
+        """Dangerous keyword inside CTE is caught."""
+        error = _validate_sql("WITH cte AS (SELECT 1) DROP TABLE t")
+        assert error is not None
+
+
+# ---------------------------------------------------------------------------
+# SQLAgent single-query tests (v4)
+# ---------------------------------------------------------------------------
+
+
+class TestSQLAgentSingleQuery:
     @pytest.mark.asyncio
     @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
     @patch("business_brain.cognitive.sql_agent._get_client")
-    async def test_multi_query_increments_index(self, mock_client, mock_rag):
+    async def test_single_query_from_plan(self, mock_client, mock_rag):
+        """v4: Agent reads single task from plan[0]."""
         mock_rag.return_value = ([], [])
         mock_response = MagicMock()
-        mock_response.text = "SELECT 1"
+        mock_response.text = "SELECT * FROM sales"
         mock_client.return_value.models.generate_content.return_value = mock_response
 
         session = AsyncMock()
         result_obj = MagicMock()
-        result_obj.fetchall.return_value = []
+        result_obj.fetchall.return_value = [MagicMock(_mapping={"id": 1, "total": 100})]
         session.execute = AsyncMock(return_value=result_obj)
 
         agent = SQLAgent()
         state = {
-            "question": "test",
+            "question": "show sales",
             "db_session": session,
-            "plan": [
-                {"agent": "sql_agent", "task": "Get sales"},
-                {"agent": "sql_agent", "task": "Get inventory"},
-                {"agent": "analyst_agent", "task": "Analyze"},
-            ],
-            "current_query_index": 0,
+            "plan": [{"agent": "sql_agent", "task": "Get all sales data"}],
         }
 
         result = await agent.invoke(state)
-        assert result["current_query_index"] == 1
-        assert len(result["sql_results"]) == 1
-
-        # Second invocation
-        result = await agent.invoke(result)
-        assert result["current_query_index"] == 2
-        assert len(result["sql_results"]) == 2
+        assert "sql_result" in result
+        assert len(result["sql_result"]["rows"]) == 1
+        assert result["sql_result"]["task"] == "Get all sales data"
+        # v4: no more current_query_index or sql_results
+        assert "current_query_index" not in result
+        assert "sql_results" not in result
 
     @pytest.mark.asyncio
     @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
@@ -185,7 +247,6 @@ class TestSQLAgentMultiQuery:
         agent = SQLAgent()
         state = {"question": "test", "db_session": session}
         result = await agent.invoke(state)
-        assert result["current_query_index"] == 1
         assert len(result["sql_result"]["rows"]) == 1
 
     @pytest.mark.asyncio
@@ -206,31 +267,6 @@ class TestSQLAgentMultiQuery:
         state = {"question": "test", "db_session": session, "plan": []}
         result = await agent.invoke(state)
         assert "sql_result" in result
-
-    @pytest.mark.asyncio
-    @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
-    @patch("business_brain.cognitive.sql_agent._get_client")
-    async def test_index_beyond_plan(self, mock_client, mock_rag):
-        """current_query_index > number of sql tasks."""
-        mock_rag.return_value = ([], [])
-        mock_response = MagicMock()
-        mock_response.text = "SELECT 1"
-        mock_client.return_value.models.generate_content.return_value = mock_response
-
-        session = AsyncMock()
-        result_obj = MagicMock()
-        result_obj.fetchall.return_value = []
-        session.execute = AsyncMock(return_value=result_obj)
-
-        agent = SQLAgent()
-        state = {
-            "question": "test",
-            "db_session": session,
-            "plan": [{"agent": "sql_agent", "task": "T1"}],
-            "current_query_index": 5,
-        }
-        result = await agent.invoke(state)
-        assert result["current_query_index"] == 6
 
     @pytest.mark.asyncio
     @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
@@ -300,6 +336,87 @@ class TestSQLAgentMultiQuery:
         )
         assert "Revenue = net sales minus returns" in prompt
         assert "Business Context" in prompt
+
+    @pytest.mark.asyncio
+    @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
+    @patch("business_brain.cognitive.sql_agent._get_client")
+    async def test_reuses_rag_context_from_state(self, mock_client, mock_rag):
+        """v4: SQL agent reuses RAG context populated by Query Router."""
+        mock_response = MagicMock()
+        mock_response.text = "SELECT 1"
+        mock_client.return_value.models.generate_content.return_value = mock_response
+
+        session = AsyncMock()
+        result_obj = MagicMock()
+        result_obj.fetchall.return_value = []
+        session.execute = AsyncMock(return_value=result_obj)
+
+        agent = SQLAgent()
+        state = {
+            "question": "test",
+            "db_session": session,
+            "plan": [{"agent": "sql_agent", "task": "T1"}],
+            "_rag_tables": [{"table_name": "heats", "description": "Heats", "columns": []}],
+            "_rag_contexts": [{"content": "Steel plant", "source": "company_profile"}],
+        }
+        result = await agent.invoke(state)
+
+        # Should NOT call retrieve_relevant_tables since context was pre-populated
+        mock_rag.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
+    @patch("business_brain.cognitive.sql_agent._get_client")
+    async def test_fetches_rag_when_missing(self, mock_client, mock_rag):
+        """Falls back to fresh RAG retrieval when state has no context."""
+        mock_rag.return_value = (
+            [{"table_name": "t", "description": "Table", "columns": []}],
+            [],
+        )
+        mock_response = MagicMock()
+        mock_response.text = "SELECT 1"
+        mock_client.return_value.models.generate_content.return_value = mock_response
+
+        session = AsyncMock()
+        result_obj = MagicMock()
+        result_obj.fetchall.return_value = []
+        session.execute = AsyncMock(return_value=result_obj)
+
+        agent = SQLAgent()
+        state = {
+            "question": "test",
+            "db_session": session,
+            "plan": [{"agent": "sql_agent", "task": "T1"}],
+        }
+        result = await agent.invoke(state)
+
+        mock_rag.assert_called_once()
+        assert result["_rag_tables"] is not None
+
+    @pytest.mark.asyncio
+    @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
+    @patch("business_brain.cognitive.sql_agent._get_client")
+    async def test_validation_blocks_dangerous_sql(self, mock_client, mock_rag):
+        """Generated SQL with dangerous keywords is blocked before execution."""
+        mock_rag.return_value = ([], [])
+        mock_response = MagicMock()
+        mock_response.text = "DROP TABLE sales"
+        mock_client.return_value.models.generate_content.return_value = mock_response
+
+        session = AsyncMock()
+
+        agent = SQLAgent()
+        state = {
+            "question": "test",
+            "db_session": session,
+            "plan": [{"agent": "sql_agent", "task": "T1"}],
+        }
+        result = await agent.invoke(state)
+
+        assert result["sql_result"]["error"] is not None
+        assert "Dangerous" in result["sql_result"]["error"] or "does not start" in result["sql_result"]["error"]
+        # Should never call execute
+        session.execute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +538,6 @@ class TestSQLAgentRetry:
 
         result = await agent.invoke(state)
         assert result["sql_result"]["error"] == "SQL generation failed"
-        assert result["current_query_index"] == 1
 
     @pytest.mark.asyncio
     @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
@@ -448,38 +564,3 @@ class TestSQLAgentRetry:
         result = await agent.invoke(state)
         assert "SELECT * FROM sales" in result["sql_result"]["query"]
         assert len(result["sql_result"]["rows"]) == 1
-
-    @pytest.mark.asyncio
-    @patch("business_brain.cognitive.sql_agent.retrieve_relevant_tables")
-    @patch("business_brain.cognitive.sql_agent._get_client")
-    async def test_results_accumulate_across_invocations(self, mock_client, mock_rag):
-        """sql_results grows with each invocation."""
-        mock_rag.return_value = ([], [])
-        mock_response = MagicMock()
-        mock_response.text = "SELECT 1"
-        mock_client.return_value.models.generate_content.return_value = mock_response
-
-        session = AsyncMock()
-        result_obj = MagicMock()
-        result_obj.fetchall.return_value = [MagicMock(_mapping={"v": 1})]
-        session.execute = AsyncMock(return_value=result_obj)
-
-        agent = SQLAgent()
-        state = {
-            "question": "test",
-            "db_session": session,
-            "plan": [
-                {"agent": "sql_agent", "task": "T1"},
-                {"agent": "sql_agent", "task": "T2"},
-                {"agent": "sql_agent", "task": "T3"},
-            ],
-            "current_query_index": 0,
-        }
-
-        for i in range(3):
-            state = await agent.invoke(state)
-
-        assert state["current_query_index"] == 3
-        assert len(state["sql_results"]) == 3
-        assert state["sql_results"][0]["task"] == "T1"
-        assert state["sql_results"][2]["task"] == "T3"

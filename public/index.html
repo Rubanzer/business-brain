@@ -995,6 +995,18 @@
       gap: 0.4rem;
       margin-top: 0.4rem;
     }
+    .quarantine-row-data {
+      display: none;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.5rem;
+      margin-top: 0.4rem;
+      font-size: 0.65rem;
+      overflow-x: auto;
+      max-height: 200px;
+    }
+    .quarantine-row-data.open { display: block; }
     .table-chip {
       display: inline-block;
       background: var(--bg);
@@ -2062,6 +2074,7 @@
         <div id="user-info" style="display:flex;align-items:center;gap:0.5rem;font-size:0.72rem;">
           <span id="user-plan-badge" style="display:none;padding:2px 8px;border-radius:10px;font-size:0.6rem;font-weight:600;text-transform:uppercase;"></span>
           <span id="user-name-display" style="color:var(--muted);"></span>
+          <span id="deep-tier-indicator" title="Deep Tier: checking..." style="display:none;width:8px;height:8px;border-radius:50%;background:var(--muted);cursor:help;"></span>
           <button onclick="startTutorial()" style="background:none;border:1px solid var(--border);color:var(--muted);padding:3px 8px;border-radius:4px;font-size:0.65rem;cursor:pointer;" title="Product Tour">?</button>
           <button id="logout-btn" onclick="doLogout()" style="display:none;background:none;border:1px solid var(--border);color:var(--muted);padding:3px 8px;border-radius:4px;font-size:0.65rem;cursor:pointer;">Logout</button>
         </div>
@@ -2226,6 +2239,7 @@
         <button class="sub-nav-pill" data-sub="data-upload">Upload</button>
         <button class="sub-nav-pill" data-sub="data-sources">Sources</button>
         <button class="sub-nav-pill" data-sub="data-quality">Quality</button>
+        <button class="sub-nav-pill" data-sub="data-quarantine">Quarantine <span id="quarantine-badge" class="badge badge-red" style="display:none;font-size:0.55rem;padding:1px 5px;margin-left:2px;vertical-align:middle;"></span></button>
       </div>
 
       <!-- Sub: Tables (was Schema) -->
@@ -2273,6 +2287,37 @@
         </div>
         <div id="data-quality-body">
           <div class="feed-empty">Click refresh to load data quality scores.</div>
+        </div>
+      </div>
+
+      <!-- Sub: Quarantine -->
+      <div id="data-quarantine" class="sub-panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.4rem;">
+          <span style="font-size:0.8rem;color:var(--muted);">Data Quarantine</span>
+          <div style="display:flex;gap:0.4rem;align-items:center;">
+            <select id="quarantine-table-filter" onchange="loadQuarantine()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:0.7rem;padding:3px 6px;border-radius:4px;">
+              <option value="">All Tables</option>
+            </select>
+            <select id="quarantine-status-filter" onchange="loadQuarantine()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:0.7rem;padding:3px 6px;border-radius:4px;">
+              <option value="quarantined">Quarantined</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button class="btn-sm" onclick="loadQuarantine()">Refresh</button>
+          </div>
+        </div>
+        <!-- Summary Cards -->
+        <div id="quarantine-summary" style="display:flex;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap;"></div>
+        <!-- Bulk Actions Bar -->
+        <div id="quarantine-bulk-bar" style="display:none;background:var(--surface);border:1px solid var(--accent);border-radius:6px;padding:0.4rem 0.8rem;margin-bottom:0.6rem;align-items:center;gap:0.5rem;font-size:0.75rem;">
+          <label style="cursor:pointer;"><input type="checkbox" id="quarantine-select-all" onchange="toggleAllQuarantine(this)"> Select All</label>
+          <span id="quarantine-selected-count" style="color:var(--muted);">0 selected</span>
+          <button class="btn-sm" onclick="bulkReviewQuarantine('approve')" style="background:var(--green);color:#000;font-size:0.65rem;">Approve Selected</button>
+          <button class="btn-sm" onclick="bulkReviewQuarantine('reject')" style="background:var(--red);color:#fff;font-size:0.65rem;">Reject Selected</button>
+        </div>
+        <!-- Quarantine Rows -->
+        <div id="quarantine-body">
+          <div class="feed-empty">Loading quarantine data...</div>
         </div>
       </div>
     </div>
@@ -3121,6 +3166,21 @@
       document.getElementById('auth-page').style.display = 'none';
       document.getElementById('main-app').style.display = '';
       updateUserDisplay();
+      checkDeepTierStatus();
+    }
+
+    async function checkDeepTierStatus() {
+      try {
+        const s = await apiFetch(API + '/deep-tier/status');
+        const dot = document.getElementById('deep-tier-indicator');
+        if (dot) {
+          dot.style.display = 'inline-block';
+          dot.style.background = s.available ? 'var(--green)' : 'var(--muted)';
+          dot.title = s.available
+            ? `Deep Tier: ${s.model || 'Claude'} (auto @ <${((s.auto_threshold || 0.3) * 100).toFixed(0)}% confidence)`
+            : 'Deep Tier: not configured (set ANTHROPIC_API_KEY)';
+        }
+      } catch (e) { /* ignore — indicator stays hidden */ }
     }
 
     function showLogin() {
@@ -3597,6 +3657,7 @@
           if (sub === 'data-tables') loadSchemaIntoData();
           if (sub === 'data-sources') loadSourcesIntoData();
           if (sub === 'data-quality') loadDataQualityIntoData();
+          if (sub === 'data-quarantine') loadQuarantine();
           if (sub === 'setup-process') loadProcessSteps();
           if (sub === 'setup-metrics') loadThresholds();
           if (sub === 'setup-io') loadProcessIO();
@@ -4705,8 +4766,57 @@
         html += `</div>`;
       }
 
+      // v4: Confidence indicator (always shown)
+      const confidence = d.query_confidence || 0.5;
+      const queryType = d.query_type || 'custom';
+      if (confidence < 0.3) {
+        html += `<div style="background:rgba(254,202,87,0.15);border:1px solid var(--yellow);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--yellow);display:flex;align-items:center;gap:0.5rem;">`;
+        html += `<span style="font-size:1rem;">&#9888;</span>`;
+        html += `<span><strong>Low Confidence (${(confidence*100).toFixed(0)}%)</strong> — The available data may not fully answer this question.</span>`;
+        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;margin-left:auto;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
+        html += `</div>`;
+      } else if (confidence < 0.6) {
+        html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">`;
+        html += `<span style="font-size:0.65rem;color:var(--muted);background:rgba(108,92,231,0.1);padding:2px 8px;border-radius:10px;">`;
+        html += `${queryType} &middot; ${(confidence*100).toFixed(0)}% confidence</span>`;
+        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
+        html += `</div>`;
+      } else {
+        html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">`;
+        html += `<span style="font-size:0.6rem;color:var(--muted);background:rgba(0,206,201,0.1);padding:2px 8px;border-radius:10px;">`;
+        html += `${queryType} &middot; ${(confidence*100).toFixed(0)}% confidence</span>`;
+        html += `</div>`;
+      }
+
+      // v4: Leakage pattern alerts
+      if (d.leakage_patterns?.length) {
+        html += `<div style="background:rgba(255,107,107,0.1);border:1px solid var(--red);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;">`;
+        html += `<strong style="color:var(--red);">&#128680; Leakage Patterns Detected:</strong><ul style="margin:0.25rem 0 0 1rem;padding:0;">`;
+        d.leakage_patterns.forEach(p => {
+          html += `<li style="color:var(--text);">${esc(p)}</li>`;
+        });
+        html += `</ul></div>`;
+      }
+
+      // v4: Deep Tier auto-escalation or availability
+      if (d.deep_tier) {
+        if (d.deep_tier.task_id) {
+          // Auto-escalated — show banner and start polling
+          html += `<div id="deep-tier-banner">
+            <div style="background:rgba(108,92,231,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-bottom:0.75rem;font-size:0.75rem;">
+              <span class="spinner" style="margin-right:0.4rem;"></span>
+              <strong style="color:var(--accent);">Deep Tier Analysis</strong> — ${esc(d.deep_tier.message || 'Auto-escalated due to low confidence.')}
+              <div id="deep-tier-status" style="color:var(--muted);margin-top:0.3rem;font-size:0.7rem;">Polling for results...</div>
+            </div>
+          </div>`;
+          // Start polling after render (setTimeout so DOM is ready)
+          setTimeout(() => pollDeepTierTask(d.deep_tier.task_id), 1500);
+        }
+      }
+
       // Analysis Actions Bar (Feed-parity)
       html += `<div style="display:flex;gap:0.4rem;margin-bottom:0.75rem;flex-wrap:wrap;">`;
+      html += `<button class="btn-sm" style="background:var(--accent);color:#fff;border:none;font-weight:600;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
       html += `<button class="btn-sm" onclick="deployFullAnalysis()">Deploy Full Analysis</button>`;
       html += `<button class="btn-sm btn-secondary" onclick="saveFullAnalysisToFeed()">Save to Feed</button>`;
       html += `<button class="btn-sm btn-secondary" onclick="exportCSV()">Export CSV</button>`;
@@ -5161,6 +5271,190 @@
         : '<span class="badge badge-red">REJECTED</span>';
       body.innerHTML = renderAnalysis(entry.data);
       autoRenderCharts(entry.data);
+    }
+
+    async function investigateDeeper() {
+      // v4: Call Deep Tier API with context from last analysis
+      const lastEntry = analysisStack.length > 0
+        ? analysisStack[analysisStack.length - 1]
+        : null;
+      if (!lastEntry) return;
+
+      const body = document.getElementById('analyze-body');
+      const question = lastEntry.question;
+      const data = lastEntry.data;
+
+      // Build context payload
+      const payload = {
+        question: question,
+        session_id: sessionId,
+        fast_findings: data.analysis?.findings || [],
+        sql_query: data.sql_results?.[0]?.query || data.sql_result?.query || '',
+        tables_used: data.tables_used || [],
+        fast_confidence: data.query_confidence || 0.5,
+      };
+
+      // Show "queued" banner
+      const deepBanner = document.createElement('div');
+      deepBanner.id = 'deep-tier-banner';
+      deepBanner.innerHTML = `
+        <div style="background:rgba(108,92,231,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-top:0.75rem;font-size:0.75rem;">
+          <span class="spinner" style="margin-right:0.4rem;"></span>
+          <strong style="color:var(--accent);">Deep Tier Analysis</strong> — Queuing deeper investigation with Claude...
+          <div id="deep-tier-status" style="color:var(--muted);margin-top:0.3rem;font-size:0.7rem;"></div>
+        </div>`;
+      body.appendChild(deepBanner);
+
+      try {
+        const res = await apiFetch(API + '/deep-tier/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.error || res.detail) {
+          document.getElementById('deep-tier-status').innerHTML =
+            `<span style="color:var(--red);">Error: ${esc(res.error || res.detail)}</span>`;
+          return;
+        }
+
+        if (res.task_id) {
+          document.getElementById('deep-tier-status').textContent = 'Task queued. Polling for results...';
+          pollDeepTierTask(res.task_id);
+        } else {
+          document.getElementById('deep-tier-status').innerHTML =
+            '<span style="color:var(--yellow);">Deep Tier not available. Configure ANTHROPIC_API_KEY to enable.</span>';
+        }
+      } catch (e) {
+        document.getElementById('deep-tier-status').innerHTML =
+          `<span style="color:var(--red);">Error: ${esc(e.message)}</span>`;
+      }
+    }
+
+    async function pollDeepTierTask(taskId, retries = 0) {
+      const maxRetries = 60;  // 60 polls × 3s = 3 min max
+      const statusEl = document.getElementById('deep-tier-status');
+      if (!statusEl) return;  // user navigated away
+
+      try {
+        const task = await apiFetch(API + `/deep-tier/task/${taskId}`);
+
+        if (task.error === 'Task not found') {
+          statusEl.innerHTML = '<span style="color:var(--red);">Task not found.</span>';
+          return;
+        }
+
+        if (task.status === 'completed') {
+          statusEl.textContent = '';
+          renderDeepTierResults(task.result || task);
+          return;
+        }
+
+        if (task.status === 'failed') {
+          statusEl.innerHTML = `<span style="color:var(--red);">Analysis failed: ${esc(task.error || 'Unknown error')}</span>
+            <button class="btn-sm" style="margin-left:0.4rem;font-size:0.65rem;" onclick="retryDeepTier('${taskId}')">Retry</button>`;
+          return;
+        }
+
+        // Still pending/executing — poll again
+        if (retries < maxRetries) {
+          const elapsed = (retries + 1) * 3;
+          statusEl.textContent = `Status: ${task.status}... (${elapsed}s elapsed)`;
+          setTimeout(() => pollDeepTierTask(taskId, retries + 1), 3000);
+        } else {
+          statusEl.innerHTML = '<span style="color:var(--yellow);">Timed out waiting. The analysis may still complete — check back later.</span>';
+        }
+      } catch (e) {
+        if (retries < maxRetries) {
+          setTimeout(() => pollDeepTierTask(taskId, retries + 1), 5000);
+        }
+      }
+    }
+
+    function renderDeepTierResults(result) {
+      const banner = document.getElementById('deep-tier-banner');
+      if (!banner || !result) return;
+
+      let html = '<div style="margin-top:0.5rem;">';
+
+      // Summary
+      if (result.summary) {
+        const conf = ((result.confidence_overall || 0) * 100).toFixed(0);
+        html += `<div style="background:rgba(108,92,231,0.08);border-radius:6px;padding:0.6rem 0.8rem;margin-bottom:0.6rem;font-size:0.78rem;line-height:1.5;">
+          <strong style="color:var(--accent);">Deep Analysis Summary</strong>
+          <span class="badge" style="background:rgba(108,92,231,0.2);color:var(--accent);font-size:0.55rem;margin-left:0.3rem;">${conf}% confidence</span>
+          <div style="margin-top:0.3rem;">${esc(result.summary)}</div>
+        </div>`;
+      }
+
+      // Root cause
+      if (result.root_cause_analysis) {
+        html += `<div style="margin-bottom:0.5rem;font-size:0.75rem;">
+          <strong style="color:var(--yellow);">Root Cause:</strong> ${esc(result.root_cause_analysis)}
+        </div>`;
+      }
+
+      // Deep findings
+      if (result.deep_findings?.length) {
+        html += '<div style="margin-bottom:0.6rem;">';
+        for (const f of result.deep_findings) {
+          const vColor = f.verdict === 'critical' ? 'var(--red)' : f.verdict === 'warning' ? 'var(--yellow)' : 'var(--green)';
+          html += `<div class="feed-card" style="border-left:3px solid ${vColor};padding:0.5rem 0.8rem;margin-bottom:0.4rem;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="badge" style="background:rgba(108,92,231,0.15);color:var(--accent);font-size:0.6rem;">${esc(f.angle || '')}</span>
+              <span style="font-size:0.6rem;color:${vColor};">${esc(f.verdict || '')} · ${((f.confidence || 0) * 100).toFixed(0)}%</span>
+            </div>
+            <div style="font-size:0.75rem;margin-top:0.3rem;">${esc(f.description || '')}</div>
+            ${f.business_impact ? `<div style="font-size:0.7rem;color:var(--yellow);margin-top:0.2rem;">Impact: ${esc(f.business_impact)}</div>` : ''}
+          </div>`;
+        }
+        html += '</div>';
+      }
+
+      // Cross-correlations
+      if (result.cross_correlations?.length) {
+        html += '<div style="margin-bottom:0.5rem;font-size:0.7rem;"><strong>Cross-correlations:</strong><ul style="margin:0.2rem 0 0 1rem;padding:0;">';
+        for (const c of result.cross_correlations) {
+          html += `<li>${esc(c)}</li>`;
+        }
+        html += '</ul></div>';
+      }
+
+      // Recommendations
+      if (result.recommendations?.length) {
+        html += '<div style="margin-bottom:0.5rem;"><strong style="font-size:0.75rem;">Recommendations:</strong>';
+        for (const r of result.recommendations) {
+          const pColor = r.priority === 'high' ? 'var(--red)' : r.priority === 'medium' ? 'var(--yellow)' : 'var(--green)';
+          html += `<div style="font-size:0.7rem;margin:0.2rem 0 0.2rem 0.5rem;padding:0.3rem 0.5rem;border-left:2px solid ${pColor};background:var(--bg);border-radius:0 4px 4px 0;">
+            <span style="color:${pColor};font-weight:600;">[${esc(r.priority || 'medium')}]</span> ${esc(r.action || '')}
+            ${r.impact ? `<span style="color:var(--muted);"> — ${esc(r.impact)}</span>` : ''}
+          </div>`;
+        }
+        html += '</div>';
+      }
+
+      // Next questions (clickable)
+      if (result.next_questions?.length) {
+        html += '<div style="font-size:0.7rem;color:var(--muted);margin-top:0.4rem;">Follow-up questions: ';
+        for (const q of result.next_questions) {
+          html += `<button class="btn-sm btn-secondary" style="font-size:0.6rem;padding:1px 6px;margin:2px;" onclick="document.getElementById('question').value=this.textContent;runAnalysis();">${esc(q)}</button> `;
+        }
+        html += '</div>';
+      }
+
+      html += '</div>';
+      banner.innerHTML = html;
+    }
+
+    async function retryDeepTier(taskId) {
+      const statusEl = document.getElementById('deep-tier-status');
+      if (statusEl) statusEl.textContent = 'Retrying...';
+      try {
+        await apiFetch(API + `/deep-tier/task/${taskId}/retry`, { method: 'POST' });
+        pollDeepTierTask(taskId);
+      } catch (e) {
+        if (statusEl) statusEl.innerHTML = `<span style="color:var(--red);">Retry failed: ${esc(e.message)}</span>`;
+      }
     }
 
     function drillFromMetric(metric) {
@@ -6942,6 +7236,201 @@
     }
 
     document.querySelector('[data-panel="quality"]').addEventListener('click', loadDataQuality);
+
+    // -----------------------------------------------------------------------
+    // Quarantine Management
+    // -----------------------------------------------------------------------
+    async function loadQuarantine() {
+      const body = document.getElementById('quarantine-body');
+      const summaryEl = document.getElementById('quarantine-summary');
+      body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading quarantine data...</div>';
+
+      try {
+        // Fetch summary
+        const summary = await apiFetch(API + '/quarantine/summary');
+        renderQuarantineSummary(summary, summaryEl);
+
+        // Update table filter dropdown (preserve selection)
+        const tableFilter = document.getElementById('quarantine-table-filter');
+        const currentVal = tableFilter.value;
+        tableFilter.innerHTML = '<option value="">All Tables</option>';
+        for (const t of Object.keys(summary.tables || {})) {
+          tableFilter.innerHTML += `<option value="${esc(t)}" ${t === currentVal ? 'selected' : ''}>${esc(t)}</option>`;
+        }
+
+        // Fetch rows
+        const tableParam = tableFilter.value ? `&table_name=${encodeURIComponent(tableFilter.value)}` : '';
+        const statusParam = document.getElementById('quarantine-status-filter').value;
+        const data = await apiFetch(API + `/quarantine?status=${statusParam}${tableParam}&limit=100`);
+        renderQuarantineRows(data, body, statusParam);
+
+        // Update badge
+        const badge = document.getElementById('quarantine-badge');
+        if (summary.total_quarantined > 0) {
+          badge.textContent = summary.total_quarantined;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+
+        // Show bulk bar only for quarantined status
+        document.getElementById('quarantine-bulk-bar').style.display =
+          statusParam === 'quarantined' && data.rows?.length ? 'flex' : 'none';
+        document.getElementById('quarantine-select-all').checked = false;
+      } catch (e) {
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">Error: ${esc(e.message)}</div>`;
+      }
+    }
+
+    function renderQuarantineSummary(summary, el) {
+      const q = summary.total_quarantined || 0;
+      const a = summary.total_approved || 0;
+      const r = summary.total_rejected || 0;
+      let html = '';
+      html += `<div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--red);border-radius:6px;padding:0.5rem 0.8rem;">
+        <div style="font-size:1.2rem;font-weight:700;color:var(--red);">${q}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">Quarantined</div>
+      </div>`;
+      html += `<div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--green);border-radius:6px;padding:0.5rem 0.8rem;">
+        <div style="font-size:1.2rem;font-weight:700;color:var(--green);">${a}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">Approved</div>
+      </div>`;
+      html += `<div style="flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:0.5rem 0.8rem;">
+        <div style="font-size:1.2rem;font-weight:700;color:var(--muted);">${r}</div>
+        <div style="font-size:0.65rem;color:var(--muted);">Rejected</div>
+      </div>`;
+
+      // Per-table breakdown
+      const tables = summary.tables || {};
+      if (Object.keys(tables).length > 0) {
+        html += `<div style="width:100%;margin-top:0.3rem;font-size:0.65rem;color:var(--muted);">`;
+        for (const [tbl, counts] of Object.entries(tables)) {
+          html += `<span style="margin-right:0.8rem;">${esc(tbl)}: <span style="color:var(--red);">${counts.quarantined || 0}</span>/<span style="color:var(--green);">${counts.approved || 0}</span>/<span>${counts.rejected || 0}</span></span>`;
+        }
+        html += `</div>`;
+      }
+      el.innerHTML = html;
+    }
+
+    function renderQuarantineRows(data, el, statusFilter) {
+      const rows = data.rows || [];
+      if (!rows.length) {
+        el.innerHTML = `<div class="feed-empty">No ${statusFilter || 'quarantined'} rows found.</div>`;
+        return;
+      }
+
+      let html = '';
+      for (const row of rows) {
+        const issues = row.issues || [];
+        const isQuarantined = row.validation_status === 'quarantined';
+
+        html += `<div class="feed-card" style="border-left:3px solid ${isQuarantined ? 'var(--red)' : row.validation_status === 'approved' ? 'var(--green)' : 'var(--muted)'};">`;
+
+        // Header: checkbox + table + row index + time
+        html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">`;
+        html += `<div style="display:flex;align-items:center;gap:0.4rem;">`;
+        if (isQuarantined) {
+          html += `<input type="checkbox" class="quarantine-cb" data-id="${row.id}" onchange="updateQuarantineCount()">`;
+        }
+        html += `<span class="badge" style="background:rgba(108,92,231,0.15);color:var(--accent);font-size:0.6rem;">${esc(row.table_name)}</span>`;
+        html += `<span style="font-size:0.65rem;color:var(--muted);">Row #${row.row_index}</span>`;
+        html += `</div>`;
+        html += `<span style="font-size:0.6rem;color:var(--muted);">${new Date(row.quarantined_at).toLocaleString()}</span>`;
+        html += `</div>`;
+
+        // Issues list
+        if (issues.length) {
+          html += `<div style="margin-bottom:0.4rem;">`;
+          for (const issue of issues) {
+            html += `<div style="font-size:0.7rem;padding:2px 0;color:var(--yellow);">`;
+            html += `<strong>${esc(issue.column || issue.check || 'issue')}:</strong> ${esc(issue.message || issue.reason || JSON.stringify(issue))}`;
+            html += `</div>`;
+          }
+          html += `</div>`;
+        }
+
+        // Expandable row data
+        html += `<div style="margin-bottom:0.4rem;">`;
+        html += `<button class="btn-sm btn-secondary" style="font-size:0.6rem;padding:1px 6px;" onclick="this.nextElementSibling.classList.toggle('open');this.textContent=this.nextElementSibling.classList.contains('open')?'Hide Data':'Show Data'">Show Data</button>`;
+        html += `<div class="quarantine-row-data"><pre style="margin:0;white-space:pre-wrap;word-break:break-all;">${esc(JSON.stringify(row.row_data, null, 2))}</pre></div>`;
+        html += `</div>`;
+
+        // Actions or review info
+        if (isQuarantined) {
+          html += `<div style="display:flex;gap:0.4rem;">`;
+          html += `<button class="btn-sm" style="background:var(--green);color:#000;font-size:0.65rem;" onclick="approveQuarantine(${row.id})">Approve</button>`;
+          html += `<button class="btn-sm" style="background:var(--red);color:#fff;font-size:0.65rem;" onclick="rejectQuarantine(${row.id})">Reject</button>`;
+          html += `</div>`;
+        } else {
+          html += `<div style="font-size:0.65rem;color:var(--muted);">`;
+          html += `${esc(row.validation_status)} by ${esc(row.reviewed_by || '?')}`;
+          if (row.review_note) html += ` — "${esc(row.review_note)}"`;
+          html += `</div>`;
+        }
+
+        html += `</div>`;
+      }
+      el.innerHTML = html;
+    }
+
+    async function approveQuarantine(id) {
+      const name = currentUser?.name || currentUser?.email || 'anonymous';
+      const note = prompt('Add a note (optional):') || '';
+      try {
+        const res = await apiFetch(API + `/quarantine/${id}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reviewed_by: name, note })
+        });
+        if (res.error) { toast(res.error); return; }
+        toast('Row approved and inserted into table');
+        loadQuarantine();
+      } catch (e) { toast('Approve failed: ' + e.message); }
+    }
+
+    async function rejectQuarantine(id) {
+      const name = currentUser?.name || currentUser?.email || 'anonymous';
+      const note = prompt('Reason for rejection (optional):') || '';
+      try {
+        const res = await apiFetch(API + `/quarantine/${id}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reviewed_by: name, note })
+        });
+        if (res.error) { toast(res.error); return; }
+        toast('Row rejected');
+        loadQuarantine();
+      } catch (e) { toast('Reject failed: ' + e.message); }
+    }
+
+    async function bulkReviewQuarantine(action) {
+      const checked = document.querySelectorAll('.quarantine-cb:checked');
+      if (!checked.length) { toast('No rows selected'); return; }
+      const ids = Array.from(checked).map(cb => parseInt(cb.dataset.id));
+      const name = currentUser?.name || currentUser?.email || 'anonymous';
+      const note = prompt(`${action === 'approve' ? 'Approve' : 'Reject'} ${ids.length} rows. Add a note (optional):`) || '';
+      try {
+        const res = await apiFetch(API + '/quarantine/bulk-review', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids, action, reviewed_by: name, note })
+        });
+        if (res.error) { toast(res.error); return; }
+        toast(`Bulk ${action}: ${res.approved || 0} approved, ${res.rejected || 0} rejected`);
+        loadQuarantine();
+      } catch (e) { toast('Bulk review failed: ' + e.message); }
+    }
+
+    function toggleAllQuarantine(masterCb) {
+      document.querySelectorAll('.quarantine-cb').forEach(cb => { cb.checked = masterCb.checked; });
+      updateQuarantineCount();
+    }
+
+    function updateQuarantineCount() {
+      const count = document.querySelectorAll('.quarantine-cb:checked').length;
+      const el = document.getElementById('quarantine-selected-count');
+      if (el) el.textContent = count + ' selected';
+    }
 
     async function loadTimeAnalysis(tableName) {
       const overlay = document.getElementById('time-analysis-overlay');

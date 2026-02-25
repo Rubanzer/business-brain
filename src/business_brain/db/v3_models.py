@@ -348,6 +348,35 @@ class InviteToken(Base):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Data Quarantine
+# ---------------------------------------------------------------------------
+
+
+class DataQuarantine(Base):
+    """Quarantined data rows that failed validation checks on upload.
+
+    Rows are held here until reviewed (approved → inserted into target table,
+    or rejected → discarded).
+    """
+
+    __tablename__ = "data_quarantine"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_name = Column(String(255), nullable=False, index=True)
+    upload_batch_id = Column(String(36), nullable=False, index=True)  # groups rows from same upload
+    row_index = Column(Integer, nullable=False)  # original row position in file
+    row_data = Column(JSON, nullable=False)  # the full row as {col: value}
+    issues = Column(JSON, nullable=False)  # [{check, column, value, message, severity}]
+    validation_status = Column(
+        String(20), nullable=False, default="quarantined"
+    )  # quarantined / approved / rejected
+    quarantined_at = Column(DateTime(timezone=True), server_default=func.now())
+    reviewed_by = Column(String(255), nullable=True)  # user_id or "auto"
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    review_note = Column(Text, nullable=True)
+
+
 class FocusScope(Base):
     """Per-user table focus/scoping — controls which tables are active for analysis."""
 

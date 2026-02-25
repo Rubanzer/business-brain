@@ -38,7 +38,7 @@ SAMPLE_CSV = b"id,name,value\n1,alpha,10\n2,beta,20\n3,gamma,30"
 @pytest.fixture()
 def client():
     """Create a TestClient that skips real DB startup events and background discovery."""
-    with patch("business_brain.action.api._run_discovery_background", new_callable=AsyncMock):
+    with patch("business_brain.action.routers.data.run_discovery_background", new_callable=AsyncMock):
         from business_brain.action.api import app
 
         original_startup = list(app.router.on_startup)
@@ -61,7 +61,7 @@ def client():
 @pytest.fixture()
 def auth_client():
     """TestClient with an authenticated user override."""
-    with patch("business_brain.action.api._run_discovery_background", new_callable=AsyncMock):
+    with patch("business_brain.action.routers.data.run_discovery_background", new_callable=AsyncMock):
         from business_brain.action.api import app, get_current_user
 
         original_startup = list(app.router.on_startup)
@@ -91,7 +91,7 @@ def auth_client():
 # ---------------------------------------------------------------------------
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
 @patch(
     "business_brain.ingestion.format_matcher.find_matching_fingerprint",
@@ -114,7 +114,7 @@ def test_recurring_calls_metadata_upsert(mock_find, mock_upsert, mock_meta, clie
     )
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
 @patch(
     "business_brain.ingestion.format_matcher.find_matching_fingerprint",
@@ -138,7 +138,7 @@ def test_recurring_table_name_from_match(mock_find, mock_upsert, mock_meta, clie
     assert args[2] == "monthly_sales" or kwargs.get("table_name") == "monthly_sales"
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
 @patch(
     "business_brain.ingestion.format_matcher.find_matching_fingerprint",
@@ -164,7 +164,7 @@ def test_recurring_with_auth_passes_user(mock_find, mock_upsert, mock_meta, auth
     assert kw.get("uploaded_by_role") == "admin"
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
 @patch(
     "business_brain.ingestion.format_matcher.find_matching_fingerprint",
@@ -186,7 +186,7 @@ def test_recurring_without_auth(mock_find, mock_upsert, mock_meta, client):
     assert kw.get("uploaded_by_role") is None
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
 @patch(
     "business_brain.ingestion.format_matcher.find_matching_fingerprint",
@@ -207,7 +207,7 @@ def test_recurring_metadata_failure_noncritical(mock_find, mock_upsert, mock_met
     assert data["recurring"] is True
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
 @patch(
     "business_brain.ingestion.format_matcher.find_matching_fingerprint",
@@ -225,7 +225,7 @@ def test_recurring_increments_match_count(mock_find, mock_upsert, mock_meta, cli
     assert match.match_count == 8
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
 @patch(
     "business_brain.ingestion.format_matcher.find_matching_fingerprint",

@@ -54,7 +54,7 @@ class TestMetadataErrorHandling:
     """Error handling for /metadata endpoints."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     async def test_list_metadata_db_error_returns_empty(self, mock_metadata_store):
         """When _get_accessible_tables or metadata_store raises, list_metadata returns []."""
         session = _failing_session()
@@ -67,7 +67,7 @@ class TestMetadataErrorHandling:
         assert result == []
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     async def test_get_table_metadata_db_error_returns_error_dict(self, mock_metadata_store):
         """When DB fails, get_table_metadata returns {'error': 'Failed to fetch table metadata'}."""
         session = _failing_session()
@@ -83,7 +83,7 @@ class TestMetadataErrorHandling:
         assert result["error"] == "Failed to fetch table metadata"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     async def test_list_metadata_with_none_user_still_works(self, mock_metadata_store):
         """user=None should not cause any additional errors — it means no auth."""
         entry = MagicMock(
@@ -151,7 +151,7 @@ class TestProcessStepErrorHandling:
             process_name="",
         )
 
-        with patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock):
+        with patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock):
             # Mock the step object returned after refresh
             result = await create_process_step(req, session)
 
@@ -237,7 +237,7 @@ class TestFocusErrorHandling:
         assert result["total"] == 0
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.focus.metadata_store")
     async def test_put_focus_db_error(self, mock_metadata_store):
         """DB error when validating tables in update_focus returns 500 JSON error."""
         mock_metadata_store.get_all = AsyncMock(
