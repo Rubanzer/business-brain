@@ -66,6 +66,7 @@ from business_brain.action.routers.data import router as data_router
 from business_brain.action.routers.context import router as context_router
 from business_brain.action.routers.focus import router as focus_router
 from business_brain.action.routers.quarantine import router as quarantine_router
+from business_brain.action.routers.deep_tier import router as deep_tier_router
 
 app.include_router(auth_router)
 app.include_router(table_analysis_router)
@@ -83,6 +84,7 @@ app.include_router(data_router)
 app.include_router(context_router)
 app.include_router(focus_router)
 app.include_router(quarantine_router)
+app.include_router(deep_tier_router)
 
 # Background sync task handle
 _sync_task: Optional[asyncio.Task] = None
@@ -266,6 +268,20 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _is_deep_tier_available() -> bool:
+    """Check if Deep Tier (Claude API) is configured."""
+    try:
+        from business_brain.cognitive.deep_tier import is_available
+        return is_available()
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Core endpoints (kept in api.py — tightly coupled with pipeline)
 # ---------------------------------------------------------------------------
 
@@ -365,6 +381,22 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
     result.setdefault("leakage_patterns", [])
     result.pop("router_reasoning", None)
     result["session_id"] = session_id
+
+    # Deep Tier escalation info
+    deep_tier_task_id = result.pop("deep_tier_task_id", None)
+    if deep_tier_task_id:
+        result["deep_tier"] = {
+            "task_id": deep_tier_task_id,
+            "status": "queued",
+            "message": "Low confidence — Deep Tier analysis queued automatically.",
+            "poll_url": f"/deep-tier/task/{deep_tier_task_id}",
+        }
+    else:
+        confidence = result.get("query_confidence", 0.5)
+        result["deep_tier"] = {
+            "available": _is_deep_tier_available(),
+            "suggested": confidence < 0.6,
+        }
 
     diagnostics = result.pop("_diagnostics", [])
     result["diagnostics"] = diagnostics

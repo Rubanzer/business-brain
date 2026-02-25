@@ -53,6 +53,8 @@ class AgentState(TypedDict, total=False):
     # RAG context — populated by query_router, reused by all downstream
     _rag_tables: list[dict]
     _rag_contexts: list[dict]
+    # Deep Tier
+    deep_tier_task_id: str               # set when auto-escalated to Claude
     # Pipeline diagnostics
     _diagnostics: list[dict]
 
@@ -236,6 +238,73 @@ def _insight_formatter_with_diagnostics(state: dict) -> dict:
     return state
 
 
+async def _deep_tier_escalation(state: dict) -> dict:
+    """Post-analysis: auto-create a Deep Tier task if confidence is low.
+
+    Runs after insight_formatter. If query_confidence < auto threshold and
+    Claude API is configured, creates a background Deep Tier task.
+    """
+    t0 = time.monotonic()
+
+    confidence = state.get("query_confidence", 1.0)
+    db_session = state.get("db_session")
+
+    try:
+        from config.settings import settings
+        from business_brain.cognitive.deep_tier import is_available, create_task
+
+        threshold = settings.deep_tier_auto_threshold
+
+        if confidence >= threshold or not is_available() or not db_session:
+            reason = (
+                f"Confidence {confidence:.2f} >= {threshold}" if confidence >= threshold
+                else "Deep Tier not configured" if not is_available()
+                else "No db_session"
+            )
+            _add_diagnostic(state, "deep_tier_check", "skip", reason, _elapsed(t0))
+            return state
+
+        # Build fast tier summary for the task
+        analysis = state.get("analysis", {})
+        sql_result = state.get("sql_result", {})
+
+        task_info = await create_task(
+            db_session,
+            question=state.get("question", ""),
+            fast_tier_result={
+                "findings": analysis.get("findings", []),
+                "summary": analysis.get("summary", ""),
+                "key_metrics": state.get("key_metrics", []),
+                "query_type": state.get("query_type", "custom"),
+            },
+            sql_query=sql_result.get("query", ""),
+            sql_rows=sql_result.get("rows", []),
+            tables_used=[
+                t.get("table_name", "") for t in state.get("_rag_tables", [])
+            ],
+            fast_confidence=confidence,
+            session_id=state.get("session_id", ""),
+            source_tier="fast",
+            requested_by="auto",
+        )
+
+        state["deep_tier_task_id"] = task_info.get("task_id")
+
+        _add_diagnostic(
+            state, "deep_tier_check", "ok",
+            f"Auto-escalated (confidence={confidence:.2f} < {threshold}). "
+            f"Task: {task_info.get('task_id', '?')}",
+            _elapsed(t0),
+        )
+
+    except Exception as exc:
+        logger.exception("Deep Tier auto-escalation failed")
+        _add_diagnostic(state, "deep_tier_check", "warn",
+                        f"Auto-escalation failed: {exc}", _elapsed(t0))
+
+    return state
+
+
 # ---------------------------------------------------------------------------
 # Graph construction
 # ---------------------------------------------------------------------------
@@ -244,14 +313,15 @@ def _insight_formatter_with_diagnostics(state: dict) -> dict:
 def build_graph() -> StateGraph:
     """Construct and return the compiled v4 LangGraph state machine.
 
-    3-step pipeline:
-      validate_schema → query_router → sql_agent → insight_formatter → END
+    4-step pipeline (Deep Tier check is a lightweight post-step):
+      validate_schema → query_router → sql_agent →
+      insight_formatter → deep_tier_check → END
 
-    Every node is wrapped in a diagnostic harness that:
-    - Catches and handles exceptions gracefully
-    - Logs timing information
-    - Validates output before passing to the next stage
-    - Records diagnostics in state['_diagnostics']
+    If confidence < threshold and Claude API is configured, deep_tier_check
+    creates a background analysis task. The Fast Tier response is returned
+    immediately; Deep Tier results are polled via /deep-tier/task/{id}.
+
+    Every node is wrapped in a diagnostic harness.
     """
     graph = StateGraph(AgentState)
 
@@ -259,11 +329,13 @@ def build_graph() -> StateGraph:
     graph.add_node("query_router", _query_router_with_diagnostics)
     graph.add_node("sql_agent", _sql_with_diagnostics)
     graph.add_node("insight_formatter", _insight_formatter_with_diagnostics)
+    graph.add_node("deep_tier_check", _deep_tier_escalation)
 
     graph.set_entry_point("validate_schema")
     graph.add_edge("validate_schema", "query_router")
     graph.add_edge("query_router", "sql_agent")
     graph.add_edge("sql_agent", "insight_formatter")
-    graph.add_edge("insight_formatter", END)
+    graph.add_edge("insight_formatter", "deep_tier_check")
+    graph.add_edge("deep_tier_check", END)
 
     return graph.compile()
