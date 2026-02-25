@@ -272,13 +272,15 @@ async def enrich_column_descriptions(session: AsyncSession, table_name: str) -> 
         )
 
 
-async def run_discovery_background(trigger: str) -> None:
+async def run_discovery_background(
+    trigger: str = "manual", table_filter: Optional[list] = None
+) -> None:
     """Run discovery engine in background with a fresh session."""
     try:
         from business_brain.discovery.engine import run_discovery
 
         async with async_session() as session:
-            await run_discovery(session, trigger=trigger)
+            await run_discovery(session, trigger=trigger, table_filter=table_filter)
     except Exception:
         logger.exception("Background discovery failed for trigger: %s", trigger)
 

@@ -38,7 +38,7 @@ class TestGetAccessibleTables:
     """Tests for _get_accessible_tables role-hierarchy filtering."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_none_user_returns_none(self, mock_store):
         """No auth (user=None) means all tables visible (backward compat)."""
         session = AsyncMock()
@@ -48,7 +48,7 @@ class TestGetAccessibleTables:
         mock_store.get_all.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_owner_returns_none(self, mock_store):
         """Owner role gets None (full access to all tables)."""
         session = AsyncMock()
@@ -57,7 +57,7 @@ class TestGetAccessibleTables:
         mock_store.get_all.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_admin_returns_none(self, mock_store):
         """Admin role gets None (full access to all tables)."""
         session = AsyncMock()
@@ -66,7 +66,7 @@ class TestGetAccessibleTables:
         mock_store.get_all.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_viewer_sees_own_uploads(self, mock_store):
         """Viewer 'v1' uploaded 'sales' -> viewer sees 'sales'."""
         session = AsyncMock()
@@ -78,7 +78,7 @@ class TestGetAccessibleTables:
         assert result == ["sales"]
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_viewer_cannot_see_admin_uploads(self, mock_store):
         """Admin uploaded 'secrets' -> viewer cannot see it."""
         session = AsyncMock()
@@ -90,7 +90,7 @@ class TestGetAccessibleTables:
         assert result == []
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_viewer_cannot_see_operator_uploads(self, mock_store):
         """Operator uploaded 'ops_data' -> viewer cannot see it."""
         session = AsyncMock()
@@ -102,7 +102,7 @@ class TestGetAccessibleTables:
         assert result == []
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_viewer_sees_legacy_tables(self, mock_store):
         """Table with uploaded_by=None (legacy) is visible to viewer."""
         session = AsyncMock()
@@ -114,7 +114,7 @@ class TestGetAccessibleTables:
         assert result == ["old_report"]
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_operator_sees_own_uploads(self, mock_store):
         """Operator sees tables they uploaded themselves."""
         session = AsyncMock()
@@ -126,7 +126,7 @@ class TestGetAccessibleTables:
         assert result == ["ops_table"]
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_operator_sees_viewer_uploads(self, mock_store):
         """Operator can see viewer-uploaded tables (lower role)."""
         session = AsyncMock()
@@ -138,7 +138,7 @@ class TestGetAccessibleTables:
         assert result == ["viewer_data"]
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_operator_sees_other_operator_uploads(self, mock_store):
         """Operator can see tables uploaded by other operators (equal role level)."""
         session = AsyncMock()
@@ -150,7 +150,7 @@ class TestGetAccessibleTables:
         assert result == ["peer_ops"]
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_operator_cannot_see_admin_uploads(self, mock_store):
         """Operator cannot see admin-uploaded tables."""
         session = AsyncMock()
@@ -162,7 +162,7 @@ class TestGetAccessibleTables:
         assert result == []
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_manager_sees_operator_and_viewer(self, mock_store):
         """Manager sees uploads from operator and viewer (both lower roles)."""
         session = AsyncMock()
@@ -177,7 +177,7 @@ class TestGetAccessibleTables:
         assert len(result) == 2
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_manager_sees_other_manager_uploads(self, mock_store):
         """Manager can see tables uploaded by other managers (equal role level)."""
         session = AsyncMock()
@@ -189,7 +189,7 @@ class TestGetAccessibleTables:
         assert result == ["peer_mgr_data"]
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_manager_cannot_see_admin_uploads(self, mock_store):
         """Manager cannot see admin-uploaded tables."""
         session = AsyncMock()
@@ -201,7 +201,7 @@ class TestGetAccessibleTables:
         assert result == []
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_mixed_tables(self, mock_store):
         """Mix of legacy, own, lower-role, and higher-role uploads.
 
@@ -237,7 +237,7 @@ class TestGetAccessibleTables:
         assert len(result) == 4
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_empty_metadata_returns_empty_list(self, mock_store):
         """No tables at all returns empty list (not None)."""
         session = AsyncMock()
@@ -248,7 +248,7 @@ class TestGetAccessibleTables:
         assert isinstance(result, list)
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_db_error_returns_none_failopen(self, mock_store):
         """metadata_store.get_all raises exception -> returns None (fail-open)."""
         session = AsyncMock()
@@ -258,7 +258,7 @@ class TestGetAccessibleTables:
         assert result is None
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_unknown_user_role_treated_as_viewer(self, mock_store):
         """User with role='intern' (not in ROLE_LEVELS) gets level 0 (same as viewer).
 
@@ -396,7 +396,7 @@ class TestAccessControlIntegration:
     realistic multi-table scenarios."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_viewer_with_no_uploads_sees_only_legacy(self, mock_store):
         """A viewer who uploaded nothing sees only legacy tables (no uploader recorded)."""
         session = AsyncMock()
@@ -418,7 +418,7 @@ class TestAccessControlIntegration:
         assert len(result) == 2
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_all_roles_see_legacy_tables(self, mock_store):
         """Every restricted role (viewer, operator, manager) sees tables with no uploader."""
         session = AsyncMock()
@@ -437,7 +437,7 @@ class TestAccessControlIntegration:
             assert len(result) == 2, f"{role} should see exactly 2 legacy tables"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.dependencies.metadata_store")
     async def test_promoted_user_sees_more(self, mock_store):
         """If a user's role changes from viewer to manager (new JWT),
         they immediately see more tables."""

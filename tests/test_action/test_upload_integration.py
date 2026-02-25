@@ -158,7 +158,7 @@ def fake_meta():
 
 
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_csv_upload_then_metadata_list_includes_table(mock_meta, mock_upsert, client):
     """Upload CSV, then verify metadata list returns the uploaded table."""
     fake = FakeMetadataStore()
@@ -182,7 +182,7 @@ def test_csv_upload_then_metadata_list_includes_table(mock_meta, mock_upsert, cl
 
 
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_csv_by_viewer_admin_sees(mock_meta, mock_upsert, admin_client):
     """Viewer uploads a table; admin (role=admin) should see it (full access)."""
     fake = FakeMetadataStore()
@@ -208,7 +208,7 @@ def test_csv_by_viewer_admin_sees(mock_meta, mock_upsert, admin_client):
     assert data[0]["table_name"] == "viewer_data"
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_csv_by_admin_viewer_blocked(mock_meta, viewer_client):
     """Admin uploads a table; viewer should NOT see it in metadata."""
     fake = FakeMetadataStore()
@@ -234,7 +234,7 @@ def test_csv_by_admin_viewer_blocked(mock_meta, viewer_client):
     assert len(data) == 0
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_csv_by_viewer_sees_own(mock_meta, viewer_client):
     """Viewer uploads a table; same viewer should see it in their metadata list."""
     fake = FakeMetadataStore()
@@ -257,7 +257,7 @@ def test_csv_by_viewer_sees_own(mock_meta, viewer_client):
     assert data[0]["table_name"] == "my_data"
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_csv_no_auth_legacy_visible_to_all(mock_meta, viewer_client):
     """Legacy table (no uploaded_by) should be visible to all roles including viewer."""
     fake = FakeMetadataStore()
@@ -286,7 +286,7 @@ def test_csv_no_auth_legacy_visible_to_all(mock_meta, viewer_client):
 
 
 @pytest.mark.asyncio
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 async def test_upload_then_data_accessible(mock_meta):
     """After upload, GET /data/{table} works for an authorized (no-auth) user."""
     fake = FakeMetadataStore()
@@ -315,7 +315,7 @@ async def test_upload_then_data_accessible(mock_meta):
 
     # No auth user -> accessible is None -> full access
     user = None
-    with patch("business_brain.action.api._get_accessible_tables", new_callable=AsyncMock) as mock_access:
+    with patch("business_brain.action.routers.data.get_accessible_tables", new_callable=AsyncMock) as mock_access:
         mock_access.return_value = None  # no auth => all tables
         result = await get_table_data(table="sales", session=session, user=user)
 
@@ -325,7 +325,7 @@ async def test_upload_then_data_accessible(mock_meta):
 
 
 @pytest.mark.asyncio
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 async def test_upload_then_data_blocked(mock_meta):
     """Admin uploads -> viewer is blocked from /data/{table}."""
     fake = FakeMetadataStore()
@@ -347,7 +347,7 @@ async def test_upload_then_data_blocked(mock_meta):
 
     # _get_accessible_tables for viewer: admin upload -> uploader_level=3, viewer_level=0 -> blocked
     # The accessible list won't contain "secret"
-    with patch("business_brain.action.api._get_accessible_tables", new_callable=AsyncMock) as mock_access:
+    with patch("business_brain.action.routers.data.get_accessible_tables", new_callable=AsyncMock) as mock_access:
         mock_access.return_value = []  # viewer can see nothing
         result = await get_table_data(table="secret", session=session, user=viewer_user)
 
@@ -361,7 +361,7 @@ async def test_upload_then_data_blocked(mock_meta):
 
 
 @pytest.mark.asyncio
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 async def test_update_cell_commits_to_session(mock_meta):
     """PUT /data/{table} calls session.execute + session.commit."""
     from business_brain.action.api import update_cell
@@ -386,7 +386,7 @@ async def test_update_cell_commits_to_session(mock_meta):
 
 
 @pytest.mark.asyncio
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 async def test_update_cell_uses_correct_pk(mock_meta):
     """PK column should come from pg_index or metadata columns_metadata[0]['name']."""
     from business_brain.action.api import update_cell
@@ -518,7 +518,7 @@ def test_delete_table_invalid_name(client):
     assert "Invalid" in data["error"]
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_delete_metadata_only(mock_meta, client):
     """DELETE /metadata/{table} removes metadata but does NOT drop the data table."""
     mock_meta.delete = AsyncMock(return_value=True)
@@ -539,7 +539,7 @@ def test_delete_metadata_only(mock_meta, client):
 
 
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_metadata_upsert_updates_not_duplicates(mock_meta, mock_upsert, client):
     """Two uploads to same table -> metadata is updated (not duplicated)."""
     fake = FakeMetadataStore()
@@ -567,7 +567,7 @@ def test_metadata_upsert_updates_not_duplicates(mock_meta, mock_upsert, client):
     assert entries[0].table_name == "sales"
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe", new_callable=AsyncMock)
 @patch(
     "business_brain.ingestion.format_matcher.find_matching_fingerprint",

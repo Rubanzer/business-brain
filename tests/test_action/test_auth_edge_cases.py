@@ -112,7 +112,7 @@ class TestJWTEdgeCases:
 
     def test_expired_token_returns_none(self):
         """A token created far in the past should be expired and return None."""
-        with patch("business_brain.action.api.time") as mock_time:
+        with patch("business_brain.action.dependencies.time") as mock_time:
             # Create token as if current time is epoch + 1000 seconds (Jan 1970)
             mock_time.time.return_value = 1000
             token = _create_jwt("u1", "e@x.com", "viewer", "free")
@@ -132,20 +132,20 @@ class TestJWTEdgeCases:
         creation_time = 1_000_000
 
         # Create token at a known time
-        with patch("business_brain.action.api.time") as mock_time:
+        with patch("business_brain.action.dependencies.time") as mock_time:
             mock_time.time.return_value = creation_time
             token = _create_jwt("u1", "e@x.com", "viewer", "free")
 
         exp_time = creation_time + (7 * 86400)
 
         # At exactly exp, exp < exp is False => still valid
-        with patch("business_brain.action.api.time") as mock_time:
+        with patch("business_brain.action.dependencies.time") as mock_time:
             mock_time.time.return_value = exp_time
             result = _decode_jwt(token)
             assert result is not None, "Token at exact exp boundary should still be valid"
 
         # One second after exp, exp < (exp+1) is True => expired
-        with patch("business_brain.action.api.time") as mock_time:
+        with patch("business_brain.action.dependencies.time") as mock_time:
             mock_time.time.return_value = exp_time + 1
             result = _decode_jwt(token)
             assert result is None, "Token 1 second past exp should be expired"

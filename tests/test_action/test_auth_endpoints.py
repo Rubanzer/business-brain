@@ -82,7 +82,7 @@ class TestJWT:
     def test_decode_jwt_expired_token(self):
         """A token with an expiration in the past should return None."""
         # Patch time.time so the token is created in the distant past
-        with patch("business_brain.action.api.time") as mock_time:
+        with patch("business_brain.action.dependencies.time") as mock_time:
             mock_time.time.return_value = 1_000_000  # epoch year ~2001
             token = _create_jwt("u1", "e@x.com", "viewer", "free")
 

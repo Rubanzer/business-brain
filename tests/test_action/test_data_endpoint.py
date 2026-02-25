@@ -88,7 +88,7 @@ class TestGetTableData:
 
     # 1. No auth (user=None) -> no access check, data returned
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_no_auth_returns_data(self, mock_accessible):
         """When user is None, _get_accessible_tables returns None (no filtering)
         and data is returned successfully."""
@@ -123,7 +123,7 @@ class TestGetTableData:
 
     # 2. Admin user -> full access
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_admin_returns_data(self, mock_accessible):
         """Admin role gets None from _get_accessible_tables (full access),
         so data is returned without restriction."""
@@ -150,7 +150,7 @@ class TestGetTableData:
 
     # 3. Viewer accessing admin's table -> "Access denied"
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_viewer_blocked(self, mock_accessible):
         """Viewer trying to access a table not in their accessible list gets
         an 'Access denied' error."""
@@ -177,7 +177,7 @@ class TestGetTableData:
 
     # 4. Viewer accessing own upload -> data returned
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_viewer_own_table(self, mock_accessible):
         """Viewer accessing their own uploaded table should get data back."""
         from business_brain.action.api import get_table_data
@@ -206,7 +206,7 @@ class TestGetTableData:
 
     # 5. Legacy table (no uploader) visible to all roles
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_legacy_table_visible(self, mock_accessible):
         """A legacy table (no uploader) appears in the accessible list for
         any authenticated user, so data is returned."""
@@ -253,7 +253,7 @@ class TestGetTableData:
 
     # 7. Pagination params passed correctly
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_pagination_params(self, mock_accessible):
         """page=3, page_size=10 should produce offset=20 and correct response metadata."""
         from business_brain.action.api import get_table_data
@@ -288,7 +288,7 @@ class TestGetTableData:
 
     # 8. Sort params work
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_sort_params(self, mock_accessible):
         """sort_by='revenue' and sort_dir='desc' produce ORDER BY clause in the query."""
         from business_brain.action.api import get_table_data
@@ -320,7 +320,7 @@ class TestGetTableData:
 
     # 9. Response format has all expected keys
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_response_format(self, mock_accessible):
         """Response dict must contain rows, total, page, page_size, and columns."""
         from business_brain.action.api import get_table_data
@@ -352,7 +352,7 @@ class TestGetTableData:
 
     # 10. DB error returns error dict
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._get_accessible_tables")
+    @patch("business_brain.action.routers.data.get_accessible_tables")
     async def test_data_db_error_returns_error(self, mock_accessible):
         """When session.execute raises an exception, the endpoint returns
         {'error': '...'} instead of crashing."""
@@ -390,7 +390,7 @@ class TestUpdateCell:
 
     # 11. Valid update returns {"status": "updated"}
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     async def test_update_cell_success(self, mock_metadata_store):
         """A valid cell update with all required fields returns success."""
         from business_brain.action.api import update_cell
@@ -441,7 +441,7 @@ class TestUpdateCell:
 
     # 13. PK column detected from database or metadata fallback
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     async def test_update_cell_uses_pk_from_metadata(self, mock_metadata_store):
         """When pg_index query fails (mock), falls back to metadata_store's
         first column as PK for the WHERE clause."""
@@ -480,7 +480,7 @@ class TestUpdateCell:
 
     # 14. No metadata -> uses "id" as PK fallback
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     async def test_update_cell_fallback_pk_id(self, mock_metadata_store):
         """When pg_index and metadata_store both fail, uses 'id' as PK fallback."""
         from business_brain.action.api import update_cell
@@ -514,7 +514,7 @@ class TestUpdateCell:
 
     # 15. DB error during update -> {"error": "..."}
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.data.metadata_store")
     async def test_update_cell_db_error(self, mock_metadata_store):
         """When session.execute raises during UPDATE, the endpoint returns
         an error dict and rolls back the session."""

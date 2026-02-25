@@ -15,7 +15,7 @@ def _mock_session_override():
 @pytest.fixture()
 def client():
     """Create a TestClient that skips real DB startup events and background discovery."""
-    with patch("business_brain.action.api._run_discovery_background", new_callable=AsyncMock):
+    with patch("business_brain.action.routers.data.run_discovery_background", new_callable=AsyncMock):
         from business_brain.action.api import app
 
         # Neutralise startup/shutdown handlers that need a live database
@@ -65,7 +65,7 @@ def test_analyze(mock_build, client):
     assert "db_session" not in data
 
 
-@patch("business_brain.action.api.ingest_context", new_callable=AsyncMock)
+@patch("business_brain.ingestion.context_ingestor.ingest_context", new_callable=AsyncMock)
 def test_context(mock_ingest, client):
     mock_ingest.return_value = [7]
 
@@ -77,7 +77,7 @@ def test_context(mock_ingest, client):
     assert data["chunks"] == 1
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 @patch("business_brain.ingestion.csv_loader.upsert_dataframe")
 def test_upload_csv(mock_upsert, mock_metadata_store, client):
     mock_upsert.return_value = 3
@@ -118,7 +118,7 @@ def test_upload_file(mock_invoke, client):
     mock_invoke.assert_called_once()
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_list_metadata(mock_store, client):
     entry = MagicMock()
     entry.table_name = "sales"
@@ -133,7 +133,7 @@ def test_list_metadata(mock_store, client):
     assert data[0]["table_name"] == "sales"
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_get_table_metadata(mock_store, client):
     entry = MagicMock()
     entry.table_name = "orders"
@@ -146,7 +146,7 @@ def test_get_table_metadata(mock_store, client):
     assert resp.json()["table_name"] == "orders"
 
 
-@patch("business_brain.action.api.metadata_store")
+@patch("business_brain.action.routers.data.metadata_store")
 def test_get_table_metadata_not_found(mock_store, client):
     mock_store.get_by_table = AsyncMock(return_value=None)
 
