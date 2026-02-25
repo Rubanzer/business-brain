@@ -11,7 +11,7 @@ class TestProcessStepMultipleMetrics:
     """Tests for process step creation/update with multi-metric support."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_process_step_multiple_metrics(self, mock_regen):
         """POST with key_metrics array stores all metrics properly."""
         session = AsyncMock()
@@ -48,7 +48,7 @@ class TestProcessStepMultipleMetrics:
         mock_regen.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_process_step_backward_compat_single(self, mock_regen):
         """key_metric (singular) alone still works for backward compatibility."""
         session = AsyncMock()
@@ -74,7 +74,7 @@ class TestProcessStepMultipleMetrics:
         assert added_step.key_metric == "throughput"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_key_metrics_populates_key_metric(self, mock_regen):
         """First element of key_metrics array becomes key_metric (singular)."""
         session = AsyncMock()
@@ -98,7 +98,7 @@ class TestProcessStepMultipleMetrics:
         assert added_step.key_metrics == ["casting_speed", "mold_temperature"]
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_update_step_metrics(self, mock_regen):
         """PUT updates key_metrics on an existing step."""
         session = AsyncMock()
@@ -127,7 +127,7 @@ class TestProcessStepMultipleMetrics:
         mock_regen.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_empty_key_metrics(self, mock_regen):
         """Empty key_metrics array means no key_metric."""
         session = AsyncMock()
@@ -153,7 +153,7 @@ class TestProcessStepMultipleMetrics:
         assert added_step.key_metric == ""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_update_step_not_found(self, mock_regen):
         """PUT on nonexistent step returns error."""
         session = AsyncMock()

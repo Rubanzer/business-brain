@@ -30,12 +30,9 @@ logger = logging.getLogger(__name__)
 
 class AgentState(TypedDict, total=False):
     question: str
-    plan: list[dict]
-    sql_result: dict
-    sql_results: list[dict]          # accumulated SQL results
-    current_query_index: int         # tracks SQL task progress
+    plan: list[dict]                 # single SQL task from query router
+    sql_result: dict                 # single SQL result
     analysis: dict
-    python_analysis: dict
     approved: bool
     cfo_notes: str
     recommendations: list[str]
@@ -44,10 +41,10 @@ class AgentState(TypedDict, total=False):
     db_session: Any                  # AsyncSession (typed as Any to avoid serialization issues)
     column_classification: dict      # column classifier output
     cfo_key_metrics: list[dict]      # key metrics with verdicts
-    cfo_chart_suggestions: list[dict]  # chart suggestions
+    cfo_chart_suggestions: list[dict]  # chart suggestions from insight formatter
     parent_finding: dict             # drill-down: the finding being investigated
     allowed_tables: list[str]        # focus mode: only analyze these tables
-    # v4 new fields
+    # v4 fields
     query_type: str                  # metric_lookup|trend|comparison|anomaly|drill_down|custom
     query_confidence: float          # 0.0-1.0 confidence from router
     router_reasoning: str            # why the router chose this classification
@@ -141,18 +138,14 @@ async def _query_router_with_diagnostics(state: dict) -> dict:
 
 
 async def _sql_with_diagnostics(state: dict) -> dict:
-    """SQL agent wrapper: generates and executes SQL with retry."""
+    """SQL agent wrapper: generates and executes single SQL query with retry."""
     t0 = time.monotonic()
-    idx = state.get("current_query_index", 0)
 
     try:
         state = await _sql_agent.invoke(state)
     except Exception as exc:
         logger.exception("SQL agent failed")
-        result = {"query": "", "rows": [], "error": str(exc)}
-        state["sql_result"] = result
-        state.setdefault("sql_results", []).append(result)
-        state["current_query_index"] = idx + 1
+        state["sql_result"] = {"query": "", "rows": [], "error": str(exc)}
         _add_diagnostic(state, "sql_agent", "error",
                         f"SQL agent exception: {exc}", _elapsed(t0))
         return state
@@ -180,12 +173,8 @@ def _insight_formatter_with_diagnostics(state: dict) -> dict:
     t0 = time.monotonic()
 
     # Check if we have any data to analyze
-    total_rows = 0
-    for res in state.get("sql_results", []):
-        total_rows += len(res.get("rows", []))
-    if not total_rows:
-        single = state.get("sql_result", {})
-        total_rows = len(single.get("rows", []))
+    sql_result = state.get("sql_result", {})
+    total_rows = len(sql_result.get("rows", []))
 
     if not total_rows:
         state["analysis"] = {

@@ -217,31 +217,28 @@ def _extract_threshold_context(contexts: list[dict] | None) -> str:
 
 
 def _build_data_section(state: dict[str, Any]) -> tuple[str, int]:
-    """Build the data section from single or multi-query results."""
-    sql_results = state.get("sql_results")
-    if not sql_results:
-        single = state.get("sql_result", {})
-        if single:
-            sql_results = [single]
-        else:
-            return "", 0
+    """Build the data section from single SQL result.
 
-    parts = []
-    total_rows = 0
-    for i, res in enumerate(sql_results):
-        rows = res.get("rows", [])
-        total_rows += len(rows)
-        query = res.get("query", "")
-        task = res.get("task", f"Query {i + 1}")
-        sample = rows[:20]
-        header = f"--- Query {i + 1}: {task} ---"
-        parts.append(
-            f"{header}\n"
-            f"SQL: {query}\n"
-            f"Result rows ({len(rows)} total, showing {len(sample)}):\n"
-            f"{json.dumps(sample, default=str, indent=2)}"
-        )
-    return "\n\n".join(parts), total_rows
+    v4: Single-query pipeline — reads from ``sql_result`` directly.
+    """
+    result = state.get("sql_result", {})
+    if not result:
+        return "", 0
+
+    rows = result.get("rows", [])
+    if not rows:
+        return "", 0
+
+    query = result.get("query", "")
+    task = result.get("task", "Query")
+    sample = rows[:20]
+    data_text = (
+        f"--- {task} ---\n"
+        f"SQL: {query}\n"
+        f"Result rows ({len(rows)} total, showing {len(sample)}):\n"
+        f"{json.dumps(sample, default=str, indent=2)}"
+    )
+    return data_text, len(rows)
 
 
 class InsightFormatter:

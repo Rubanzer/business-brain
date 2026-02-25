@@ -151,7 +151,7 @@ class TestProcessStepErrorHandling:
             process_name="",
         )
 
-        with patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock):
+        with patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock):
             # Mock the step object returned after refresh
             result = await create_process_step(req, session)
 

@@ -110,7 +110,7 @@ class TestProcessStepEdgeCases:
     """Edge cases for create_process_step and update_process_step with multi-metric handling."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_ten_metrics_stress(self, mock_regen):
         """Process step with 10 key_metrics stores all of them correctly."""
         session = _session_with_refresh()
@@ -140,7 +140,7 @@ class TestProcessStepEdgeCases:
         mock_regen.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_metric_with_special_characters(self, mock_regen):
         """Metric names with special characters like parentheses, slashes, hyphens work."""
         session = _session_with_refresh()
@@ -167,7 +167,7 @@ class TestProcessStepEdgeCases:
         assert added_step.key_metric == "Yield (%)"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_duplicate_metric_names_stored(self, mock_regen):
         """Duplicate metric names in key_metrics are stored as-is with no deduplication."""
         session = _session_with_refresh()
@@ -186,7 +186,7 @@ class TestProcessStepEdgeCases:
         assert len(added_step.key_metrics) == 3
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_empty_string_metrics_in_array(self, mock_regen):
         """Empty strings in key_metrics array are stored as-is — no filtering."""
         session = _session_with_refresh()
@@ -206,7 +206,7 @@ class TestProcessStepEdgeCases:
         assert added_step.key_metric == "SEC"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_process_step_no_metrics_allowed(self, mock_regen):
         """Empty key_metrics=[] is valid — some steps are informational only."""
         session = _session_with_refresh()
@@ -227,7 +227,7 @@ class TestProcessStepEdgeCases:
         assert added_step.target_ranges == {}
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api._regenerate_process_context", new_callable=AsyncMock)
+    @patch("business_brain.action.routers.process._regenerate_process_context", new_callable=AsyncMock)
     async def test_very_long_metric_name(self, mock_regen):
         """A 500-character metric name is stored — key_metrics is JSON, not varchar-limited."""
         session = _session_with_refresh()
@@ -259,7 +259,7 @@ class TestAutoLinkEdgeCases:
     multi-table disambiguation."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_auto_link_underscore_vs_space(self, mock_store):
         """Metric 'power consumption' (with space) matches column 'power_consumption'
         (with underscore) because both are normalized to 'power_consumption'."""
@@ -287,7 +287,7 @@ class TestAutoLinkEdgeCases:
         assert metric.auto_linked is True
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_auto_link_hyphen_normalization(self, mock_store):
         """Metric 'power-consumption' (with hyphen) matches column 'power_consumption'
         because hyphens are normalized to underscores."""
@@ -314,7 +314,7 @@ class TestAutoLinkEdgeCases:
         assert result["auto_linked"][0]["column_name"] == "power_consumption"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_auto_link_case_and_underscore_combined(self, mock_store):
         """'Power Consumption' (mixed case + spaces) matches 'power_consumption'
         with at least 0.95 confidence after normalization."""
@@ -343,7 +343,7 @@ class TestAutoLinkEdgeCases:
         assert metric.table_name == "energy"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_auto_link_no_unlinked_metrics_empty_result(self, mock_store):
         """When all metrics are already linked, result has empty auto_linked,
         suggestions, and unmatched lists."""
@@ -368,7 +368,7 @@ class TestAutoLinkEdgeCases:
         session.commit.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_auto_link_multiple_tables_best_match(self, mock_store):
         """Metric matching columns in two tables picks the highest-confidence match.
         Exact match in table2 beats substring match in table1."""
@@ -408,7 +408,7 @@ class TestDerivedMetricEdgeCases:
     """Edge cases for create_derived_metric — formula parsing, validation, multi-table refs."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_formula_with_constants(self, mock_store):
         """Formula with only constants and no table.column references is valid
         and stores source_columns=[]."""
@@ -447,7 +447,7 @@ class TestDerivedMetricEdgeCases:
         assert "metric_name" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_formula_multiple_tables(self, mock_store):
         """Formula referencing columns from two different tables parses
         source_columns from both."""
@@ -473,7 +473,7 @@ class TestDerivedMetricEdgeCases:
         assert len(added.source_columns) == 2
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_formula_nonexistent_table_raises(self, mock_store):
         """Formula referencing a table that does not exist raises 400."""
         session = AsyncMock()
@@ -494,7 +494,7 @@ class TestDerivedMetricEdgeCases:
         assert "ghost_table" in exc_info.value.detail
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_derived_formula_nonexistent_column_raises(self, mock_store):
         """Formula referencing a nonexistent column in a valid table raises 400."""
         session = AsyncMock()
@@ -540,7 +540,7 @@ class TestSuggestMetricsEdgeCases:
     """Edge cases for suggest_metrics — ID column exclusion, empty tables, text-only tables."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_suggest_skips_id_columns(self, mock_store):
         """Columns named 'id', 'user_id', 'order_id' are excluded from suggestions
         even though they are numeric."""
@@ -571,7 +571,7 @@ class TestSuggestMetricsEdgeCases:
         assert "quantity" in col_names
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_suggest_no_tables_uploaded(self, mock_store):
         """Empty metadata returns suggestions=[] with a helpful message."""
         session = AsyncMock()
@@ -583,7 +583,7 @@ class TestSuggestMetricsEdgeCases:
         assert result["message"] == "No data uploaded yet"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_suggest_only_text_columns(self, mock_store):
         """Table with only varchar/text/date columns produces no suggestions."""
         session = AsyncMock()

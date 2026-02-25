@@ -1,7 +1,8 @@
 """SQL Specialist agent — converts natural language to SQL and executes.
 
-Now reuses RAG context from state (populated by Supervisor) to avoid duplicate
-embedding calls. Falls back to fresh retrieval if state context is missing.
+v4: Single-query focus. Receives one SQL task from the Query Router,
+generates SQL via Gemini, validates, executes with retry on failure.
+Reuses RAG context from state (populated by Query Router).
 """
 from __future__ import annotations
 
@@ -149,17 +150,17 @@ def _validate_sql(sql: str) -> str | None:
 
 
 class SQLAgent:
-    """Translates natural language questions into SQL and returns results."""
+    """Translates natural language questions into SQL and returns results.
+
+    v4: Single-query focus. Receives one SQL task from the Query Router's plan,
+    generates SQL via Gemini, validates, and executes with retry on failure.
+    """
 
     async def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Generate and execute SQL for the current task.
+        """Generate and execute a single SQL query for the routed task.
 
-        Supports multi-query mode: reads ``current_query_index`` from state,
-        executes the matching SQL task from the plan, appends to ``sql_results``,
-        and increments the index for the next pass.
-
-        Reuses RAG context from state if available (populated by Supervisor),
-        falling back to fresh retrieval.
+        Reuses RAG context from state (populated by Query Router),
+        falling back to fresh retrieval if missing.
         """
         db_session: AsyncSession | None = state.get("db_session")
 
@@ -168,19 +169,12 @@ class SQLAgent:
             state["sql_result"] = {"query": "", "rows": [], "error": "No database session"}
             return state
 
-        # Multi-query: determine which SQL task to execute
-        idx = state.get("current_query_index", 0)
-        sql_tasks = [s for s in state.get("plan", []) if s.get("agent") == "sql_agent"]
-
-        if sql_tasks and idx < len(sql_tasks):
-            task = sql_tasks[idx].get("task", "")
-        else:
-            plan = state.get("plan", [])
-            task = plan[0].get("task", "") if plan else ""
-
+        # v4: Single task from Query Router's plan
+        plan = state.get("plan", [])
+        task = plan[0].get("task", "") if plan else ""
         question = state.get("question", task)
 
-        # Reuse RAG context from state (populated by Supervisor) or fetch fresh
+        # Reuse RAG context from state (populated by Query Router) or fetch fresh
         tables = state.get("_rag_tables")
         contexts = state.get("_rag_contexts")
 
@@ -223,20 +217,14 @@ class SQLAgent:
             sql = _strip_sql_fences(response.text)
         except Exception:
             logger.exception("SQL generation failed")
-            result = {"query": "", "rows": [], "error": "SQL generation failed"}
-            state["sql_result"] = result
-            state.setdefault("sql_results", []).append(result)
-            state["current_query_index"] = idx + 1
+            state["sql_result"] = {"query": "", "rows": [], "error": "SQL generation failed"}
             return state
 
         # Validate generated SQL before execution
         validation_error = _validate_sql(sql)
         if validation_error:
             logger.warning("SQL validation failed: %s", validation_error)
-            result = {"query": sql, "rows": [], "error": validation_error, "task": task}
-            state["sql_result"] = result
-            state.setdefault("sql_results", []).append(result)
-            state["current_query_index"] = idx + 1
+            state["sql_result"] = {"query": sql, "rows": [], "error": validation_error, "task": task}
             return state
 
         # Execute the generated SQL (read-only) with retry on failure
@@ -244,7 +232,7 @@ class SQLAgent:
         last_error = None
 
         for attempt in range(max_retries + 1):
-            logger.info("Executing SQL [task %d, attempt %d]: %s", idx, attempt, sql[:200])
+            logger.info("Executing SQL (attempt %d): %s", attempt, sql[:200])
             try:
                 db_result = await db_session.execute(text(sql))
                 rows = [dict(row._mapping) for row in db_result.fetchall()]
@@ -256,7 +244,7 @@ class SQLAgent:
                 logger.warning("SQL execution failed (attempt %d): %s", attempt, last_error)
                 await db_session.rollback()
                 if attempt < max_retries:
-                    # Ask Gemini to fix the query — include business context for better fixes
+                    # Ask Gemini to fix the query — include business context
                     retry_prompt = (
                         f"{SYSTEM_PROMPT}\n\n"
                         f"Schema:\n{schema_context}\n\n"
@@ -281,9 +269,6 @@ class SQLAgent:
         if last_error:
             result = {"query": sql, "rows": [], "error": last_error, "task": task}
 
-        # Update state: latest result + accumulate
+        # Store single result
         state["sql_result"] = result
-        state.setdefault("sql_results", []).append(result)
-        state["current_query_index"] = idx + 1
-
         return state

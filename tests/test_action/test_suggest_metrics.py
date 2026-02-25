@@ -22,7 +22,7 @@ class TestSuggestMetrics:
     """Tests for the POST /setup/suggest-metrics endpoint."""
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_suggest_from_numeric_columns(self, mock_store):
         """Finds numeric columns as metric suggestions."""
         session = AsyncMock()
@@ -54,7 +54,7 @@ class TestSuggestMetrics:
         assert "created_at" not in col_names
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_no_data_empty_suggestions(self, mock_store):
         """No tables uploaded returns empty suggestions with message."""
         session = AsyncMock()
@@ -66,7 +66,7 @@ class TestSuggestMetrics:
         assert "No data uploaded" in result.get("message", "")
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_deduplicates_existing_metrics(self, mock_store):
         """Already-configured metrics are excluded from suggestions."""
         session = AsyncMock()
@@ -93,7 +93,7 @@ class TestSuggestMetrics:
         assert "voltage" in col_names
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_skips_id_columns(self, mock_store):
         """Columns ending with _id or named 'id' are skipped."""
         session = AsyncMock()
@@ -121,7 +121,7 @@ class TestSuggestMetrics:
         assert "quantity" in col_names
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_suggested_metric_name_formatting(self, mock_store):
         """Suggested metric name replaces underscores with spaces and title-cases."""
         session = AsyncMock()
@@ -142,7 +142,7 @@ class TestSuggestMetrics:
         assert col["suggested_metric_name"] == "Total Power Kwh"
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_multiple_tables(self, mock_store):
         """Suggestions come from all tables with numeric columns."""
         session = AsyncMock()
@@ -167,7 +167,7 @@ class TestSuggestMetrics:
         assert "production" in table_names
 
     @pytest.mark.asyncio
-    @patch("business_brain.action.api.metadata_store")
+    @patch("business_brain.action.routers.process.metadata_store")
     async def test_table_with_no_numeric_columns(self, mock_store):
         """Table with only non-numeric columns produces no suggestions."""
         session = AsyncMock()
