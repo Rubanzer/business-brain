@@ -238,6 +238,125 @@ def _insight_formatter_with_diagnostics(state: dict) -> dict:
     return state
 
 
+async def _persist_insights(state: dict) -> dict:
+    """Persist high-value LLM findings to the Insight table for the proactive feed.
+
+    Selectively persists:
+    - Findings with verdict in (critical, warning) AND confidence >= 0.7
+    - All leakage_patterns (always high-value)
+    - key_metrics with verdict == critical
+
+    Deduplicates by exact title match before insert.
+    """
+    t0 = time.monotonic()
+    db_session = state.get("db_session")
+    if not db_session:
+        _add_diagnostic(state, "persist_insights", "skip", "No db_session")
+        return state
+
+    try:
+        import uuid
+        from sqlalchemy import select
+        from business_brain.db.discovery_models import Insight
+
+        analysis = state.get("analysis", {})
+        findings = analysis.get("findings", [])
+        leakage_patterns = state.get("leakage_patterns", [])
+        key_metrics = state.get("key_metrics", [])
+        session_id = state.get("session_id", "")
+        tables_used = [t.get("table_name", "") for t in state.get("_rag_tables", [])]
+
+        to_persist: list[dict] = []
+
+        # High-value findings
+        for f in findings:
+            verdict = (f.get("verdict") or f.get("type", "")).lower()
+            confidence = f.get("confidence", 0)
+            description = f.get("description", "")
+            if verdict in ("critical", "warning") and confidence >= 0.7 and description:
+                to_persist.append({
+                    "title": f"LLM Finding: {description[:120]}",
+                    "description": description,
+                    "severity": "critical" if verdict == "critical" else "warning",
+                    "impact_score": 70 if verdict == "critical" else 50,
+                    "insight_type": "anomaly",
+                })
+
+        # All leakage patterns
+        for pattern in leakage_patterns:
+            if isinstance(pattern, str) and pattern.strip():
+                to_persist.append({
+                    "title": f"Leakage Pattern: {pattern[:120]}",
+                    "description": pattern,
+                    "severity": "critical",
+                    "impact_score": 75,
+                    "insight_type": "anomaly",
+                })
+
+        # Critical key metrics
+        for m in key_metrics:
+            verdict = (m.get("verdict") or "").lower()
+            name = m.get("metric", m.get("name", ""))
+            value = m.get("value", "")
+            if verdict == "critical" and name:
+                to_persist.append({
+                    "title": f"Critical Metric: {name} = {value}",
+                    "description": f"{name} is at {value} — rated critical. {m.get('context', '')}",
+                    "severity": "critical",
+                    "impact_score": 65,
+                    "insight_type": "anomaly",
+                })
+
+        if not to_persist:
+            _add_diagnostic(state, "persist_insights", "ok",
+                            "No high-value findings to persist", _elapsed(t0))
+            return state
+
+        # Deduplicate against existing insights by title
+        titles = [item["title"] for item in to_persist]
+        existing_result = await db_session.execute(
+            select(Insight.title).where(Insight.title.in_(titles))
+        )
+        existing_titles = {row[0] for row in existing_result.fetchall()}
+
+        persisted = 0
+        for item in to_persist:
+            if item["title"] in existing_titles:
+                continue
+            insight = Insight(
+                id=str(uuid.uuid4()),
+                insight_type=item["insight_type"],
+                severity=item["severity"],
+                impact_score=item["impact_score"],
+                quality_score=item["impact_score"],
+                title=item["title"],
+                description=item["description"],
+                source_tables=tables_used,
+                source_columns=[],
+                evidence={"source": "llm_chat", "question": state.get("question", "")},
+                suggested_actions=["Review this finding in detail"],
+                session_id=session_id,
+                status="new",
+            )
+            db_session.add(insight)
+            persisted += 1
+
+        if persisted:
+            await db_session.flush()
+
+        _add_diagnostic(state, "persist_insights", "ok",
+                        f"Persisted {persisted}/{len(to_persist)} insights "
+                        f"({len(existing_titles)} duplicates skipped)",
+                        _elapsed(t0))
+
+    except Exception as exc:
+        logger.exception("Failed to persist LLM insights")
+        _add_diagnostic(state, "persist_insights", "warn",
+                        f"Persist failed: {exc}", _elapsed(t0))
+
+    return state
+
+
 async def _deep_tier_escalation(state: dict) -> dict:
     """Post-analysis: auto-create a Deep Tier task if confidence is low.
 
@@ -313,9 +432,12 @@ async def _deep_tier_escalation(state: dict) -> dict:
 def build_graph() -> StateGraph:
     """Construct and return the compiled v4 LangGraph state machine.
 
-    4-step pipeline (Deep Tier check is a lightweight post-step):
+    5-step pipeline (persist_insights + Deep Tier check are post-steps):
       validate_schema → query_router → sql_agent →
-      insight_formatter → deep_tier_check → END
+      insight_formatter → persist_insights → deep_tier_check → END
+
+    persist_insights saves high-value LLM findings (critical/warning verdicts,
+    leakage patterns, critical metrics) to the Insight table for the proactive feed.
 
     If confidence < threshold and Claude API is configured, deep_tier_check
     creates a background analysis task. The Fast Tier response is returned
@@ -329,13 +451,15 @@ def build_graph() -> StateGraph:
     graph.add_node("query_router", _query_router_with_diagnostics)
     graph.add_node("sql_agent", _sql_with_diagnostics)
     graph.add_node("insight_formatter", _insight_formatter_with_diagnostics)
+    graph.add_node("persist_insights", _persist_insights)
     graph.add_node("deep_tier_check", _deep_tier_escalation)
 
     graph.set_entry_point("validate_schema")
     graph.add_edge("validate_schema", "query_router")
     graph.add_edge("query_router", "sql_agent")
     graph.add_edge("sql_agent", "insight_formatter")
-    graph.add_edge("insight_formatter", "deep_tier_check")
+    graph.add_edge("insight_formatter", "persist_insights")
+    graph.add_edge("persist_insights", "deep_tier_check")
     graph.add_edge("deep_tier_check", END)
 
     return graph.compile()

@@ -217,6 +217,46 @@ _MANUFACTURING_RANGES: list[dict] = [
         "unit": "kVA",
         "context": "furnace power consumption",
     },
+    {
+        "keywords": ["sec", "specific_energy", "kwh_per_ton"],
+        "name": "Specific Energy Consumption",
+        "min": 350,
+        "max": 700,
+        "unit": " kWh/ton",
+        "context": "SEC good <500, average 500-600, poor >600. Above 700 suggests furnace issues",
+    },
+    {
+        "keywords": ["yield_pct", "yield_percent"],
+        "name": "Yield",
+        "min": 80,
+        "max": 98,
+        "unit": "%",
+        "context": "output/input weight ratio. Below 85% likely indicates measurement error",
+    },
+    {
+        "keywords": ["tap_to_tap"],
+        "name": "Tap-to-Tap Time",
+        "min": 30,
+        "max": 120,
+        "unit": " min",
+        "context": "total cycle time. Above 120 min suggests operational problems",
+    },
+    {
+        "keywords": ["electrode_consumption"],
+        "name": "Electrode Consumption",
+        "min": 0,
+        "max": 6,
+        "unit": " kg/ton",
+        "context": "electrode consumption per ton of steel produced. Above 5 kg/ton is poor",
+    },
+    {
+        "keywords": ["rejection_rate", "rejection_pct"],
+        "name": "Rejection Rate",
+        "min": 0,
+        "max": 5,
+        "unit": "%",
+        "context": "percentage of output rejected. Above 3% is poor, above 5% is systemic",
+    },
 ]
 
 

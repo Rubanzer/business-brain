@@ -7,31 +7,31 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
-      --bg: #0a0a0f;
-      --surface: #12121a;
-      --border: #1e1e2e;
-      --text: #e2e2e8;
-      --muted: #8888a0;
-      --accent: #6c5ce7;
-      --accent-hover: #7c6cf7;
-      --green: #00cec9;
-      --red: #ff6b6b;
-      --yellow: #feca57;
+      --bg: #0f1117;
+      --surface: #161b22;
+      --border: #2a3140;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #4493f8;
+      --accent-hover: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, Helvetica, Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
     }
 
     .app {
-      max-width: 900px;
+      max-width: 1400px;
       margin: 0 auto;
-      padding: 2rem 1.5rem;
+      padding: 2rem 2.5rem;
     }
 
     header {
@@ -219,7 +219,7 @@
       border-bottom: 1px solid var(--border);
     }
     .process-table tr:hover {
-      background: rgba(99, 102, 241, 0.05);
+      background: rgba(68, 147, 248, 0.05);
     }
 
     /* Metric threshold cards */
@@ -348,7 +348,7 @@
     .badge-green { background: rgba(0,206,201,0.15); color: var(--green); }
     .badge-red { background: rgba(255,107,107,0.15); color: var(--red); }
     .badge-yellow { background: rgba(254,202,87,0.15); color: var(--yellow); }
-    .badge-accent { background: rgba(108,92,231,0.15); color: var(--accent); }
+    .badge-accent { background: rgba(68,147,248,0.15); color: var(--accent); }
     .badge-blue { background: rgba(100,149,237,0.15); color: cornflowerblue; }
 
     .step {
@@ -438,8 +438,14 @@
     }
 
     .data-table td.edited {
-      background: rgba(108,92,231,0.1);
+      background: rgba(68,147,248,0.1);
     }
+
+    /* Overflow containment */
+    .panel, .sub-panel { overflow-x: hidden; max-width: 100%; }
+    .modal-body > div { overflow-x: auto; max-width: 100%; }
+    .feed-card-meta { overflow: hidden; }
+    .col-list { overflow: hidden; max-width: 100%; }
 
     .finding {
       display: flex;
@@ -512,7 +518,7 @@
     }
     .drop-zone:hover, .drop-zone.drag-over {
       border-color: var(--accent);
-      background: rgba(108,92,231,0.05);
+      background: rgba(68,147,248,0.05);
       color: var(--text);
     }
     .drop-zone input[type="file"] { display: none; }
@@ -629,7 +635,7 @@
     }
     .finding-card:hover {
       border-color: var(--accent);
-      background: rgba(108,92,231,0.05);
+      background: rgba(68,147,248,0.05);
     }
     .finding-card .finding-desc {
       font-size: 0.8rem;
@@ -655,7 +661,7 @@
     .insight-summary {
       border-left: 3px solid var(--accent);
       padding: 0.6rem 0.8rem;
-      background: rgba(108,92,231,0.05);
+      background: rgba(68,147,248,0.05);
       border-radius: 0 6px 6px 0;
       margin-bottom: 0.75rem;
       font-size: 0.82rem;
@@ -813,7 +819,7 @@
     }
 
     .chat-msg.user {
-      background: rgba(108,92,231,0.1);
+      background: rgba(68,147,248,0.1);
       border-left: 3px solid var(--accent);
     }
 
@@ -874,7 +880,7 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       width: 90vw;
-      max-width: 1000px;
+      max-width: 1200px;
       max-height: 85vh;
       overflow: hidden;
       display: flex;
@@ -1073,7 +1079,7 @@
     .suggestion-pill:hover {
       border-color: var(--accent);
       color: var(--text);
-      background: rgba(108,92,231,0.08);
+      background: rgba(68,147,248,0.08);
     }
 
     /* Export buttons */
@@ -1145,7 +1151,7 @@
       text-transform: uppercase;
     }
     .source-type-badge.sheet { background: rgba(0,206,201,0.15); color: var(--green); }
-    .source-type-badge.api { background: rgba(108,92,231,0.15); color: var(--accent); }
+    .source-type-badge.api { background: rgba(68,147,248,0.15); color: var(--accent); }
     .source-type-badge.upload { background: rgba(254,202,87,0.15); color: var(--yellow); }
     .sync-status { font-size: 0.65rem; margin-left: 0.5rem; }
     .sync-status.success { color: var(--green); }
@@ -1343,7 +1349,7 @@
 
     /* Industry template banner */
     .template-banner {
-      background: linear-gradient(135deg, rgba(108,92,231,0.1), rgba(0,206,201,0.1));
+      background: linear-gradient(135deg, rgba(68,147,248,0.1), rgba(0,206,201,0.1));
       border: 1px solid var(--accent);
       border-radius: 8px;
       padding: 0.8rem 1rem;
@@ -1567,7 +1573,7 @@
       padding: 0.1rem 0.4rem;
       border-radius: 4px;
       font-size: 0.6rem;
-      background: rgba(108,92,231,0.15);
+      background: rgba(68,147,248,0.15);
       color: var(--accent);
     }
     .plan-badge {
@@ -1836,11 +1842,11 @@
     .setup-card:hover {
       border-color: var(--accent);
       transform: translateY(-1px);
-      box-shadow: 0 2px 8px rgba(108,92,231,0.12);
+      box-shadow: 0 2px 8px rgba(68,147,248,0.12);
     }
     .setup-card-active {
       border-color: var(--accent) !important;
-      box-shadow: 0 0 0 2px rgba(108,92,231,0.15);
+      box-shadow: 0 0 0 2px rgba(68,147,248,0.15);
     }
     .setup-card-done {
       border-left: 3px solid var(--green);
@@ -1871,7 +1877,7 @@
     }
     .setup-card-action-secondary { color: var(--muted); }
     .setup-card-suggestions {
-      background: linear-gradient(135deg, rgba(108,92,231,0.05), rgba(0,206,201,0.05));
+      background: linear-gradient(135deg, rgba(68,147,248,0.05), rgba(0,206,201,0.05));
     }
 
     /* Setup card panel (expandable content below grid) */
@@ -1945,7 +1951,7 @@
     /* Metric chip in table */
     .metric-chip {
       display: inline-block;
-      background: rgba(108,92,231,0.15);
+      background: rgba(68,147,248,0.15);
       color: var(--accent);
       border-radius: 10px;
       padding: 0.1rem 0.4rem;
@@ -2015,11 +2021,26 @@
     .confidence-med { background: var(--amber); }
     .confidence-low { background: var(--red); }
 
+    @media (max-width: 1200px) {
+      .app { max-width: 100%; padding: 1.5rem; }
+    }
+    @media (max-width: 768px) {
+      .app { padding: 1rem; }
+      .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .modal { width: 98vw; max-height: 90vh; }
+      .input-group { flex-direction: column; }
+      header h1 { font-size: 1.2rem; }
+      .discovery-bar { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+      .feed-card-actions { flex-wrap: wrap; }
+    }
     @media (max-width: 700px) {
       .setup-card-grid { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 480px) {
       .setup-card-grid { grid-template-columns: 1fr; }
+      .app { padding: 0.75rem; }
+      .stat-grid { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+      .col-list { max-height: 150px; overflow-y: auto; }
     }
   </style>
 </head>
@@ -2727,7 +2748,7 @@
     <!-- What-If Panel (redesigned) -->
     <div id="whatif" class="panel">
       <!-- Help Section -->
-      <div style="background:linear-gradient(135deg,rgba(108,92,231,0.08),rgba(0,206,201,0.05));border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem;">
+      <div style="background:linear-gradient(135deg,rgba(68,147,248,0.08),rgba(0,206,201,0.05));border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem;">
         <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">&#128202; What-If Scenario Modeler</div>
         <div style="font-size:0.78rem;color:var(--muted);line-height:1.5;margin-bottom:0.5rem;">
           Answer "what would happen if...?" questions about your business.<br>
@@ -4169,9 +4190,13 @@
       }
     }
 
-    // Auto-load Data tab schema on first visit
+    // Auto-load Data tab schema on first visit (once per session)
+    let dataTabLoaded = false;
     document.querySelector('[data-panel="data"]')?.addEventListener('click', () => {
-      loadSchemaIntoData();
+      if (!dataTabLoaded) {
+        dataTabLoaded = true;
+        loadSchemaIntoData();
+      }
     });
 
     // Auto-load Setup tab content on first visit
@@ -4777,7 +4802,7 @@
         html += `</div>`;
       } else if (confidence < 0.6) {
         html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">`;
-        html += `<span style="font-size:0.65rem;color:var(--muted);background:rgba(108,92,231,0.1);padding:2px 8px;border-radius:10px;">`;
+        html += `<span style="font-size:0.65rem;color:var(--muted);background:rgba(68,147,248,0.1);padding:2px 8px;border-radius:10px;">`;
         html += `${queryType} &middot; ${(confidence*100).toFixed(0)}% confidence</span>`;
         html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
         html += `</div>`;
@@ -4803,7 +4828,7 @@
         if (d.deep_tier.task_id) {
           // Auto-escalated — show banner and start polling
           html += `<div id="deep-tier-banner">
-            <div style="background:rgba(108,92,231,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-bottom:0.75rem;font-size:0.75rem;">
+            <div style="background:rgba(68,147,248,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-bottom:0.75rem;font-size:0.75rem;">
               <span class="spinner" style="margin-right:0.4rem;"></span>
               <strong style="color:var(--accent);">Deep Tier Analysis</strong> — ${esc(d.deep_tier.message || 'Auto-escalated due to low confidence.')}
               <div id="deep-tier-status" style="color:var(--muted);margin-top:0.3rem;font-size:0.7rem;">Polling for results...</div>
@@ -5298,7 +5323,7 @@
       const deepBanner = document.createElement('div');
       deepBanner.id = 'deep-tier-banner';
       deepBanner.innerHTML = `
-        <div style="background:rgba(108,92,231,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-top:0.75rem;font-size:0.75rem;">
+        <div style="background:rgba(68,147,248,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-top:0.75rem;font-size:0.75rem;">
           <span class="spinner" style="margin-right:0.4rem;"></span>
           <strong style="color:var(--accent);">Deep Tier Analysis</strong> — Queuing deeper investigation with Claude...
           <div id="deep-tier-status" style="color:var(--muted);margin-top:0.3rem;font-size:0.7rem;"></div>
@@ -5380,9 +5405,9 @@
       // Summary
       if (result.summary) {
         const conf = ((result.confidence_overall || 0) * 100).toFixed(0);
-        html += `<div style="background:rgba(108,92,231,0.08);border-radius:6px;padding:0.6rem 0.8rem;margin-bottom:0.6rem;font-size:0.78rem;line-height:1.5;">
+        html += `<div style="background:rgba(68,147,248,0.08);border-radius:6px;padding:0.6rem 0.8rem;margin-bottom:0.6rem;font-size:0.78rem;line-height:1.5;">
           <strong style="color:var(--accent);">Deep Analysis Summary</strong>
-          <span class="badge" style="background:rgba(108,92,231,0.2);color:var(--accent);font-size:0.55rem;margin-left:0.3rem;">${conf}% confidence</span>
+          <span class="badge" style="background:rgba(68,147,248,0.2);color:var(--accent);font-size:0.55rem;margin-left:0.3rem;">${conf}% confidence</span>
           <div style="margin-top:0.3rem;">${esc(result.summary)}</div>
         </div>`;
       }
@@ -5401,7 +5426,7 @@
           const vColor = f.verdict === 'critical' ? 'var(--red)' : f.verdict === 'warning' ? 'var(--yellow)' : 'var(--green)';
           html += `<div class="feed-card" style="border-left:3px solid ${vColor};padding:0.5rem 0.8rem;margin-bottom:0.4rem;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span class="badge" style="background:rgba(108,92,231,0.15);color:var(--accent);font-size:0.6rem;">${esc(f.angle || '')}</span>
+              <span class="badge" style="background:rgba(68,147,248,0.15);color:var(--accent);font-size:0.6rem;">${esc(f.angle || '')}</span>
               <span style="font-size:0.6rem;color:${vColor};">${esc(f.verdict || '')} · ${((f.confidence || 0) * 100).toFixed(0)}%</span>
             </div>
             <div style="font-size:0.75rem;margin-top:0.3rem;">${esc(f.description || '')}</div>
@@ -5688,10 +5713,12 @@
       let page = 1;
       let sortBy = null;
       let sortDir = 'asc';
+      let cachedTotal = 0;
 
       async function loadPage() {
         let url = `${API}/data/${tableName}?page=${page}&page_size=50`;
         if (sortBy) url += `&sort_by=${sortBy}&sort_dir=${sortDir}`;
+        if (page > 1 && cachedTotal > 0) url += `&total_hint=${cachedTotal}`;
 
         const data = await apiFetch(url);
 
@@ -5700,7 +5727,9 @@
           return;
         }
 
+        cachedTotal = data.total;
         const totalPages = Math.ceil(data.total / data.page_size);
+        const approxPrefix = data.total_exact === false ? '~' : '';
         const keys = data.columns.length ? data.columns : (data.rows.length ? Object.keys(data.rows[0]) : []);
 
         let html = '<div style="overflow-x:auto;"><table class="data-table"><thead><tr>';
@@ -5722,7 +5751,7 @@
 
         html += `<div class="pagination">`;
         html += `<button class="btn-sm btn-secondary" onclick="tvPrev()" ${page<=1?'disabled':''}>Prev</button>`;
-        html += `<span>Page ${page} of ${totalPages} (${data.total} rows)</span>`;
+        html += `<span>Page ${page} of ${totalPages} (${approxPrefix}${data.total} rows)</span>`;
         html += `<button class="btn-sm btn-secondary" onclick="tvNext()" ${page>=totalPages?'disabled':''}>Next</button>`;
         html += `</div>`;
 
@@ -6249,54 +6278,26 @@
 
     async function loadFeed() {
       const body = document.getElementById('feed-body');
-      const empty = document.getElementById('feed-empty');
 
-      try {
-        // Load discovery status
-        const statusData = await apiFetch(`${API}/discovery/status`);
-        const statsEl = document.getElementById('disc-stats');
+      // Show loading state immediately
+      body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading insights...</div>';
 
-        if (statusData.status !== 'no_runs') {
-          const ago = statusData.completed_at
-            ? _timeAgo(new Date(statusData.completed_at))
-            : 'running...';
-          statsEl.innerHTML = `
-            <span>${statusData.tables_scanned || 0} tables scanned</span>
-            <span>${statusData.insights_found || 0} insights</span>
-            <span>Last run: ${ago}</span>
-          `;
-        }
+      // Fire all requests in parallel — feed renders as soon as it resolves
+      const [insightsResult, statusResult, historyResult] = await Promise.allSettled([
+        apiFetch(`${API}/feed`),
+        apiFetch(`${API}/discovery/status`),
+        apiFetch(`${API}/discovery/history?limit=5`),
+      ]);
 
-        // Load discovery history (last 5 runs)
-        try {
-          const history = await apiFetch(`${API}/discovery/history?limit=5`);
-          if (history.length > 1) {
-            let histHtml = '<div style="font-size:0.65rem;color:var(--muted);margin-top:4px;display:flex;gap:0.5rem;flex-wrap:wrap;">';
-            for (const run of history.slice(1)) {
-              const t = run.completed_at ? _timeAgo(new Date(run.completed_at)) : '...';
-              const icon = run.status === 'completed' ? '' : run.status === 'failed' ? ' !' : ' ~';
-              histHtml += `<span>${t}: ${run.insights_found || 0} insights${icon}</span>`;
-            }
-            histHtml += '</div>';
-            statsEl.insertAdjacentHTML('afterend', histHtml);
-          }
-        } catch (e) { /* History endpoint optional */ }
+      // Render feed IMMEDIATELY (what users care about)
+      const insights = insightsResult.status === 'fulfilled' ? insightsResult.value : [];
+      feedInsights = insights;
 
-        // Load dashboard KPIs
-        try { await loadDashboardKPIs(); } catch (e) { /* optional */ }
-
-        // Load recommendations (non-blocking)
-        loadRecommendations().catch(() => {});
-
-        // Load feed
-        const insights = await apiFetch(`${API}/feed`);
-        feedInsights = insights;
-
-        if (!insights.length) {
-          body.innerHTML = '<div class="feed-empty">No insights discovered yet. Upload data and click "Scan Now" to discover insights.</div>';
-          return;
-        }
-
+      if (!insights.length) {
+        body.innerHTML = insightsResult.status === 'rejected'
+          ? `<div class="feed-empty" style="color:var(--red);">Failed to load feed: ${esc(insightsResult.reason?.message || 'Unknown error')}</div>`
+          : '<div class="feed-empty">No insights discovered yet. Upload data and click "Scan Now" to discover insights.</div>';
+      } else {
         body.innerHTML = insights.map((ins, i) => {
           const sevClass = ins.insight_type === 'story' ? 'type-story' : `severity-${ins.severity}`;
           const sevBadge = ins.severity === 'critical' ? 'badge-red'
@@ -6331,7 +6332,7 @@
 
           // Narrative for stories
           if (ins.narrative && ins.insight_type === 'story') {
-            html += `<div style="font-size:0.78rem;color:var(--text);line-height:1.5;margin:0.3rem 0;padding:0.5rem;background:rgba(108,92,231,0.05);border-radius:4px;">${esc(ins.narrative)}</div>`;
+            html += `<div style="font-size:0.78rem;color:var(--text);line-height:1.5;margin:0.3rem 0;padding:0.5rem;background:rgba(68,147,248,0.05);border-radius:4px;">${esc(ins.narrative)}</div>`;
           }
 
           // Suggested actions
@@ -6352,9 +6353,47 @@
           html += `</div>`;
           return html;
         }).join('');
-      } catch (e) {
-        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">Failed to load feed: ${esc(e.message)}</div>`;
       }
+
+      // Decorate discovery status bar (already resolved, no wait)
+      try {
+        if (statusResult.status === 'fulfilled') {
+          const statusData = statusResult.value;
+          const statsEl = document.getElementById('disc-stats');
+          if (statusData.status !== 'no_runs') {
+            const ago = statusData.completed_at
+              ? _timeAgo(new Date(statusData.completed_at))
+              : 'running...';
+            statsEl.innerHTML = `
+              <span>${statusData.tables_scanned || 0} tables scanned</span>
+              <span>${statusData.insights_found || 0} insights</span>
+              <span>Last run: ${ago}</span>
+            `;
+          }
+        }
+      } catch (e) { /* status decoration optional */ }
+
+      // Decorate history (already resolved, no wait)
+      try {
+        if (historyResult.status === 'fulfilled') {
+          const history = historyResult.value;
+          if (history.length > 1) {
+            const statsEl = document.getElementById('disc-stats');
+            let histHtml = '<div style="font-size:0.65rem;color:var(--muted);margin-top:4px;display:flex;gap:0.5rem;flex-wrap:wrap;">';
+            for (const run of history.slice(1)) {
+              const t = run.completed_at ? _timeAgo(new Date(run.completed_at)) : '...';
+              const icon = run.status === 'completed' ? '' : run.status === 'failed' ? ' !' : ' ~';
+              histHtml += `<span>${t}: ${run.insights_found || 0} insights${icon}</span>`;
+            }
+            histHtml += '</div>';
+            statsEl.insertAdjacentHTML('afterend', histHtml);
+          }
+        }
+      } catch (e) { /* history decoration optional */ }
+
+      // KPIs and recommendations fire AFTER feed renders (non-blocking)
+      loadDashboardKPIs().catch(() => {});
+      loadRecommendations().catch(() => {});
     }
 
     async function investigateInsight(index) {
@@ -7332,7 +7371,7 @@
         if (isQuarantined) {
           html += `<input type="checkbox" class="quarantine-cb" data-id="${row.id}" onchange="updateQuarantineCount()">`;
         }
-        html += `<span class="badge" style="background:rgba(108,92,231,0.15);color:var(--accent);font-size:0.6rem;">${esc(row.table_name)}</span>`;
+        html += `<span class="badge" style="background:rgba(68,147,248,0.15);color:var(--accent);font-size:0.6rem;">${esc(row.table_name)}</span>`;
         html += `<span style="font-size:0.65rem;color:var(--muted);">Row #${row.row_index}</span>`;
         html += `</div>`;
         html += `<span style="font-size:0.6rem;color:var(--muted);">${new Date(row.quarantined_at).toLocaleString()}</span>`;

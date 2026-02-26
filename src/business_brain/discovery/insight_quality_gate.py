@@ -178,9 +178,6 @@ def _get_column_family(col_name: str) -> str | None:
             # Exact match or prefix/suffix match
             if col_lower == member or col_lower.startswith(member + "_") or col_lower.endswith("_" + member):
                 return family
-            # Also check if member is a prefix of the column
-            if member in col_lower:
-                return family
     return None
 
 
@@ -193,7 +190,7 @@ def _columns_share_family(col_a: str, col_b: str) -> bool:
     return False
 
 
-def _columns_similar_names(col_a: str, col_b: str, threshold: float = 0.65) -> bool:
+def _columns_similar_names(col_a: str, col_b: str, threshold: float = 0.80) -> bool:
     """Check if two column names are similar using sequence matching.
 
     Catches cases like: fe_t ↔ fe_mz, input_wt ↔ input_weight
@@ -246,12 +243,6 @@ def _is_trivial_correlation(insight: Insight) -> bool:
     if _columns_similar_names(col_a, col_b):
         return True
 
-    # Check 3: Low correlation strength (estimated |r| < 0.7)
-    evidence = insight.evidence or {}
-    est_r = evidence.get("estimated_correlation")
-    if est_r is not None and abs(est_r) < 0.7:
-        return True
-
     return False
 
 
@@ -271,11 +262,9 @@ def _is_meta_insight(insight: Insight) -> bool:
     if _META_RE.search(title):
         return True
 
-    # Also suppress very low impact "opportunity" insights
+    # Suppress low-impact "pattern opportunity" insights
     desc = (insight.description or "").lower()
-    if "analysis is possible" in desc or "analysis available" in desc:
-        return True
-    if "pattern opportunity" in desc:
+    if "pattern opportunity" in desc and (insight.impact_score or 0) < 20:
         return True
 
     return False
@@ -340,7 +329,7 @@ def _apply_business_scoring(insight: Insight) -> None:
         else:
             novelty += 8
     elif insight_type == "correlation":
-        novelty += 10  # Correlations are less novel (users often know them)
+        novelty += 15  # Correlations are novel for non-technical plant owners
     elif insight_type == "seasonality":
         novelty += 12
     elif insight_type == "trend":
@@ -369,6 +358,14 @@ def _apply_business_scoring(insight: Insight) -> None:
     ]
     matches = sum(1 for kw in mfg_keywords if kw in text_combined)
     domain_score += min(matches * 5, 20)
+
+    # Leakage/critical keyword boost
+    leakage_keywords = [
+        "weighbridge", "manipulation", "theft", "mismatch",
+        "idle time", "refractory", "penalty",
+    ]
+    leakage_hits = sum(1 for kw in leakage_keywords if kw in text_combined)
+    domain_score += min(leakage_hits * 8, 16)
 
     score += min(domain_score, 20)
 

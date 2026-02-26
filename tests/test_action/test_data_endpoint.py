@@ -34,14 +34,19 @@ def _setup_session_for_data(
     total: int = 5,
     rows: list[dict] | None = None,
 ):
-    """Configure an AsyncMock session to return count + data for get_table_data.
+    """Configure an AsyncMock session to return pg_class + count + data for get_table_data.
 
-    session.execute is called twice:
-      1. COUNT(*) -> scalar() returns total
-      2. SELECT * -> fetchall() returns mock rows
+    session.execute is called three times:
+      1. pg_class estimate -> fetchone() returns (total,) (small table triggers exact count)
+      2. COUNT(*) -> scalar() returns total
+      3. SELECT * -> fetchall() returns mock rows
     """
     if rows is None:
         rows = [{"id": 1, "name": "test", "value": 10}]
+
+    # pg_class estimated count (returns small number so exact count is used)
+    mock_pg_class_result = MagicMock()
+    mock_pg_class_result.fetchone.return_value = (total,)
 
     mock_count_result = MagicMock()
     mock_count_result.scalar.return_value = total
@@ -49,7 +54,7 @@ def _setup_session_for_data(
     mock_data_result = MagicMock()
     mock_data_result.fetchall.return_value = [_make_row(r) for r in rows]
 
-    session.execute = AsyncMock(side_effect=[mock_count_result, mock_data_result])
+    session.execute = AsyncMock(side_effect=[mock_pg_class_result, mock_count_result, mock_data_result])
 
 
 @pytest.fixture()
@@ -279,8 +284,8 @@ class TestGetTableData:
         assert result["total"] == 50
 
         # Verify the session.execute call used correct LIMIT/OFFSET
-        # Second call is the SELECT *
-        select_call = session.execute.call_args_list[1]
+        # Third call is the SELECT * (after pg_class + COUNT)
+        select_call = session.execute.call_args_list[2]
         params = select_call[1] if select_call[1] else select_call[0][1]
         # The params are passed as a dict: {"limit": 10, "offset": 20}
         assert params["limit"] == 10
@@ -314,7 +319,8 @@ class TestGetTableData:
         assert len(result["rows"]) == 2
 
         # Verify the SQL query includes ORDER BY
-        select_call = session.execute.call_args_list[1]
+        # Third call is the SELECT * (after pg_class + COUNT)
+        select_call = session.execute.call_args_list[2]
         query_text = str(select_call[0][0].text)
         assert 'ORDER BY "revenue" DESC' in query_text
 
@@ -341,7 +347,7 @@ class TestGetTableData:
             user=None,
         )
 
-        expected_keys = {"rows", "total", "page", "page_size", "columns"}
+        expected_keys = {"rows", "total", "total_exact", "page", "page_size", "columns"}
         assert set(result.keys()) == expected_keys
         assert isinstance(result["rows"], list)
         assert isinstance(result["total"], int)
