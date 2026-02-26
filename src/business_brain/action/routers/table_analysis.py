@@ -943,18 +943,31 @@ async def validate_table(
 
 @router.get("/recommendations")
 async def get_recommendations(session: AsyncSession = Depends(get_session)):
-    """Get analysis recommendations based on current data state."""
+    """Get analysis recommendations based on current data state.
+
+    Uses Tier 1 (hardcoded templates) + Tier 2 (LLM-generated) cross-table
+    intelligence. Tier 2 always runs — even when templates match — to suggest
+    complementary, industry-specific analyses.
+    """
     from sqlalchemy import select as sa_select
+
+    from business_brain.action.onboarding import get_company_profile
+    from business_brain.db.discovery_models import (
+        DiscoveredRelationship,
+        Insight,
+        TableProfile,
+    )
     from business_brain.discovery.insight_recommender import (
         compute_coverage,
-        recommend_analyses,
+        recommend_analyses_async,
     )
 
     profiles = list((await session.execute(sa_select(TableProfile))).scalars().all())
     insights = list((await session.execute(sa_select(Insight))).scalars().all())
     relationships = list((await session.execute(sa_select(DiscoveredRelationship))).scalars().all())
 
-    # Convert ORM objects to dicts
+    # Convert ORM objects to dicts — include ALL fields for relationship-based
+    # entity inference (confidence, column_a, column_b are critical)
     profile_dicts = [
         {"table_name": p.table_name, "row_count": p.row_count,
          "column_classification": p.column_classification}
@@ -965,11 +978,31 @@ async def get_recommendations(session: AsyncSession = Depends(get_session)):
         for i in insights
     ]
     rel_dicts = [
-        {"table_a": r.table_a, "table_b": r.table_b}
+        {"table_a": r.table_a, "table_b": r.table_b,
+         "column_a": r.column_a, "column_b": r.column_b,
+         "confidence": r.confidence,
+         "relationship_type": getattr(r, "relationship_type", None)}
         for r in relationships
     ]
 
-    recs = recommend_analyses(profile_dicts, insight_dicts, rel_dicts)
+    # Fetch company context for Tier 2 LLM suggestions
+    company_context = None
+    try:
+        cp = await get_company_profile(session)
+        if cp:
+            company_context = {
+                "industry": cp.industry or "",
+                "products": cp.products or [],
+                "process_flow": cp.process_flow or "",
+                "departments": cp.departments or [],
+            }
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug("Could not fetch company profile for recommendations")
+
+    recs = await recommend_analyses_async(
+        profile_dicts, insight_dicts, rel_dicts, company_context,
+    )
     coverage = compute_coverage(profile_dicts, insight_dicts)
 
     return {

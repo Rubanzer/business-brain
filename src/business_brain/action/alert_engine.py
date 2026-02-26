@@ -455,3 +455,151 @@ async def delete_alert(session: AsyncSession, alert_id: str) -> bool:
     await session.delete(rule)
     await session.commit()
     return True
+
+
+# ---------------------------------------------------------------------------
+# Shift digest — batched alert summary
+# ---------------------------------------------------------------------------
+
+async def send_shift_digest(
+    session: AsyncSession,
+    since_hours: int = 8,
+) -> dict:
+    """Generate and send a batched shift digest instead of individual alerts.
+
+    Aggregates all alert events from the last N hours into a single
+    structured message. Sends via Telegram if configured.
+
+    Args:
+        session: Database session.
+        since_hours: Look-back window (default 8 = one shift).
+
+    Returns:
+        Dict with digest stats and message.
+    """
+    from datetime import timedelta
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+
+    # Get all events since cutoff
+    result = await session.execute(
+        select(AlertEvent)
+        .where(AlertEvent.triggered_at >= cutoff)
+        .order_by(AlertEvent.triggered_at.desc())
+    )
+    events = list(result.scalars().all())
+
+    if not events:
+        return {"sent": False, "reason": "no_events", "event_count": 0}
+
+    # Categorize events by severity (inferred from rule config)
+    critical_events = []
+    warning_events = []
+    info_events = []
+
+    for event in events:
+        ctx = event.context if isinstance(event.context, dict) else {}
+        # Try to determine severity from the rule
+        rule_id = event.alert_rule_id
+        rule_result = await session.execute(
+            select(AlertRule).where(AlertRule.id == rule_id)
+        )
+        rule = rule_result.scalar_one_or_none()
+
+        if rule:
+            # Infer severity from rule config
+            config = rule.rule_config or {}
+            rule_name = rule.name
+        else:
+            config = {}
+            rule_name = ctx.get("rule_name", "Unknown")
+
+        event_info = {
+            "rule_name": rule_name,
+            "trigger_value": event.trigger_value,
+            "threshold_value": event.threshold_value,
+            "triggered_at": event.triggered_at,
+        }
+
+        # Classify: critical if "critical" in name or config, otherwise warning
+        combined = f"{rule_name} {str(config)}".lower()
+        if "critical" in combined or "emergency" in combined:
+            critical_events.append(event_info)
+        elif "warning" in combined or "alert" in combined:
+            warning_events.append(event_info)
+        else:
+            info_events.append(event_info)
+
+    # Build digest message
+    message = _format_digest_message(
+        critical_events, warning_events, info_events, since_hours,
+    )
+
+    # Try to send via Telegram
+    telegram_sent = False
+    try:
+        # Look for any rule with telegram config to get the chat_id
+        tg_result = await session.execute(
+            select(AlertRule).where(
+                AlertRule.notification_channel == "telegram",
+                AlertRule.active == True,  # noqa: E712
+            ).limit(1)
+        )
+        tg_rule = tg_result.scalar_one_or_none()
+
+        if tg_rule:
+            chat_id = (tg_rule.notification_config or {}).get("chat_id")
+            if chat_id:
+                from business_brain.action.telegram_bot import send_alert
+                await send_alert(chat_id, message)
+                telegram_sent = True
+    except Exception:
+        logger.exception("Failed to send shift digest via Telegram")
+
+    return {
+        "sent": True,
+        "telegram_sent": telegram_sent,
+        "event_count": len(events),
+        "critical_count": len(critical_events),
+        "warning_count": len(warning_events),
+        "info_count": len(info_events),
+        "message": message,
+    }
+
+
+def _format_digest_message(
+    critical: list[dict],
+    warnings: list[dict],
+    info: list[dict],
+    hours: int,
+) -> str:
+    """Format a digest message for shift summary."""
+    total = len(critical) + len(warnings) + len(info)
+
+    lines = [
+        f"\U0001f3ed Shift Summary ({hours}h)",
+        "",
+        f"\U0001f534 {len(critical)} critical alerts",
+        f"\U0001f7e1 {len(warnings)} warnings",
+        f"\U0001f7e2 {len(info)} info",
+        f"\U0001f4ca Total: {total} events",
+        "",
+    ]
+
+    if critical:
+        lines.append("CRITICAL:")
+        for e in critical[:5]:
+            lines.append(f"  \u2022 {e['rule_name']}: {e['trigger_value']}")
+
+    if warnings:
+        lines.append("")
+        lines.append("WARNINGS:")
+        for e in warnings[:5]:
+            lines.append(f"  \u2022 {e['rule_name']}: {e['trigger_value']}")
+
+    if info and not critical and not warnings:
+        lines.append("INFO:")
+        for e in info[:3]:
+            lines.append(f"  \u2022 {e['rule_name']}: {e['trigger_value']}")
+
+    return "\n".join(lines)

@@ -47,27 +47,28 @@ def discover_correlations_from_profiles(profiles: list) -> list[Insight]:
         corr_pairs = _estimate_sample_correlations(numeric_cols)
 
         if not corr_pairs:
-            # Don't generate "opportunity" meta-insights — they clutter the feed
-            continue
+            continue  # No correlations found — don't generate meta-insights that clutter the feed
 
-        # Generate insights for strong estimated correlations
+        # Generate insights for strong correlations only
         for col_a, col_b, est_r, direction in corr_pairs:
+            strength = "strong" if abs(est_r) >= 0.7 else "moderate"
             insights.append(Insight(
                 id=str(uuid.uuid4()),
                 insight_type="correlation",
-                severity="info",
+                severity="warning" if abs(est_r) >= 0.7 else "info",
                 impact_score=55 if abs(est_r) >= 0.85 else (45 if abs(est_r) >= 0.7 else (30 if abs(est_r) >= 0.6 else 25)),
-                title=f"Potential correlation: {col_a} ↔ {col_b} in {profile.table_name}",
+                title=f"{strength.title()} {direction} correlation: {col_a} ↔ {col_b} (r={est_r:.2f})",
                 description=(
-                    f"Columns {col_a} and {col_b} in {profile.table_name} show "
-                    f"a {direction} relationship (estimated r ≈ {est_r:.2f}). "
-                    f"Run full correlation analysis for precise measurement."
+                    f"{col_a} and {col_b} in {profile.table_name} have a {strength} "
+                    f"{direction} correlation (r={est_r:.2f}). "
+                    f"When {col_a} increases, {col_b} {'increases' if direction == 'positive' else 'decreases'} proportionally."
                 ),
                 source_tables=[profile.table_name],
                 source_columns=[col_a, col_b],
                 evidence={
                     "estimated_correlation": round(est_r, 3),
                     "direction": direction,
+                    "strength": strength,
                     "query": (
                         f'SELECT "{col_a}", "{col_b}" FROM "{profile.table_name}" '
                         f'ORDER BY ctid LIMIT 500'
@@ -76,12 +77,12 @@ def discover_correlations_from_profiles(profiles: list) -> list[Insight]:
                         "type": "scatter",
                         "x": col_a,
                         "y": col_b,
-                        "title": f"{col_a} vs {col_b}",
+                        "title": f"{col_a} vs {col_b} (r={est_r:.2f})",
                     },
                 },
                 suggested_actions=[
-                    f"Investigate whether {col_a} and {col_b} have a causal relationship",
-                    f"Consider if one can predict the other for forecasting",
+                    f"Check if changes in {col_a} drive changes in {col_b} or vice versa",
+                    f"Use this relationship to forecast {col_b} from {col_a}",
                 ],
             ))
 
@@ -165,26 +166,3 @@ def _quick_pearson(x: list[float], y: list[float]) -> float | None:
     return num / (dx * dy)
 
 
-def _make_opportunity_insight(profile, numeric_cols: list) -> Insight:
-    """Create an insight noting that correlation analysis is available."""
-    col_names = [c[0] for c in numeric_cols[:5]]
-    return Insight(
-        id=str(uuid.uuid4()),
-        insight_type="correlation",
-        severity="info",
-        impact_score=20,
-        title=f"Correlation analysis available for {profile.table_name}",
-        description=(
-            f"Table {profile.table_name} has {len(numeric_cols)} numeric columns "
-            f"({', '.join(col_names)}). Run correlation analysis to find hidden relationships."
-        ),
-        source_tables=[profile.table_name],
-        source_columns=col_names,
-        evidence={
-            "numeric_column_count": len(numeric_cols),
-            "columns": col_names,
-        },
-        suggested_actions=[
-            "Run full correlation analysis from the Quality tab",
-        ],
-    )

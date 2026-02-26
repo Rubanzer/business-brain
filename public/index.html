@@ -2137,8 +2137,10 @@
         <button class="btn-export btn-sm" onclick="exportFeed('json')" title="Export insights as JSON">Export JSON</button>
         <button class="btn-export btn-sm" onclick="exportFeed('csv')" title="Export insights as CSV">Export CSV</button>
         <button class="btn-sm btn-secondary" onclick="dismissAllInsights()" id="dismiss-all-btn">Dismiss All</button>
+        <button class="btn-sm btn-secondary" onclick="loadDailyBriefing()" id="briefing-btn" title="View daily intelligence briefing">Daily Briefing</button>
         <button class="btn-sm" onclick="triggerDiscovery()" id="scan-btn">Scan Now</button>
       </div>
+      <div id="daily-briefing-panel" style="display:none;margin-bottom:0.75rem;"></div>
       <div id="dashboard-kpis" style="display:none;margin-bottom:0.75rem;"></div>
       <div id="recommendations-bar" style="display:none;margin-bottom:0.5rem;"></div>
       <div class="feed-filters">
@@ -6272,6 +6274,97 @@
     document.querySelector('[data-panel="schema"]').addEventListener('click', loadSchema);
 
     // ---------------------------------------------------------------------------
+    // Daily Briefing
+    // ---------------------------------------------------------------------------
+    async function loadDailyBriefing() {
+      const panel = document.getElementById('daily-briefing-panel');
+      const btn = document.getElementById('briefing-btn');
+      btn.disabled = true;
+      btn.textContent = 'Loading...';
+
+      try {
+        const data = await apiFetch(`${API}/briefing?hours=24`);
+        const statusColors = { red: '#e74c3c', yellow: '#f39c12', green: '#27ae60' };
+        const statusIcons = { red: '\u{1F534}', yellow: '\u{1F7E1}', green: '\u{1F7E2}' };
+        const statusColor = statusColors[data.overall_status] || '#666';
+        const statusIcon = statusIcons[data.overall_status] || '';
+
+        let html = `
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;position:relative;">
+            <button onclick="document.getElementById('daily-briefing-panel').style.display='none'"
+                    style="position:absolute;top:8px;right:12px;background:none;border:none;cursor:pointer;font-size:1.1rem;color:var(--muted);">&times;</button>
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+              <span style="font-size:1.2rem;">${statusIcon}</span>
+              <strong style="font-size:0.9rem;">Daily Briefing — ${data.date}</strong>
+              <span style="font-size:0.65rem;color:${statusColor};font-weight:600;text-transform:uppercase;
+                           background:${statusColor}15;padding:2px 8px;border-radius:4px;">${data.overall_status}</span>
+            </div>
+            <p style="font-size:0.78rem;color:var(--text);margin-bottom:0.75rem;line-height:1.5;">
+              ${data.summary || 'No summary available.'}
+            </p>
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+              <span style="font-size:0.7rem;color:var(--muted);">
+                <strong style="color:var(--text);">${data.metrics?.total_insights || 0}</strong> findings
+              </span>
+              <span style="font-size:0.7rem;color:#e74c3c;">
+                <strong>${data.metrics?.critical_count || 0}</strong> critical
+              </span>
+              <span style="font-size:0.7rem;color:#f39c12;">
+                <strong>${data.metrics?.warning_count || 0}</strong> warnings
+              </span>
+              <span style="font-size:0.7rem;color:var(--muted);">
+                <strong style="color:var(--text);">${data.metrics?.alert_count || 0}</strong> alerts
+              </span>
+              <span style="font-size:0.7rem;color:var(--muted);">
+                <strong style="color:var(--text);">${data.metrics?.tables_analyzed || 0}</strong> tables
+              </span>
+            </div>`;
+
+        // Sections
+        if (data.sections && data.sections.length > 0) {
+          html += '<div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem;">';
+          for (const sec of data.sections) {
+            const secColor = statusColors[sec.status] || '#666';
+            html += `
+              <div style="background:${secColor}08;border-left:3px solid ${secColor};padding:0.5rem 0.75rem;border-radius:0 4px 4px 0;">
+                <div style="font-size:0.75rem;font-weight:600;color:var(--text);margin-bottom:0.25rem;">
+                  ${sec.label} <span style="color:var(--muted);font-weight:400;">(${sec.insight_count} findings)</span>
+                </div>
+                ${sec.top_insights.map(i =>
+                  `<div style="font-size:0.68rem;color:var(--muted);margin-left:0.5rem;">
+                    <span style="color:${i.severity === 'critical' ? '#e74c3c' : i.severity === 'warning' ? '#f39c12' : '#27ae60'};">&#9679;</span>
+                    ${i.title}
+                  </div>`
+                ).join('')}
+              </div>`;
+          }
+          html += '</div>';
+        }
+
+        // Top actions
+        if (data.top_actions && data.top_actions.length > 0) {
+          html += '<div style="font-size:0.72rem;font-weight:600;color:var(--text);margin-bottom:0.25rem;">Top Actions:</div>';
+          html += '<ol style="font-size:0.68rem;color:var(--muted);margin:0;padding-left:1.2rem;margin-bottom:0.5rem;">';
+          for (const action of data.top_actions) {
+            html += `<li style="margin-bottom:0.15rem;">${action}</li>`;
+          }
+          html += '</ol>';
+        }
+
+        html += '</div>';
+        panel.innerHTML = html;
+        panel.style.display = 'block';
+      } catch (e) {
+        panel.innerHTML = `<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:1rem;font-size:0.75rem;color:#e74c3c;">
+          Failed to load briefing: ${e.message || 'Unknown error'}
+        </div>`;
+        panel.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Daily Briefing';
+      }
+    }
+
     // Feed — Proactive Insight Discovery
     // ---------------------------------------------------------------------------
     var feedInsights = [];

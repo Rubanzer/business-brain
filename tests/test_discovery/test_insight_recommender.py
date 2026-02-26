@@ -1,23 +1,34 @@
 """Tests for insight recommender module."""
 
+import pytest
+
 from business_brain.discovery.insight_recommender import (
+    EntityGroup,
     Recommendation,
+    _build_entity_groups,
+    _build_cross_table_prompt,
+    _check_template_coverage,
+    _parse_cross_table_suggestions,
+    _recommend_tier1,
     compute_coverage,
     recommend_analyses,
 )
 
 
-def _profile(name, row_count=100, columns=None):
+def _profile(name, row_count=100, columns=None, domain_hint=None):
     """Helper to create a profile dict."""
-    return {
+    d = {
         "table_name": name,
         "row_count": row_count,
         "column_classification": {"columns": columns or {}},
     }
+    if domain_hint:
+        d["domain_hint"] = domain_hint
+    return d
 
 
 # ---------------------------------------------------------------------------
-# recommend_analyses
+# recommend_analyses (sync — backward-compat)
 # ---------------------------------------------------------------------------
 
 
@@ -138,6 +149,505 @@ class TestRecommendAnalyses:
             assert r.analysis_type
             assert r.target_table == "data"
             assert 1 <= r.priority <= 100
+
+
+# ---------------------------------------------------------------------------
+# Entity group building
+# ---------------------------------------------------------------------------
+
+
+class TestBuildEntityGroups:
+    def test_column_keyword_scan(self):
+        """Tables with entity keyword columns form entity groups."""
+        profiles = [
+            _profile("booking_register", columns={
+                "buyer_name": {"semantic_type": "categorical"},
+                "order_qty": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("payment_ledger", columns={
+                "customer_id": {"semantic_type": "identifier"},
+                "amount": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        groups = _build_entity_groups(profiles, [])
+        assert "customer" in groups
+        assert "booking_register" in groups["customer"].tables
+        assert "payment_ledger" in groups["customer"].tables
+
+    def test_relationship_based_entity_inference(self):
+        """Tables linked by relationships with entity-like column names form groups."""
+        profiles = [
+            _profile("table_a", columns={
+                "party_code": {"semantic_type": "categorical"},
+                "amount": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("table_b", columns={
+                "party_code": {"semantic_type": "categorical"},
+                "qty": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        relationships = [
+            {
+                "table_a": "table_a", "table_b": "table_b",
+                "column_a": "party_code", "column_b": "party_code",
+                "confidence": 0.8,
+            },
+        ]
+        groups = _build_entity_groups(profiles, relationships)
+        # "party" is in customer keywords
+        assert "customer" in groups
+        g = groups["customer"]
+        assert "table_a" in g.tables
+        assert "table_b" in g.tables
+
+    def test_relationship_expansion(self):
+        """Tables linked by relationships to group members get added."""
+        profiles = [
+            _profile("orders", columns={
+                "customer_id": {"semantic_type": "identifier"},
+            }),
+            _profile("dispatch", columns={
+                "ship_ref": {"semantic_type": "identifier"},
+            }),
+        ]
+        # orders is in customer group via keyword; dispatch linked to orders
+        relationships = [
+            {
+                "table_a": "orders", "table_b": "dispatch",
+                "column_a": "customer_id", "column_b": "ship_ref",
+                "confidence": 0.7,
+            },
+        ]
+        groups = _build_entity_groups(profiles, relationships)
+        assert "customer" in groups
+        # dispatch should be expanded into customer group via link
+        assert "dispatch" in groups["customer"].tables
+
+    def test_low_confidence_ignored(self):
+        """Relationships with very low confidence are ignored."""
+        profiles = [
+            _profile("a", columns={"x": {"semantic_type": "identifier"}}),
+            _profile("b", columns={"y": {"semantic_type": "identifier"}}),
+        ]
+        relationships = [
+            {
+                "table_a": "a", "table_b": "b",
+                "column_a": "x", "column_b": "y",
+                "confidence": 0.1,
+            },
+        ]
+        groups = _build_entity_groups(profiles, relationships)
+        # Should not form any group from low-confidence relationship
+        for g in groups.values():
+            assert not ({"a", "b"} <= set(g.tables))
+
+    def test_empty_profiles(self):
+        """Empty input returns no groups."""
+        assert _build_entity_groups([], []) == {}
+
+    def test_supplier_group(self):
+        """Supplier keywords detected correctly."""
+        profiles = [
+            _profile("purchase_orders", columns={
+                "vendor_name": {"semantic_type": "categorical"},
+            }),
+            _profile("quality_checks", columns={
+                "supplier_code": {"semantic_type": "identifier"},
+            }),
+        ]
+        groups = _build_entity_groups(profiles, [])
+        assert "supplier" in groups
+        assert len(groups["supplier"].tables) == 2
+
+    def test_legacy_rel_dicts_no_confidence(self):
+        """Relationships without confidence field are still accepted."""
+        profiles = [
+            _profile("a", columns={"buyer": {"semantic_type": "categorical"}}),
+            _profile("b", columns={"buyer": {"semantic_type": "categorical"}}),
+        ]
+        # Legacy format — no confidence, no column_a/column_b
+        relationships = [{"table_a": "a", "table_b": "b"}]
+        groups = _build_entity_groups(profiles, relationships)
+        # Both tables in customer group via keyword; relationship shouldn't crash
+        assert "customer" in groups
+
+
+# ---------------------------------------------------------------------------
+# Template coverage check
+# ---------------------------------------------------------------------------
+
+
+class TestCheckTemplateCoverage:
+    def test_basic_coverage(self):
+        """Two tables covering two requirements → True."""
+        group = EntityGroup(
+            entity_type="customer",
+            tables=["booking_register", "payment_ledger"],
+        )
+        template = {
+            "required_data": [
+                {"table_keywords": ["booking", "order"], "col_keywords": ["order", "booking"]},
+                {"table_keywords": ["payment", "receipt"], "col_keywords": ["payment", "amount"]},
+            ],
+        }
+        profiles = [
+            _profile("booking_register", columns={
+                "order_no": {"semantic_type": "identifier"},
+                "qty": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("payment_ledger", columns={
+                "payment_date": {"semantic_type": "temporal"},
+                "amount": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        assert _check_template_coverage(group, template, profiles) is True
+
+    def test_single_table_satisfies_multiple_requirements(self):
+        """One ERP table has both order AND payment data — should still match."""
+        group = EntityGroup(
+            entity_type="customer",
+            tables=["erp_master", "dispatch_log"],
+        )
+        template = {
+            "required_data": [
+                {"table_keywords": ["booking", "order"], "col_keywords": ["order", "booking"]},
+                {"table_keywords": ["payment", "receipt"], "col_keywords": ["payment", "amount"]},
+            ],
+        }
+        profiles = [
+            _profile("erp_master", columns={
+                "order_no": {"semantic_type": "identifier"},
+                "payment_status": {"semantic_type": "categorical"},
+                "amount": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("dispatch_log", columns={
+                "dispatch_id": {"semantic_type": "identifier"},
+            }),
+        ]
+        # erp_master has both "order" and "payment"/"amount" columns
+        assert _check_template_coverage(group, template, profiles) is True
+
+    def test_no_coverage(self):
+        """Tables don't match any template requirements → False."""
+        group = EntityGroup(
+            entity_type="customer",
+            tables=["weather_data", "expense_journal"],
+        )
+        template = {
+            "required_data": [
+                {"table_keywords": ["booking"], "col_keywords": ["order"]},
+                {"table_keywords": ["payment"], "col_keywords": ["payment"]},
+            ],
+        }
+        profiles = [
+            _profile("weather_data", columns={"temp": {"semantic_type": "numeric_metric"}}),
+            _profile("expense_journal", columns={"category": {"semantic_type": "categorical"}}),
+        ]
+        assert _check_template_coverage(group, template, profiles) is False
+
+    def test_empty_required_data(self):
+        """Template with no requirements always matches."""
+        group = EntityGroup(entity_type="any", tables=["a", "b"])
+        assert _check_template_coverage(group, {"required_data": []}, []) is True
+        assert _check_template_coverage(group, {}, []) is True
+
+    def test_table_name_match(self):
+        """Template matches via table name hints even without matching columns."""
+        group = EntityGroup(
+            entity_type="supplier",
+            tables=["purchase_orders", "quality_inspections"],
+        )
+        template = {
+            "required_data": [
+                {"table_keywords": ["purchase", "procurement"], "col_keywords": ["rate"]},
+                {"table_keywords": ["quality", "inspection"], "col_keywords": ["defect"]},
+            ],
+        }
+        profiles = [
+            _profile("purchase_orders", columns={"amount": {"semantic_type": "numeric_metric"}}),
+            _profile("quality_inspections", columns={"result": {"semantic_type": "categorical"}}),
+        ]
+        # Table names match even though columns don't have exact keyword matches
+        assert _check_template_coverage(group, template, profiles) is True
+
+
+# ---------------------------------------------------------------------------
+# Tier 1 returns all groups + matched analyses
+# ---------------------------------------------------------------------------
+
+
+class TestRecommendTier1:
+    def test_returns_three_tuple(self):
+        """_recommend_tier1 returns (recs, all_groups, matched_analyses)."""
+        result = _recommend_tier1([], [], [])
+        assert len(result) == 3
+        recs, groups, matched = result
+        assert isinstance(recs, list)
+        assert isinstance(groups, list)
+        assert isinstance(matched, dict)
+
+    def test_all_eligible_groups_returned(self):
+        """Entity groups with 2+ tables are returned regardless of template match."""
+        profiles = [
+            _profile("booking_register", columns={
+                "buyer_name": {"semantic_type": "categorical"},
+                "order_qty": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("payment_ledger", columns={
+                "customer_id": {"semantic_type": "identifier"},
+                "amount": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        recs, groups, matched = _recommend_tier1(profiles, [], [])
+        # Both tables share "customer" entity
+        assert len(groups) >= 1
+        customer_groups = [g for g in groups if g.entity_type == "customer"]
+        assert len(customer_groups) == 1
+
+    def test_matched_analyses_populated(self):
+        """When a template matches, matched_analyses contains its title."""
+        profiles = [
+            _profile("booking_register", columns={
+                "buyer_name": {"semantic_type": "categorical"},
+                "booking_no": {"semantic_type": "identifier"},
+            }),
+            _profile("payment_ledger", columns={
+                "customer_id": {"semantic_type": "identifier"},
+                "payment_amount": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        recs, groups, matched = _recommend_tier1(profiles, [], [])
+        # The customer credit score template should match
+        cross_table_recs = [r for r in recs if r.analysis_type == "cross_table_intelligence"]
+        if cross_table_recs:
+            # matched_analyses should have customer entry
+            assert "customer" in matched
+            assert len(matched["customer"]) > 0
+
+    def test_unmatched_groups_still_returned(self):
+        """Entity groups with no matching template still appear in all_groups."""
+        profiles = [
+            _profile("batch_records", columns={
+                "product_code": {"semantic_type": "identifier"},
+                "yield_pct": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("stability_data", columns={
+                "item_code": {"semantic_type": "identifier"},
+                "shelf_life": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        recs, groups, matched = _recommend_tier1(profiles, [], [])
+        # product entity should be detected
+        product_groups = [g for g in groups if g.entity_type == "product"]
+        assert len(product_groups) >= 1
+        # Whether templates matched or not, the group is in all_groups
+
+
+# ---------------------------------------------------------------------------
+# Dynamic suggestion parsing
+# ---------------------------------------------------------------------------
+
+
+class TestParseCrossTableSuggestions:
+    def test_valid_suggestions(self):
+        group = EntityGroup(
+            entity_type="supplier",
+            tables=["purchase_orders", "quality_data"],
+        )
+        llm_response = (
+            "SUGGESTION: Vendor Risk Score | Combine purchase volume with rejection rate "
+            "to identify high-risk vendors | 88 | Critical for supply chain resilience\n"
+            "SUGGESTION: Price-Quality Tradeoff | Correlate purchase price with incoming "
+            "quality metrics | 82 | Helps negotiate better contracts\n"
+        )
+        recs = _parse_cross_table_suggestions(llm_response, group)
+        assert len(recs) == 2
+        assert recs[0].analysis_type == "cross_table_intelligence"
+        assert "Vendor Risk Score" in recs[0].title
+        assert 65 <= recs[0].priority <= 92
+        assert "[AI-suggested]" in recs[0].reason
+
+    def test_no_suggestions(self):
+        group = EntityGroup(entity_type="x", tables=["a", "b"])
+        assert _parse_cross_table_suggestions("NO_SUGGESTIONS", group) == []
+        assert _parse_cross_table_suggestions("", group) == []
+
+    def test_malformed_lines_skipped(self):
+        group = EntityGroup(entity_type="x", tables=["a", "b"])
+        llm_response = (
+            "Some random text\n"
+            "SUGGESTION: Only title\n"  # Too few parts
+            "SUGGESTION: Valid | Description | 80 | Reason\n"
+        )
+        recs = _parse_cross_table_suggestions(llm_response, group)
+        assert len(recs) == 1
+        assert "Valid" in recs[0].title
+
+    def test_priority_clamped(self):
+        group = EntityGroup(entity_type="x", tables=["a", "b"])
+        llm_response = "SUGGESTION: Title | Desc | 99 | Reason\n"
+        recs = _parse_cross_table_suggestions(llm_response, group)
+        assert recs[0].priority <= 92  # Clamped
+
+    def test_invalid_priority_defaults(self):
+        group = EntityGroup(entity_type="x", tables=["a", "b"])
+        llm_response = "SUGGESTION: Title | Desc | abc | Reason\n"
+        recs = _parse_cross_table_suggestions(llm_response, group)
+        assert recs[0].priority == 75  # Default
+
+
+# ---------------------------------------------------------------------------
+# Cross-table prompt building
+# ---------------------------------------------------------------------------
+
+
+class TestBuildCrossTablePrompt:
+    def test_basic_prompt(self):
+        group = EntityGroup(
+            entity_type="supplier",
+            tables=["purchases", "quality"],
+            entity_columns={"purchases": ["vendor_name"], "quality": ["supplier_code"]},
+        )
+        profiles = [
+            _profile("purchases", columns={
+                "vendor_name": {"semantic_type": "categorical", "sample_values": ["A", "B"]},
+                "rate": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("quality", columns={
+                "supplier_code": {"semantic_type": "identifier"},
+                "defect_rate": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        context = {"industry": "manufacturing", "products": ["TMT bars"]}
+        prompt = _build_cross_table_prompt(group, profiles, context)
+
+        assert "manufacturing" in prompt
+        assert "supplier" in prompt
+        assert "purchases" in prompt
+        assert "quality" in prompt
+        assert "SUGGESTION:" in prompt
+
+    def test_prompt_includes_existing_analyses(self):
+        """When Tier 1 templates already matched, the prompt tells the LLM."""
+        group = EntityGroup(
+            entity_type="customer",
+            tables=["orders", "payments"],
+            entity_columns={"orders": ["buyer"], "payments": ["customer"]},
+        )
+        profiles = [
+            _profile("orders", columns={"buyer": {"semantic_type": "categorical"}}),
+            _profile("payments", columns={"customer": {"semantic_type": "categorical"}}),
+        ]
+        context = {"industry": "steel"}
+        existing = [
+            "Build buyer credit score report",
+            "Customer profitability analysis",
+        ]
+        prompt = _build_cross_table_prompt(group, profiles, context, existing)
+
+        # Should include the already-covered section
+        assert "ALREADY been generated" in prompt
+        assert "credit score" in prompt
+        assert "profitability" in prompt
+        assert "COMPLEMENTARY" in prompt
+
+    def test_prompt_no_existing_analyses(self):
+        """Without existing analyses, no 'already covered' section."""
+        group = EntityGroup(entity_type="x", tables=["a", "b"])
+        profiles = [_profile("a"), _profile("b")]
+        context = {"industry": "pharma"}
+
+        prompt_no_existing = _build_cross_table_prompt(group, profiles, context, [])
+        prompt_none = _build_cross_table_prompt(group, profiles, context, None)
+
+        assert "ALREADY been generated" not in prompt_no_existing
+        assert "ALREADY been generated" not in prompt_none
+
+
+# ---------------------------------------------------------------------------
+# Cross-table intelligence end-to-end (sync)
+# ---------------------------------------------------------------------------
+
+
+class TestCrossTableIntelligence:
+    def test_customer_credit_score_template(self):
+        """booking_register + payment_ledger → credit score recommendation."""
+        profiles = [
+            _profile("booking_register", columns={
+                "buyer_name": {"semantic_type": "categorical"},
+                "booking_no": {"semantic_type": "identifier"},
+                "order_qty": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("payment_ledger", columns={
+                "customer_id": {"semantic_type": "identifier"},
+                "payment_amount": {"semantic_type": "numeric_metric"},
+                "payment_date": {"semantic_type": "temporal"},
+            }),
+        ]
+        recs = recommend_analyses(profiles, [], [])
+        cross_recs = [r for r in recs if r.analysis_type == "cross_table_intelligence"]
+        assert len(cross_recs) >= 1
+        assert any("credit" in r.title.lower() for r in cross_recs)
+
+    def test_supplier_tco_template(self):
+        """purchase_orders + quality_inspections → total cost of ownership."""
+        profiles = [
+            _profile("purchase_orders", columns={
+                "vendor_name": {"semantic_type": "categorical"},
+                "rate": {"semantic_type": "numeric_metric"},
+                "amount": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("quality_rejections", columns={
+                "supplier_code": {"semantic_type": "identifier"},
+                "reject_count": {"semantic_type": "numeric_metric"},
+                "defect_type": {"semantic_type": "categorical"},
+            }),
+        ]
+        recs = recommend_analyses(profiles, [], [])
+        cross_recs = [r for r in recs if r.analysis_type == "cross_table_intelligence"]
+        assert len(cross_recs) >= 1
+        assert any("cost" in r.title.lower() or "ownership" in r.title.lower() for r in cross_recs)
+
+    def test_relationship_linked_tables_get_suggestions(self):
+        """Tables linked only by discovered relationships still get cross-table recs."""
+        profiles = [
+            _profile("table_x", columns={
+                "party_code": {"semantic_type": "categorical"},
+                "qty": {"semantic_type": "numeric_metric"},
+            }),
+            _profile("table_y", columns={
+                "party_code": {"semantic_type": "categorical"},
+                "amount": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        relationships = [
+            {
+                "table_a": "table_x", "table_b": "table_y",
+                "column_a": "party_code", "column_b": "party_code",
+                "confidence": 0.9,
+            },
+        ]
+        recs = recommend_analyses(profiles, [], relationships)
+        # Both tables should be linked via "party" (customer keyword) entity group
+        # At minimum, they should have some cross-table recommendation
+        all_tables = {r.target_table for r in recs}
+        assert "table_x" in all_tables or "table_y" in all_tables
+
+    def test_unrelated_tables_no_cross_table(self):
+        """Tables with no shared entity produce no cross-table intelligence."""
+        profiles = [
+            _profile("weather_data", columns={
+                "temperature": {"semantic_type": "numeric_metric"},
+                "date": {"semantic_type": "temporal"},
+            }),
+            _profile("expense_journal", columns={
+                "category": {"semantic_type": "categorical"},
+                "value": {"semantic_type": "numeric_metric"},
+            }),
+        ]
+        recs = recommend_analyses(profiles, [], [])
+        cross_recs = [r for r in recs if r.analysis_type == "cross_table_intelligence"]
+        assert len(cross_recs) == 0
 
 
 # ---------------------------------------------------------------------------

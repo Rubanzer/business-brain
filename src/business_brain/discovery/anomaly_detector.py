@@ -164,9 +164,8 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                 profile.table_name, col_name, row_count,
             )
 
-    # 7. Time-based insights: detect temporal + numeric combinations for trend detection
-    # NOTE: "Time series data available" is a meta-observation, not a business insight.
-    # Suppressed from Feed. The system already uses this info for trend analysis internally.
+    # 7. Time-based: detect actual trends from sample data (not just "analysis possible")
+    # NOTE: meta-observations like "time series data available" are suppressed from Feed.
     temp_cols = [c for c, i in cols.items() if i.get("semantic_type") == "temporal"]
     num_cols = [
         c for c, i in cols.items()
@@ -174,10 +173,10 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
     ]
 
     if temp_cols and num_cols:
-        logger.debug(
-            "Time series available: %s has temporal=%s, numeric=%s",
-            profile.table_name, temp_cols, num_cols[:3],
-        )
+        # Only create trend insight if we can detect an actual trend from sample data
+        trend_insight = _detect_actual_trend(profile, cols, temp_cols[0], num_cols[:3])
+        if trend_insight:
+            results.append(trend_insight)
 
     # 8. Domain-specific anomalies for manufacturing
     domain = (profile.domain_hint or "general").lower()
@@ -258,6 +257,97 @@ _MANUFACTURING_RANGES: list[dict] = [
         "context": "percentage of output rejected. Above 3% is poor, above 5% is systemic",
     },
 ]
+
+
+def _detect_actual_trend(
+    profile: TableProfile,
+    cols: dict,
+    temp_col: str,
+    num_cols: list[str],
+) -> Insight | None:
+    """Detect an actual trend from sample data — not just flag that analysis is possible.
+
+    Returns an insight only if there's a real, quantified finding
+    (e.g., values increasing/decreasing by X% over the time range).
+    """
+    temp_info = cols.get(temp_col, {})
+    samples = temp_info.get("sample_values", [])
+
+    if len(samples) < 5:
+        return None
+
+    # For each numeric column, check if there's a clear directional trend
+    # by comparing the first-third average to the last-third average
+    for num_col in num_cols:
+        num_info = cols.get(num_col, {})
+        num_samples = num_info.get("sample_values", [])
+        stats = num_info.get("stats")
+
+        if not num_samples or not stats or len(num_samples) < 6:
+            continue
+
+        # Convert to floats, skip non-numeric
+        values = []
+        for s in num_samples:
+            try:
+                values.append(float(str(s).replace(",", "")))
+            except (ValueError, TypeError):
+                pass
+
+        if len(values) < 6:
+            continue
+
+        # Compare first third to last third
+        third = len(values) // 3
+        first_avg = sum(values[:third]) / third
+        last_avg = sum(values[-third:]) / third
+
+        if first_avg == 0:
+            continue
+
+        pct_change = ((last_avg - first_avg) / abs(first_avg)) * 100
+
+        # Only report if change is significant (> 15%)
+        if abs(pct_change) < 15:
+            continue
+
+        direction = "increased" if pct_change > 0 else "decreased"
+        severity = "warning" if abs(pct_change) > 30 else "info"
+
+        return Insight(
+            id=str(uuid.uuid4()),
+            insight_type="trend",
+            severity=severity,
+            impact_score=min(int(abs(pct_change) / 2) + 30, 80),
+            title=f"{num_col} {direction} by {abs(pct_change):.0f}% in {profile.table_name}",
+            description=(
+                f"{num_col} {direction} from avg {first_avg:,.2f} (early period) to "
+                f"{last_avg:,.2f} (recent period), a {abs(pct_change):.1f}% change. "
+                f"Mean: {stats['mean']:,.2f}, Std dev: {stats.get('stdev', 0):,.2f}."
+            ),
+            source_tables=[profile.table_name],
+            source_columns=[temp_col, num_col],
+            evidence={
+                "temporal_column": temp_col,
+                "metric_column": num_col,
+                "first_period_avg": round(first_avg, 2),
+                "last_period_avg": round(last_avg, 2),
+                "pct_change": round(pct_change, 1),
+                "direction": direction,
+                "chart_spec": {
+                    "type": "line",
+                    "x": temp_col,
+                    "y": [num_col],
+                    "title": f"{num_col} trend over {temp_col}",
+                },
+            },
+            suggested_actions=[
+                f"Investigate what caused {num_col} to {direction[:8]}e by {abs(pct_change):.0f}%",
+                f"Check if the {direction[:8]}e in {num_col} correlates with operational changes",
+            ],
+        )
+
+    return None
 
 
 def _manufacturing_anomalies(

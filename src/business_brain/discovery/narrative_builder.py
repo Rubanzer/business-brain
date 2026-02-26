@@ -86,11 +86,21 @@ async def _generate_stories(insights: list[Insight]) -> list[Insight]:
         source_tables.update(ins.source_tables or [])
 
     prompt = (
-        "You are a senior business analyst. Given these discovered insights, connect them into "
-        "1-2 narrative stories that explain cause-and-effect relationships.\n\n"
-        "INSIGHTS:\n" + "\n".join(summaries) + "\n\n"
+        "You are a CFO reviewing data findings. Your job is to synthesize these raw "
+        "findings into 1-2 ACTIONABLE business stories with SPECIFIC numbers.\n\n"
+        "RAW FINDINGS:\n" + "\n".join(summaries) + "\n\n"
+        "RULES — FOLLOW STRICTLY:\n"
+        "- Every story MUST contain specific numbers, percentages, or monetary values from the findings\n"
+        "- State the BUSINESS IMPACT: how much money is at risk, what efficiency is lost, what cost can be saved\n"
+        "- State a CONCRETE ACTION: not 'investigate further' but 'renegotiate with supplier X' or 'audit shift B staffing'\n"
+        "- NEVER say 'warrants further investigation', 'suggests', 'may indicate', or 'could be'\n"
+        "- NEVER describe what a table contains — only state what the DATA REVEALS\n"
+        "- If the findings don't support a meaningful business story, return an EMPTY array []\n\n"
         "Return ONLY valid JSON (no markdown fences): "
-        '[{"title": "...", "narrative": "...", "connected_insight_ids": [0,1,...], "suggested_actions": ["..."]}]'
+        '[{"title": "short action-oriented title with key number", '
+        '"narrative": "2-3 sentences with specific numbers connecting cause to effect to business impact", '
+        '"connected_insight_ids": [0,1,...], '
+        '"suggested_actions": ["specific action with expected outcome"]}]'
     )
 
     try:
