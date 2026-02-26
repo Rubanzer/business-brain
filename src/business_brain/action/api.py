@@ -65,6 +65,10 @@ async def _sync_loop():
     # Wait a bit on startup to let DB init finish
     await asyncio.sleep(5)
 
+    # Track last digest send time for shift-based batching (every 8 hours)
+    from datetime import datetime as _dt, timedelta, timezone as _tz
+    _last_digest_at = _dt.now(_tz.utc)
+
     while True:
         try:
             async with async_session() as session:
@@ -79,6 +83,22 @@ async def _sync_loop():
                                 await _run_discovery_background(f"auto_sync:{r.get('name', 'unknown')}")
                             except Exception:
                                 logger.exception("Discovery after auto-sync failed for %s", r.get("name"))
+
+                # Send shift digest every 8 hours (instead of individual alerts)
+                now = _dt.now(_tz.utc)
+                if (now - _last_digest_at) >= timedelta(hours=8):
+                    try:
+                        from business_brain.action.alert_engine import send_shift_digest
+                        digest = await send_shift_digest(session, since_hours=8)
+                        if digest.get("sent"):
+                            logger.info(
+                                "Shift digest sent: %d events (%d critical)",
+                                digest.get("event_count", 0),
+                                digest.get("critical_count", 0),
+                            )
+                        _last_digest_at = now
+                    except Exception:
+                        logger.exception("Shift digest send failed")
         except Exception:
             logger.exception("Background sync loop error")
 
@@ -1361,6 +1381,20 @@ async def evaluate_alerts_endpoint(
     return {"status": "evaluated", "triggered": len(events)}
 
 
+@app.post("/alerts/digest")
+async def send_digest_endpoint(
+    hours: int = 8,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Manually trigger a shift digest — batched alert summary.
+
+    Aggregates all alert events from the last N hours into a single message.
+    Sends via Telegram if configured.
+    """
+    from business_brain.action.alert_engine import send_shift_digest
+    return await send_shift_digest(session, since_hours=hours)
+
+
 # ---------------------------------------------------------------------------
 # v3: Telegram
 # ---------------------------------------------------------------------------
@@ -2314,6 +2348,20 @@ async def get_dashboard_summary(session: AsyncSession = Depends(get_session)) ->
     }
 
 
+@app.get("/briefing")
+async def daily_briefing(
+    hours: int = 24,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get a daily briefing summarizing recent insights and alerts.
+
+    Returns structured JSON with status indicators (green/yellow/red),
+    domain sections, top actions, and executive summary.
+    """
+    from business_brain.discovery.daily_briefing import generate_daily_briefing
+    return await generate_daily_briefing(session, since_hours=hours)
+
+
 @app.get("/data-freshness")
 async def get_data_freshness(session: AsyncSession = Depends(get_session)) -> dict:
     """Get data freshness scores comparing current vs previous profiles."""
@@ -2857,17 +2905,31 @@ async def validate_table(
 
 @app.get("/recommendations")
 async def get_recommendations(session: AsyncSession = Depends(get_session)):
-    """Get analysis recommendations based on current data state."""
+    """Get analysis recommendations based on current data state.
+
+    Uses Tier 1 (hardcoded templates) + Tier 2 (LLM-generated) cross-table
+    intelligence. Tier 2 always runs — even when templates match — to suggest
+    complementary, industry-specific analyses.
+    """
+    from sqlalchemy import select as sa_select
+
+    from business_brain.action.onboarding import get_company_profile
+    from business_brain.db.discovery_models import (
+        DiscoveredRelationship,
+        Insight,
+        TableProfile,
+    )
     from business_brain.discovery.insight_recommender import (
         compute_coverage,
-        recommend_analyses,
+        recommend_analyses_async,
     )
 
     profiles = list((await session.execute(sa_select(TableProfile))).scalars().all())
     insights = list((await session.execute(sa_select(Insight))).scalars().all())
     relationships = list((await session.execute(sa_select(DiscoveredRelationship))).scalars().all())
 
-    # Convert ORM objects to dicts
+    # Convert ORM objects to dicts — include ALL fields for relationship-based
+    # entity inference (confidence, column_a, column_b are critical)
     profile_dicts = [
         {"table_name": p.table_name, "row_count": p.row_count,
          "column_classification": p.column_classification}
@@ -2878,11 +2940,30 @@ async def get_recommendations(session: AsyncSession = Depends(get_session)):
         for i in insights
     ]
     rel_dicts = [
-        {"table_a": r.table_a, "table_b": r.table_b}
+        {"table_a": r.table_a, "table_b": r.table_b,
+         "column_a": r.column_a, "column_b": r.column_b,
+         "confidence": r.confidence,
+         "relationship_type": getattr(r, "relationship_type", None)}
         for r in relationships
     ]
 
-    recs = recommend_analyses(profile_dicts, insight_dicts, rel_dicts)
+    # Fetch company context for Tier 2 LLM suggestions
+    company_context = None
+    try:
+        cp = await get_company_profile(session)
+        if cp:
+            company_context = {
+                "industry": cp.industry or "",
+                "products": cp.products or [],
+                "process_flow": cp.process_flow or "",
+                "departments": cp.departments or [],
+            }
+    except Exception:
+        logger.debug("Could not fetch company profile for recommendations")
+
+    recs = await recommend_analyses_async(
+        profile_dicts, insight_dicts, rel_dicts, company_context,
+    )
     coverage = compute_coverage(profile_dicts, insight_dicts)
 
     return {

@@ -52,9 +52,9 @@ def detect_stale_tables(
                 impact_score=15,
                 title=f"Stale data in {profile.table_name}",
                 description=(
-                    f"Table {profile.table_name} has not changed since the previous "
-                    f"discovery run (same data hash). This may indicate a stalled "
-                    f"data pipeline or inactive source."
+                    f"Table {profile.table_name} data is unchanged since last scan "
+                    f"(hash: {cur_hash[:8]}..., {profile.row_count or 0} rows). "
+                    f"Data pipeline for this table is not delivering new data."
                 ),
                 source_tables=[profile.table_name],
                 source_columns=[],

@@ -201,16 +201,20 @@ def discover_composites(
             if entity_match:
                 impact += 10
 
+            location = (
+                f"across tables {', '.join(source_tables)}" if is_cross_table
+                else f"in {source_tables[0]}"
+            )
             insights.append(Insight(
                 id=str(uuid.uuid4()),
                 insight_type="composite",
                 severity="info",
                 impact_score=min(impact, 100),
-                title=f"{template.name} available",
+                title=f"Compute {template.name}: {', '.join(source_columns)} {location}",
                 description=(
-                    f"Columns {', '.join(source_columns)} "
-                    f"{'across tables ' + ', '.join(source_tables) if is_cross_table else 'in ' + source_tables[0]} "
-                    f"can create a {template.name.lower()}. {template.description}."
+                    f"{template.description}. "
+                    f"Formula: {template.formula_hint}. "
+                    f"Data columns: {', '.join(source_columns)} {location}."
                 ),
                 source_tables=source_tables,
                 source_columns=source_columns,
@@ -228,8 +232,8 @@ def discover_composites(
                 },
                 composite_template=template.name,
                 suggested_actions=[
-                    f"Compute {template.name} using formula: {template.formula_hint}",
-                    f"Create a dashboard widget for {template.name}",
+                    f"Compute {template.name} using: {template.formula_hint}",
+                    f"Rank entities by {template.name} to find top/bottom performers",
                 ],
             ))
         except Exception:

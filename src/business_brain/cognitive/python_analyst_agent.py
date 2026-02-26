@@ -34,32 +34,58 @@ COLUMN CLASSIFICATION (auto-detected):
 ANALYST FINDINGS TO VERIFY/DEEPEN:
 {analyst_findings}
 
-ANALYSIS REQUIREMENTS — perform ALL applicable based on column types:
+ANALYSIS REQUIREMENTS — ALWAYS show the FULL picture first, then highlight issues:
 
-1. GROUP-BY AGGREGATIONS (categorical + numeric columns):
-   For each categorical column, compute count/mean/median/min/max of each numeric column.
-   Print a ranked summary table.
+1. FULL ENTITY BREAKDOWN (categorical + numeric columns) — MOST IMPORTANT:
+   For each categorical column, compute per-entity: count, sum, mean, min, max.
+   Print a COMPLETE RANKED TABLE of ALL entities (not just top/bottom).
+   Format as: "1. EntityName: avg=X, total=Y, count=Z (vs group avg: +/-N%)"
+   NEVER truncate — show every entity. This is the primary deliverable.
 
-2. STATISTICAL DISTRIBUTIONS (numeric columns):
-   For each numeric column: mean, median, stdev, P25/P50/P75, min, max.
+2. PERFORMANCE GAPS (categorical + numeric):
+   After the full table, flag: best performer, worst performer, gap between them.
+   Print: "BEST: X at Y (+Z% vs avg) | WORST: A at B (-C% vs avg) | GAP: D%"
+
+3. STATISTICAL SUMMARY (numeric columns):
+   For each numeric column: mean, median, stdev, P25/P75, min, max.
    Use the `statistics` module.
 
-3. CORRELATIONS (2+ numeric columns):
+4. CORRELATIONS (2+ numeric columns):
    Pearson r = (n*sum(xy) - sum(x)*sum(y)) / sqrt((n*sum(x²)-sum(x)²)*(n*sum(y²)-sum(y)²))
    Print pairs with |r| > 0.3.
 
-4. PER-CATEGORY COMPARISONS (categorical + numeric):
-   Compare numeric distributions across categories.
-   Print which category has best/worst values.
-
 5. OUTLIER DETECTION (numeric columns):
-   Flag values > 2 std deviations from mean. Print count and values.
+   Flag values > 2 std deviations from mean. Print count and examples.
+   But this is SECONDARY to the full breakdown — show ALL data first.
 
 6. TIME ANALYSIS (temporal + numeric columns):
    Group by time period, compute period-over-period changes.
+   Show the FULL time series, not just the trend summary.
+
+KEY PRINCIPLE: The user wants COMPLETE VISIBILITY — every entity, every period,
+every group. Show the full ranked data first, THEN highlight what's unusual.
+Never say "only showing top 5" — show everything.
+
+ADVANCED FUNCTIONS (pre-imported, call directly — no import needed):
+
+FORECASTING:
+  result = forecast_linear(values: list[float], periods_ahead: int = 3)
+  result = forecast_exponential(values: list[float], periods_ahead: int = 3, alpha: float = 0.3)
+  # result.predicted_values (list[float]), result.method (str), result.confidence ("high"/"medium"/"low")
+
+  trend = detect_trend(values: list[float])
+  # trend.direction ("increasing"/"decreasing"/"stable"/"volatile"), trend.magnitude (% per period), trend.r_squared
+
+  smoothed = compute_moving_average(values: list[float], window: int = 3)
+
+SEGMENTATION:
+  result = segment_data(rows: list[dict], features: list[str], n_segments: int = 3)
+  # result.segments (list with .label, .size, .center dict, .members list), result.quality_score, result.summary
+
+Use these when the question involves predicting, forecasting, projecting, segmenting, clustering, or grouping.
 
 Rules:
-- Only use stdlib: statistics, collections, math, itertools, datetime, re, json
+- Only use stdlib (statistics, collections, math, itertools, datetime, re, json) PLUS the pre-imported advanced functions above
 - No pandas, numpy, scipy, or external libraries
 - Values may be None — ALWAYS filter: [v for v in vals if v is not None]
 - Use print() for every metric and finding
@@ -71,6 +97,7 @@ Rules:
 # Phase 2: Ask Gemini to structure the raw output into our format.
 INTERPRET_PROMPT = """\
 You are formatting raw analysis output into structured JSON for a business dashboard.
+The user wants COMPLETE VISIBILITY — the full picture, not just highlights.
 
 Given the printed output from a Python analysis script, return ONLY a JSON object:
 {{
@@ -83,13 +110,25 @@ Given the printed output from a Python analysis script, return ONLY a JSON objec
       "priority": 1-10
     }}
   ],
-  "narrative": "3-5 sentence executive interpretation connecting findings to business
-                 decisions. Reference specific names and numbers from the output.
-                 State what's good, what's concerning, and what to investigate further."
+  "full_breakdown": [
+    {{
+      "entity": "name of entity (sales rep, shift, supplier, machine, etc.)",
+      "metrics": {{"metric_name": "formatted_value", ...}},
+      "vs_avg": "+12% or -8%",
+      "rank": 1
+    }}
+  ],
+  "narrative": "3-5 sentence executive interpretation. Start with the OVERALL picture
+                 (totals, averages), then call out the BEST and WORST performers by name
+                 with specific numbers, then state the GAP and what to do about it.
+                 Be specific: 'Rajesh sold ₹45L vs team avg ₹58L' not 'one rep underperformed'."
 }}
 
-Priority guide: key averages=6, per-group comparisons=8, outliers=9, correlations=7,
-distributions=5, time trends=8.
+IMPORTANT: Include EVERY entity in full_breakdown — never truncate or say "and X more".
+The full_breakdown is the primary deliverable. Computations are the summary stats on top.
+
+Priority guide: full entity breakdowns=10, per-group comparisons=9, outliers=8,
+key averages=7, correlations=6, distributions=5, time trends=9.
 Format guide: use "currency" for monetary values, "percentage" for rates/ratios/yields,
 "number" for counts/quantities.
 """
@@ -152,6 +191,27 @@ def execute_sandboxed(code: str, rows: list[dict]) -> dict[str, Any]:
         "__builtins__": builtins,
         "rows": rows,
     }
+
+    # Inject advanced analysis functions into sandbox
+    try:
+        from business_brain.discovery.time_intelligence import (
+            forecast_linear,
+            forecast_exponential,
+            detect_trend,
+            compute_moving_average,
+        )
+        namespace["forecast_linear"] = forecast_linear
+        namespace["forecast_exponential"] = forecast_exponential
+        namespace["detect_trend"] = detect_trend
+        namespace["compute_moving_average"] = compute_moving_average
+    except ImportError:
+        pass  # Functions not available — sandbox runs without them
+
+    try:
+        from business_brain.discovery.segmentation_engine import segment_data
+        namespace["segment_data"] = segment_data
+    except ImportError:
+        pass
 
     try:
         exec(code, namespace)  # noqa: S102
@@ -250,6 +310,7 @@ def _interpret_output(
         parsed = json.loads(text)
         return {
             "computations": parsed.get("computations", []),
+            "full_breakdown": parsed.get("full_breakdown", []),
             "narrative": parsed.get("narrative", ""),
         }
     except Exception:
@@ -257,6 +318,7 @@ def _interpret_output(
         # Fall back: use raw stdout as narrative
         return {
             "computations": [],
+            "full_breakdown": [],
             "narrative": stdout.strip()[:500] if stdout.strip() else "Analysis completed but interpretation failed.",
         }
 
@@ -404,6 +466,7 @@ class PythonAnalystAgent:
         state["python_analysis"] = {
             "code": code,
             "computations": interpreted["computations"],
+            "full_breakdown": interpreted.get("full_breakdown", []),
             "narrative": interpreted["narrative"],
             "error": None,
         }

@@ -99,8 +99,32 @@ async def run_discovery(
             logger.exception("Correlation discovery failed, continuing")
             correlation_insights = []
 
+        # 6d. Run domain-specific analysis (heat, material balance, quality, power, etc.)
+        logger.info("Discovery: running domain-specific analysis...")
+        try:
+            from business_brain.discovery.domain_dispatcher import run_domain_analysis
+            domain_insights = await run_domain_analysis(session, profiles)
+            logger.info("Discovery: found %d domain insights", len(domain_insights))
+        except Exception:
+            logger.exception("Domain analysis failed, continuing")
+            domain_insights = []
+
+        # 6e. Entity performance comparison (operational gaps: who's underperforming)
+        logger.info("Discovery: comparing entity performance...")
+        try:
+            from business_brain.discovery.entity_performance import discover_entity_performance
+            entity_insights = discover_entity_performance(profiles)
+            logger.info("Discovery: found %d entity performance insights", len(entity_insights))
+        except Exception:
+            logger.exception("Entity performance comparison failed, continuing")
+            entity_insights = []
+
         # 7. Combine all insights
-        all_insights = anomaly_insights + composite_insights + cross_insights + seasonality_insights + correlation_insights
+        all_insights = (
+            anomaly_insights + composite_insights + cross_insights
+            + seasonality_insights + correlation_insights + domain_insights
+            + entity_insights
+        )
 
         # 8. Build narratives (if 2+ insights)
         if len(all_insights) >= 2:
@@ -197,7 +221,14 @@ async def run_discovery(
         except Exception:
             logger.exception("Insight deduplication failed, continuing")
 
-        # 10. Score all insights
+        # 10. Quality gate — reject insights that are just data descriptions
+        pre_quality = len(all_insights)
+        all_insights = [i for i in all_insights if _passes_quality_gate(i)]
+        rejected = pre_quality - len(all_insights)
+        if rejected:
+            logger.info("Discovery: rejected %d low-quality insights", rejected)
+
+        # 10b. Score all insights
         for insight in all_insights:
             insight.discovery_run_id = run.id
             _apply_scoring(insight)
@@ -244,8 +275,63 @@ async def run_discovery(
     return run
 
 
+import re as _re
+
+# Phrases that indicate an insight is just describing data structure, not a real finding
+_WEAK_PHRASES = [
+    r"analysis is possible",
+    r"analysis is available",
+    r"analysis available",
+    r"comparison is available",
+    r"further investigation",
+    r"warrants? further",
+    r"needs? further",
+    r"requires? further",
+    r"seems? to contain",
+    r"appears? to contain",
+    r"contains? general information",
+    r"contains? (?:descriptive|text) (?:data|information)",
+    r"understanding the context",
+    r"is important for relating",
+    r"may indicate",
+    r"could be",
+    r"might highlight",
+    r"can create a\b",
+    r"find hidden relationships",
+    r"run (?:full |correlation )?analysis",
+]
+_WEAK_PATTERN = _re.compile("|".join(_WEAK_PHRASES), _re.IGNORECASE)
+
+
+def _passes_quality_gate(insight: Insight) -> bool:
+    """Reject insights that are just data descriptions or 'analysis possible' flags.
+
+    A real insight must contain a specific finding, not just describe what's in the data.
+    """
+    text = f"{insight.title or ''} {insight.description or ''} {insight.narrative or ''}"
+
+    # Reject if description matches weak patterns
+    if _WEAK_PATTERN.search(text):
+        logger.debug("Quality gate rejected (weak language): %s", insight.title)
+        return False
+
+    # Reject story-type insights with no numbers in them
+    if insight.insight_type == "story":
+        has_number = bool(_re.search(r"\d+\.?\d*%|\d{2,}|₹|Rs\.?\s*\d", text))
+        if not has_number:
+            logger.debug("Quality gate rejected (story with no numbers): %s", insight.title)
+            return False
+
+    return True
+
+
 def _apply_scoring(insight: Insight) -> None:
-    """Apply the scoring formula: severity*40 + cross_table*30 + magnitude*30."""
+    """Apply the scoring formula: severity*40 + cross_table*30 + magnitude*30.
+
+    Domain analysis insights get a floor score of 45 because they contain
+    quantified findings from specialized modules (always more valuable than
+    generic statistical observations).
+    """
     severity_weights = {"critical": 1.0, "warning": 0.6, "info": 0.3}
     severity_score = severity_weights.get(insight.severity, 0.3) * 40
 
@@ -256,7 +342,13 @@ def _apply_scoring(insight: Insight) -> None:
     # Change magnitude (use existing impact_score as base)
     magnitude = ((insight.impact_score or 0) / 100) * 30
 
-    insight.impact_score = min(int(severity_score + cross_table_bonus + magnitude), 100)
+    score = int(severity_score + cross_table_bonus + magnitude)
+
+    # Domain/operational analysis floor — these are always quantified, specific findings
+    if insight.insight_type in ("domain_analysis", "dynamic_analysis", "entity_performance"):
+        score = max(score, 45)
+
+    insight.impact_score = min(score, 100)
 
 
 async def _refresh_affected_reports(
