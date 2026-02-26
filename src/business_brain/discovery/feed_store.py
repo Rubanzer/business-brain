@@ -39,9 +39,11 @@ async def get_feed(
         q = q.where(Insight.status != "dismissed")
 
     # Filter by minimum quality score to keep feed clean
-    # Use coalesce to treat NULL quality_score as 0 (filters them out)
+    # Show unscored insights (NULL), only hide explicitly low-scored ones
     if min_quality > 0:
-        q = q.where(func.coalesce(Insight.quality_score, 0) >= min_quality)
+        q = q.where(
+            (Insight.quality_score == None) | (Insight.quality_score >= min_quality)  # noqa: E711
+        )
 
     q = q.limit(limit)
     result = await session.execute(q)

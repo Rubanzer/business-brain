@@ -56,7 +56,7 @@ def discover_correlations_from_profiles(profiles: list) -> list[Insight]:
                 id=str(uuid.uuid4()),
                 insight_type="correlation",
                 severity="info",
-                impact_score=55 if abs(est_r) >= 0.85 else (45 if abs(est_r) >= 0.7 else 30),
+                impact_score=55 if abs(est_r) >= 0.85 else (45 if abs(est_r) >= 0.7 else (30 if abs(est_r) >= 0.6 else 25)),
                 title=f"Potential correlation: {col_a} ↔ {col_b} in {profile.table_name}",
                 description=(
                     f"Columns {col_a} and {col_b} in {profile.table_name} show "
@@ -125,7 +125,7 @@ def _estimate_sample_correlations(
             if r is None:
                 continue
 
-            if abs(r) >= 0.7:
+            if abs(r) >= 0.5:
                 direction = "positive" if r > 0 else "negative"
                 results.append((col_a, col_b, r, direction))
 

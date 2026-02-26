@@ -76,6 +76,16 @@ async def run_discovery(
         anomaly_insights = detect_anomalies(profiles)
         logger.info("Discovery: found %d anomaly insights", len(anomaly_insights))
 
+        # 4b. Check benchmarks against domain knowledge
+        logger.info("Discovery: checking benchmarks...")
+        try:
+            from business_brain.discovery.benchmark_checker import check_benchmarks
+            benchmark_insights = check_benchmarks(profiles)
+            logger.info("Discovery: found %d benchmark insights", len(benchmark_insights))
+        except Exception:
+            logger.exception("Benchmark checking failed, continuing")
+            benchmark_insights = []
+
         # 5. Discover composites
         logger.info("Discovery: discovering composites...")
         composite_insights = discover_composites(profiles, relationships)
@@ -102,7 +112,7 @@ async def run_discovery(
             correlation_insights = []
 
         # 7. Combine all insights
-        all_insights = anomaly_insights + composite_insights + cross_insights + seasonality_insights + correlation_insights
+        all_insights = anomaly_insights + benchmark_insights + composite_insights + cross_insights + seasonality_insights + correlation_insights
 
         # 8. Build narratives (if 2+ insights)
         if len(all_insights) >= 2:
