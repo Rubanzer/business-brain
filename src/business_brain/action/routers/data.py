@@ -477,6 +477,7 @@ async def get_table_data(
     page_size: int = 50,
     sort_by: Optional[str] = None,
     sort_dir: str = "asc",
+    total_hint: Optional[int] = None,
     session: AsyncSession = Depends(get_session),
     user: Optional[dict] = Depends(get_current_user),
 ) -> dict:
@@ -493,8 +494,31 @@ async def get_table_data(
         return {"error": f"Access denied to table '{safe_table}'"}
 
     try:
-        count_result = await session.execute(sql_text(f'SELECT COUNT(*) FROM "{safe_table}"'))
-        total = count_result.scalar()
+        # Fast row count: use pg_class estimate for page 1, client cache for page 2+
+        total_exact = True
+        if total_hint is not None and total_hint > 0 and page > 1:
+            total = total_hint
+            total_exact = False
+        else:
+            # Try pg_class estimated count first (instant)
+            est_count = 0
+            try:
+                est_result = await session.execute(sql_text(
+                    "SELECT reltuples::bigint FROM pg_class WHERE relname = :tbl"
+                ), {"tbl": safe_table})
+                est_row = est_result.fetchone()
+                if est_row and isinstance(est_row[0], (int, float)) and est_row[0] >= 0:
+                    est_count = int(est_row[0])
+            except Exception:
+                pass  # Fall through to exact count
+
+            if est_count >= 500:
+                total = est_count
+                total_exact = False
+            else:
+                # Small table or stale stats — exact count is fast anyway
+                count_result = await session.execute(sql_text(f'SELECT COUNT(*) FROM "{safe_table}"'))
+                total = count_result.scalar()
 
         order_clause = ""
         if sort_by:
@@ -512,6 +536,7 @@ async def get_table_data(
         return {
             "rows": rows,
             "total": total,
+            "total_exact": total_exact,
             "page": page,
             "page_size": page_size,
             "columns": columns,

@@ -39,10 +39,12 @@ async def get_feed(
         q = q.where(Insight.status != "dismissed")
 
     # Filter by minimum quality score to keep feed clean
-    # Show unscored insights (NULL), only hide explicitly low-scored ones
+    # Show unscored (NULL) and legacy unscored (0) insights, only hide explicitly low-scored
     if min_quality > 0:
         q = q.where(
-            (Insight.quality_score == None) | (Insight.quality_score >= min_quality)  # noqa: E711
+            (Insight.quality_score == None)  # noqa: E711
+            | (Insight.quality_score == 0)
+            | (Insight.quality_score >= min_quality)
         )
 
     q = q.limit(limit)
