@@ -262,7 +262,23 @@ async def run_discovery(
         except Exception:
             logger.exception("Alert evaluation failed, continuing")
 
-        # 12. Complete the run
+        # 12. Pre-compute top analyses in background
+        logger.info("Discovery: pre-computing top analyses...")
+        try:
+            from business_brain.discovery.precompute_engine import (
+                invalidate_stale,
+                run_precomputation,
+            )
+
+            await invalidate_stale(session, profiled_tables)
+            precomputed = await run_precomputation(
+                session, profiles, max_total=20,
+            )
+            logger.info("Discovery: pre-computed %d analyses", len(precomputed))
+        except Exception:
+            logger.exception("Pre-computation failed, continuing")
+
+        # 13. Complete the run
         run.status = "completed"
         run.insights_found = len(all_insights)
         run.completed_at = datetime.now(timezone.utc)

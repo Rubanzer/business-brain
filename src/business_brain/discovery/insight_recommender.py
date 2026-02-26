@@ -35,6 +35,10 @@ class Recommendation:
     columns: list[str]
     priority: int  # 1-100
     reason: str
+    # Pre-computed backing (populated by _enrich_with_precomputed)
+    precomputed_id: str | None = None
+    precomputed_summary: dict | None = None
+    confidence: str = "heuristic"  # "heuristic" | "pre-computed"
 
 
 @dataclass
@@ -303,13 +307,21 @@ def recommend_analyses(
     insights: list[dict],
     relationships: list[dict],
     max_recommendations: int = 10,
+    precomputed: list[dict] | None = None,
 ) -> list[Recommendation]:
     """Generate analysis recommendations (sync — Tier 1 only).
 
     Backward-compatible sync entry point. For full Tier 1 + Tier 2 (LLM),
     use ``recommend_analyses_async()`` instead.
+
+    Args:
+        precomputed: Optional list of pre-computed analysis dicts from
+            PrecomputedAnalysis table. When provided, matching recs get
+            enriched with real data (confidence="pre-computed", preview).
     """
     recs, _groups, _matched = _recommend_tier1(profiles, insights, relationships)
+    if precomputed:
+        recs = _enrich_with_precomputed(recs, precomputed)
     return _finalize(recs, max_recommendations)
 
 
@@ -319,6 +331,7 @@ async def recommend_analyses_async(
     relationships: list[dict],
     company_context: dict | None = None,
     max_recommendations: int = 10,
+    precomputed: list[dict] | None = None,
 ) -> list[Recommendation]:
     """Full recommendation pipeline: Tier 1 (templates) + Tier 2 (LLM-generated).
 
@@ -336,6 +349,8 @@ async def recommend_analyses_async(
         relationships: Discovered relationships (with confidence, column_a, column_b).
         company_context: Company profile dict (industry, products, process_flow).
         max_recommendations: Max recs to return.
+        precomputed: Optional list of pre-computed analysis dicts. When provided,
+            matching recs get enriched with real data (confidence, preview).
     """
     tier1_recs, all_groups, matched_analyses = _recommend_tier1(
         profiles, insights, relationships,
@@ -351,6 +366,10 @@ async def recommend_analyses_async(
             tier1_recs.extend(tier2_recs)
         except Exception:
             logger.exception("Tier 2 dynamic cross-table suggestions failed")
+
+    # Enrich with pre-computed results (attach real data to heuristic recs)
+    if precomputed:
+        tier1_recs = _enrich_with_precomputed(tier1_recs, precomputed)
 
     return _finalize(tier1_recs, max_recommendations)
 
@@ -628,6 +647,82 @@ def _recommend_tier1(
             ))
 
     return recommendations, all_eligible_groups, matched_analyses
+
+
+# ---------------------------------------------------------------------------
+# Pre-computed result enrichment
+# ---------------------------------------------------------------------------
+
+# Mapping from recommendation analysis_type → precomputed analysis_type.
+# The recommender uses "time_trend" while precompute uses "trend", etc.
+_REC_TYPE_TO_PRECOMPUTE_TYPE: dict[str, str] = {
+    "benchmark": "benchmark",
+    "correlation": "correlation",
+    "anomaly": "anomaly",
+    "time_trend": "trend",
+    "forecast": "trend",
+    "cohort": "benchmark",  # cohort recs can match benchmark pre-computation
+}
+
+
+def _enrich_with_precomputed(
+    recommendations: list[Recommendation],
+    precomputed: list[dict],
+) -> list[Recommendation]:
+    """Match recommendations to pre-computed results by (table, type, columns).
+
+    When a recommendation matches a completed pre-computation:
+      - confidence → "pre-computed"
+      - precomputed_summary → result_summary from DB
+      - precomputed_id → record ID
+      - priority adjusted: quality_score > 0.5 → +15, < 0.2 → -10
+
+    When matched but status = "failed":
+      - priority -= 20 (analysis errored on real data)
+    """
+    if not precomputed:
+        return recommendations
+
+    # Build lookup index: (table, precompute_type, frozenset(columns)) → dict
+    pc_index: dict[tuple, dict] = {}
+    for pc in precomputed:
+        key = (
+            pc.get("table_name", ""),
+            pc.get("analysis_type", ""),
+            frozenset(pc.get("columns", [])),
+        )
+        # Keep the highest-quality match if duplicates exist
+        existing = pc_index.get(key)
+        if not existing or (pc.get("quality_score", 0) or 0) > (existing.get("quality_score", 0) or 0):
+            pc_index[key] = pc
+
+    for rec in recommendations:
+        precompute_type = _REC_TYPE_TO_PRECOMPUTE_TYPE.get(rec.analysis_type)
+        if not precompute_type:
+            continue
+
+        key = (rec.target_table, precompute_type, frozenset(rec.columns))
+        pc = pc_index.get(key)
+        if not pc:
+            continue
+
+        status = pc.get("status", "")
+
+        if status == "completed":
+            rec.confidence = "pre-computed"
+            rec.precomputed_summary = pc.get("result_summary")
+            rec.precomputed_id = pc.get("precomputed_id")
+
+            quality = pc.get("quality_score", 0) or 0
+            if quality > 0.5:
+                rec.priority = min(100, rec.priority + 15)
+            elif quality < 0.2:
+                rec.priority = max(10, rec.priority - 10)
+
+        elif status == "failed":
+            rec.priority = max(10, rec.priority - 20)
+
+    return recommendations
 
 
 def _finalize(recs: list[Recommendation], max_recs: int) -> list[Recommendation]:

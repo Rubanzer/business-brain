@@ -955,6 +955,7 @@ async def get_recommendations(session: AsyncSession = Depends(get_session)):
     from business_brain.db.discovery_models import (
         DiscoveredRelationship,
         Insight,
+        PrecomputedAnalysis,
         TableProfile,
     )
     from business_brain.discovery.insight_recommender import (
@@ -1031,15 +1032,52 @@ async def get_recommendations(session: AsyncSession = Depends(get_session)):
         import logging
         logging.getLogger(__name__).debug("Could not fetch company profile for recommendations")
 
+    # Fetch pre-computed analyses to enrich recommendations with real data
+    precomputed_dicts: list[dict] = []
+    try:
+        precomputed_rows = list(
+            (await session.execute(
+                sa_select(PrecomputedAnalysis).where(
+                    PrecomputedAnalysis.status.in_(["completed", "failed"]),
+                    PrecomputedAnalysis.table_name.in_(table_names),
+                )
+            )).scalars().all()
+        )
+        precomputed_dicts = [
+            {
+                "table_name": p.table_name,
+                "analysis_type": p.analysis_type,
+                "columns": p.columns,
+                "status": p.status,
+                "result_summary": p.result_summary,
+                "quality_score": p.quality_score,
+                "precomputed_id": p.id,
+            }
+            for p in precomputed_rows
+        ]
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug("Could not fetch pre-computed analyses")
+
     recs = await recommend_analyses_async(
         profile_dicts, insight_dicts, rel_dicts, company_context,
+        precomputed=precomputed_dicts or None,
     )
     coverage = compute_coverage(profile_dicts, insight_dicts)
 
     return {
         "recommendations": [
-            {"title": r.title, "description": r.description, "analysis_type": r.analysis_type,
-             "target_table": r.target_table, "columns": r.columns, "priority": r.priority, "reason": r.reason}
+            {
+                "title": r.title,
+                "description": r.description,
+                "analysis_type": r.analysis_type,
+                "target_table": r.target_table,
+                "columns": r.columns,
+                "priority": r.priority,
+                "reason": r.reason,
+                "confidence": r.confidence,
+                "preview": r.precomputed_summary,
+            }
             for r in recs
         ],
         "coverage": coverage,

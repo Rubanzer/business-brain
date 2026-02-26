@@ -120,6 +120,41 @@ class AnalysisTask(Base):
     requested_by = Column(String(255), nullable=True)  # user_id or "auto"
 
 
+# ---------------------------------------------------------------------------
+# Pre-computed Analysis Results (Background Intelligence Engine)
+# ---------------------------------------------------------------------------
+
+
+class PrecomputedAnalysis(Base):
+    """Background-computed analysis results backing recommendations.
+
+    After discovery profiles tables, the pre-compute engine scores ALL column
+    combinations, picks the top-N most promising ones, and runs actual SQL
+    queries (GROUP BY, CORR, z-score, regression) to get real results.
+
+    Recommendations matched to a completed PrecomputedAnalysis get
+    confidence="pre-computed" and include a result preview.
+    """
+
+    __tablename__ = "precomputed_analyses"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    table_name = Column(String(255), nullable=False, index=True)
+    analysis_type = Column(String(30), nullable=False)  # benchmark/correlation/anomaly/trend
+    columns = Column(JSON, nullable=False)  # ["supplier", "rate"]
+    column_scores = Column(JSON, nullable=True)  # {"supplier": 0.82, "rate": 0.91}
+
+    status = Column(String(20), default="pending")  # pending/running/completed/failed/stale
+    result_summary = Column(JSON, nullable=True)  # compact result (type-specific shape)
+    result_detail = Column(JSON, nullable=True)  # full result (chart_spec, sample rows)
+    quality_score = Column(Float, default=0.0)  # 0.0-1.0 how interesting the result was
+    error = Column(Text, nullable=True)
+
+    computed_at = Column(DateTime(timezone=True), nullable=True)
+    discovery_run_id = Column(String(36), nullable=True)
+    data_hash = Column(String(64), nullable=True)  # from TableProfile — stale detection
+
+
 class DeployedReport(Base):
     """Persistent reports created from insights."""
 
