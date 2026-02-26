@@ -123,6 +123,7 @@ _COLUMN_LABELS: dict[str, str] = {
 def apply_quality_gate(
     insights: list[Insight],
     profiles: list | None = None,
+    reinforcement_weights=None,
 ) -> list[Insight]:
     """Run all quality filters and scoring on a list of insights.
 
@@ -131,6 +132,11 @@ def apply_quality_gate(
         2. Suppress meta-insights (schema observations, not business findings)
         3. Apply business-value scoring (replaces generic scoring)
         4. Rewrite titles and descriptions for readability
+
+    Args:
+        reinforcement_weights: Optional ReinforcementWeights record from the
+            reinforcement loop. When provided, novelty scores are modulated
+            by learned multipliers.
 
     Returns filtered, scored, and rewritten insights.
     """
@@ -147,7 +153,7 @@ def apply_quality_gate(
 
     # Step 3: Apply business-value scoring
     for insight in insights:
-        _apply_business_scoring(insight)
+        _apply_business_scoring(insight, reinforcement_weights)
 
     # Step 4: Rewrite for readability
     for insight in insights:
@@ -280,7 +286,7 @@ def _suppress_meta_insights(insights: list[Insight]) -> list[Insight]:
 # ---------------------------------------------------------------------------
 
 
-def _apply_business_scoring(insight: Insight) -> None:
+def _apply_business_scoring(insight: Insight, reinforcement_weights=None) -> None:
     """Score insight on business value dimensions.
 
     Scoring formula:
@@ -340,6 +346,12 @@ def _apply_business_scoring(insight: Insight) -> None:
         novelty += 12
     else:
         novelty += 5
+
+    # Reinforcement adjustment: modulate novelty by learned multiplier
+    if reinforcement_weights is not None:
+        from business_brain.discovery.reinforcement_loop import get_multiplier
+        novelty = int(novelty * get_multiplier(
+            reinforcement_weights, "insight_type_multipliers", insight_type))
 
     score += min(novelty, 25)
 

@@ -308,6 +308,7 @@ def recommend_analyses(
     relationships: list[dict],
     max_recommendations: int = 10,
     precomputed: list[dict] | None = None,
+    reinforcement_weights=None,
 ) -> list[Recommendation]:
     """Generate analysis recommendations (sync — Tier 1 only).
 
@@ -318,8 +319,13 @@ def recommend_analyses(
         precomputed: Optional list of pre-computed analysis dicts from
             PrecomputedAnalysis table. When provided, matching recs get
             enriched with real data (confidence="pre-computed", preview).
+        reinforcement_weights: Optional ReinforcementWeights record. When
+            provided, base priorities are modulated by learned multipliers.
     """
-    recs, _groups, _matched = _recommend_tier1(profiles, insights, relationships)
+    recs, _groups, _matched = _recommend_tier1(
+        profiles, insights, relationships,
+        reinforcement_weights=reinforcement_weights,
+    )
     if precomputed:
         recs = _enrich_with_precomputed(recs, precomputed)
     return _finalize(recs, max_recommendations)
@@ -332,6 +338,7 @@ async def recommend_analyses_async(
     company_context: dict | None = None,
     max_recommendations: int = 10,
     precomputed: list[dict] | None = None,
+    reinforcement_weights=None,
 ) -> list[Recommendation]:
     """Full recommendation pipeline: Tier 1 (templates) + Tier 2 (LLM-generated).
 
@@ -351,9 +358,12 @@ async def recommend_analyses_async(
         max_recommendations: Max recs to return.
         precomputed: Optional list of pre-computed analysis dicts. When provided,
             matching recs get enriched with real data (confidence, preview).
+        reinforcement_weights: Optional ReinforcementWeights record. When
+            provided, base priorities are modulated by learned multipliers.
     """
     tier1_recs, all_groups, matched_analyses = _recommend_tier1(
         profiles, insights, relationships,
+        reinforcement_weights=reinforcement_weights,
     )
 
     # Tier 2: LLM suggestions for ALL eligible entity groups
@@ -382,6 +392,7 @@ def _recommend_tier1(
     profiles: list[dict],
     insights: list[dict],
     relationships: list[dict],
+    reinforcement_weights=None,
 ) -> tuple[list[Recommendation], list[EntityGroup], dict[str, list[str]]]:
     """Core Tier 1 recommendation engine.
 
@@ -454,7 +465,8 @@ def _recommend_tier1(
             trend_cols = [temporal_cols[0], trend_num]
             num_label = _col_label(trend_num, profile)
             time_label = _col_label(temporal_cols[0], profile)
-            base_pri = _time_priority(row_count, insight_count)
+            _time_mult = _get_rl_mult(reinforcement_weights, "time_trend")
+            base_pri = _time_priority(row_count, insight_count, multiplier=_time_mult)
             priority = min(max(base_pri + _data_fitness_adjustment("time_trend", profile, trend_cols), 10), 100)
             recommendations.append(Recommendation(
                 title=f"Track {num_label} over {time_label} in {tbl_label}",
@@ -481,7 +493,8 @@ def _recommend_tier1(
                 cat_label = _col_label(bench_cat, profile)
                 num_label = _col_label(bench_num, profile)
                 bench_cols = [bench_cat, bench_num]
-                base_pri = _benchmark_priority(row_count, len(cat_cols), insight_count)
+                _bench_mult = _get_rl_mult(reinforcement_weights, "benchmark")
+                base_pri = _benchmark_priority(row_count, len(cat_cols), insight_count, multiplier=_bench_mult)
                 priority = min(max(base_pri + _data_fitness_adjustment("benchmark", profile, bench_cols), 10), 100)
                 recommendations.append(Recommendation(
                     title=f"Compare {num_label} by {cat_label} in {tbl_label}",
@@ -500,7 +513,8 @@ def _recommend_tier1(
             ranked_nums = _rank_columns(num_subset, row_count, profile, _score_numeric_for_correlation)
             corr_cols = ranked_nums[:5]
             corr_labels = [_col_label(c, profile) for c in corr_cols[:3]]
-            base_pri = _correlation_priority(len(numeric_cols), insight_count)
+            _corr_mult = _get_rl_mult(reinforcement_weights, "correlation")
+            base_pri = _correlation_priority(len(numeric_cols), insight_count, multiplier=_corr_mult)
             priority = min(max(base_pri + _data_fitness_adjustment("correlation", profile, corr_cols), 10), 100)
             recommendations.append(Recommendation(
                 title=f"Find hidden relationships in {tbl_label}",
@@ -523,7 +537,8 @@ def _recommend_tier1(
                 anomaly_cols = numeric_cols[:5]
             headline_col = anomaly_cols[0]
             headline_label = _col_label(headline_col, profile)
-            base_pri = _anomaly_priority(row_count, insight_count)
+            _anom_mult = _get_rl_mult(reinforcement_weights, "anomaly")
+            base_pri = _anomaly_priority(row_count, insight_count, multiplier=_anom_mult)
             priority = min(max(base_pri + _data_fitness_adjustment("anomaly", profile, anomaly_cols), 10), 100)
             recommendations.append(Recommendation(
                 title=f"Detect outliers in {headline_label} ({tbl_label})",
@@ -548,7 +563,8 @@ def _recommend_tier1(
                 num_label = _col_label(cohort_num, profile)
                 time_label = _col_label(temporal_cols[0], profile)
                 cohort_cols = [cohort_cat, temporal_cols[0], cohort_num]
-                base_pri = _cohort_priority(row_count, insight_count)
+                _cohort_mult = _get_rl_mult(reinforcement_weights, "cohort")
+                base_pri = _cohort_priority(row_count, insight_count, multiplier=_cohort_mult)
                 priority = min(max(base_pri + _data_fitness_adjustment("cohort", profile, cohort_cols), 10), 100)
                 recommendations.append(Recommendation(
                     title=f"Track {num_label} by {cat_label} over {time_label} in {tbl_label}",
@@ -568,7 +584,8 @@ def _recommend_tier1(
             num_label = _col_label(fc_num, profile)
             time_label = _col_label(temporal_cols[0], profile)
             fc_cols = [temporal_cols[0], fc_num]
-            base_pri = _forecast_priority(row_count, insight_count)
+            _fc_mult = _get_rl_mult(reinforcement_weights, "forecast")
+            base_pri = _forecast_priority(row_count, insight_count, multiplier=_fc_mult)
             priority = min(max(base_pri + _data_fitness_adjustment("forecast", profile, fc_cols), 10), 100)
             recommendations.append(Recommendation(
                 title=f"Forecast {num_label} in {tbl_label}",
@@ -1793,8 +1810,16 @@ def _infer_entity_type_from_column(col_name: str) -> str | None:
     return None
 
 
-def _time_priority(row_count: int, insight_count: int) -> int:
-    base = 80
+def _get_rl_mult(reinforcement_weights, analysis_type: str) -> float:
+    """Get reinforcement multiplier for an analysis type. Returns 1.0 if None."""
+    if reinforcement_weights is None:
+        return 1.0
+    from business_brain.discovery.reinforcement_loop import get_multiplier
+    return get_multiplier(reinforcement_weights, "analysis_type_multipliers", analysis_type)
+
+
+def _time_priority(row_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(80 * multiplier)
     if insight_count > 5:
         base -= 20
     if row_count > 100:
@@ -1802,8 +1827,8 @@ def _time_priority(row_count: int, insight_count: int) -> int:
     return min(max(base, 10), 100)
 
 
-def _benchmark_priority(row_count: int, cat_count: int, insight_count: int) -> int:
-    base = 70
+def _benchmark_priority(row_count: int, cat_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(70 * multiplier)
     if cat_count > 2:
         base += 10
     if insight_count > 5:
@@ -1811,8 +1836,8 @@ def _benchmark_priority(row_count: int, cat_count: int, insight_count: int) -> i
     return min(max(base, 10), 100)
 
 
-def _correlation_priority(num_col_count: int, insight_count: int) -> int:
-    base = 65
+def _correlation_priority(num_col_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(65 * multiplier)
     if num_col_count > 4:
         base += 15
     if insight_count > 3:
@@ -1820,8 +1845,8 @@ def _correlation_priority(num_col_count: int, insight_count: int) -> int:
     return min(max(base, 10), 100)
 
 
-def _anomaly_priority(row_count: int, insight_count: int) -> int:
-    base = 75
+def _anomaly_priority(row_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(75 * multiplier)
     if row_count > 200:
         base += 5
     if insight_count > 5:
@@ -1829,8 +1854,8 @@ def _anomaly_priority(row_count: int, insight_count: int) -> int:
     return min(max(base, 10), 100)
 
 
-def _cohort_priority(row_count: int, insight_count: int) -> int:
-    base = 60
+def _cohort_priority(row_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(60 * multiplier)
     if row_count > 100:
         base += 10
     if insight_count > 5:
@@ -1838,8 +1863,8 @@ def _cohort_priority(row_count: int, insight_count: int) -> int:
     return min(max(base, 10), 100)
 
 
-def _forecast_priority(row_count: int, insight_count: int) -> int:
-    base = 55
+def _forecast_priority(row_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(55 * multiplier)
     if row_count > 50:
         base += 10
     if insight_count > 5:

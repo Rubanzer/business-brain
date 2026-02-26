@@ -1059,9 +1059,17 @@ async def get_recommendations(session: AsyncSession = Depends(get_session)):
         import logging
         logging.getLogger(__name__).debug("Could not fetch pre-computed analyses")
 
+    # Load reinforcement weights for priority adjustment
+    try:
+        from business_brain.discovery.reinforcement_loop import get_latest_weights
+        rl_weights = await get_latest_weights(session)
+    except Exception:
+        rl_weights = None
+
     recs = await recommend_analyses_async(
         profile_dicts, insight_dicts, rel_dicts, company_context,
         precomputed=precomputed_dicts or None,
+        reinforcement_weights=rl_weights,
     )
     coverage = compute_coverage(profile_dicts, insight_dicts)
 

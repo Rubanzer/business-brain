@@ -187,6 +187,42 @@ class EngagementEvent(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+# ---------------------------------------------------------------------------
+# Reinforcement Weights (Background Intelligence Engine — Phase 3)
+# ---------------------------------------------------------------------------
+
+
+class ReinforcementWeights(Base):
+    """Versioned weight adjustments from the engagement reinforcement loop.
+
+    Each row is a full snapshot of all multipliers computed from engagement
+    data. Only the most recent row (highest version) is active. Previous
+    rows are kept for audit/history.
+
+    All multipliers default to 1.0 (no change from hardcoded base values).
+    Multipliers are clamped to [0.8, 1.2] to prevent wild swings.
+    """
+
+    __tablename__ = "reinforcement_weights"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    version = Column(Integer, nullable=False, default=1)
+
+    # Multipliers applied to recommendation base priorities
+    analysis_type_multipliers = Column(JSON, nullable=False, default=dict)
+    # Multipliers applied to quality gate severity weights
+    severity_multipliers = Column(JSON, nullable=False, default=dict)
+    # Multipliers applied to quality gate novelty scores
+    insight_type_multipliers = Column(JSON, nullable=False, default=dict)
+
+    # Metadata
+    engagement_summary = Column(JSON, nullable=True)  # input data snapshot
+    computed_at = Column(DateTime(timezone=True), server_default=func.now())
+    discovery_run_id = Column(String(36), nullable=True)
+    period_days = Column(Integer, default=30)
+    total_events = Column(Integer, default=0)
+
+
 class DeployedReport(Base):
     """Persistent reports created from insights."""
 

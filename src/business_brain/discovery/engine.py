@@ -212,10 +212,15 @@ async def run_discovery(
         except Exception:
             logger.exception("Data freshness check failed, continuing")
 
-        # 9. Apply insight quality gate (filter garbage, score business value, rewrite)
+        # 9. Load reinforcement weights and apply insight quality gate
         logger.info("Discovery: applying quality gate...")
+        try:
+            from business_brain.discovery.reinforcement_loop import get_latest_weights
+            reinforcement_weights = await get_latest_weights(session)
+        except Exception:
+            reinforcement_weights = None
         pre_gate = len(all_insights)
-        all_insights = apply_quality_gate(all_insights, profiles)
+        all_insights = apply_quality_gate(all_insights, profiles, reinforcement_weights=reinforcement_weights)
         logger.info("Discovery: quality gate: %d → %d insights", pre_gate, len(all_insights))
 
         # 10. Deduplicate insights against existing DB records
@@ -277,6 +282,16 @@ async def run_discovery(
             logger.info("Discovery: pre-computed %d analyses", len(precomputed))
         except Exception:
             logger.exception("Pre-computation failed, continuing")
+
+        # 12b. Update reinforcement weights from engagement data
+        logger.info("Discovery: updating reinforcement weights...")
+        try:
+            from business_brain.discovery.reinforcement_loop import update_weights
+            rl_record = await update_weights(session, discovery_run_id=run.id)
+            if rl_record:
+                logger.info("Discovery: reinforcement weights updated to v%d", rl_record.version)
+        except Exception:
+            logger.exception("Reinforcement weight update failed, continuing")
 
         # 13. Complete the run
         run.status = "completed"
