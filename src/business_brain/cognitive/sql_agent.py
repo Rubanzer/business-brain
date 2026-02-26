@@ -1,7 +1,13 @@
-"""SQL Specialist agent — converts natural language to SQL and executes."""
+"""SQL Specialist agent — converts natural language to SQL and executes.
+
+v4: Single-query focus. Receives one SQL task from the Query Router,
+generates SQL via Gemini, validates, executes with retry on failure.
+Reuses RAG context from state (populated by Query Router).
+"""
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from google import genai
@@ -14,17 +20,58 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are an expert SQL analyst. Given a business question, schema context, and
-business context (domain definitions, business rules, KPIs), generate a precise
-PostgreSQL query to retrieve the required data.
+You are an expert SQL analyst working for a secondary steel manufacturing company
+(induction furnace). You have DEEP knowledge of steel plant data structures and
+can interpret domain-specific column names correctly.
+
+Given a business question, schema context, business context (domain definitions,
+business rules, KPIs), and metric thresholds, generate a precise PostgreSQL query
+to retrieve the required data.
 
 Use the business context to understand domain-specific terms, acronyms, and
 business rules that inform correct query logic.
 
-Rules:
+DOMAIN-AWARE COLUMN INTERPRETATION (AUTHORITATIVE — these override column descriptions):
+- "fe_t", "fe_mz", "fe_content" → Iron content (different measurement points)
+- "kva" → Apparent power (KVA), "kwh" → Real energy consumption
+- "sec" → Specific Energy Consumption (kWh/ton) — a KEY efficiency metric
+- "pf" → Power Factor (ratio, 0-1 scale)
+- "heat_no" → Unique identifier for a single production batch
+- "yield_pct", "yield" → Production yield percentage (output/input ratio), NOT quantity
+- "tap_to_tap" → Cycle time between furnace taps (minutes)
+- "shift" → Work period (typically 'A', 'B', 'C' for morning/afternoon/night)
+- "quantity" in any table → Physical amount purchased/produced (weight in MT/kg or count)
+- "rate" in any table → Price per unit (₹/unit or ₹/MT), NOT a percentage or speed
+- "amount" → Total monetary value (typically quantity × rate)
+- "basic_rate", "purchase_rate", "selling_rate" → Always monetary price per unit
+- "party", "party_name" → Business entity name (customer, vendor, supplier)
+- "sponge" → Sponge iron (a type of raw material input)
+- "scrap" → Steel scrap (a type of raw material input)
+
+COLUMN SELECTION RULES (follow strictly):
+1. When the user asks "how much" or "total" → use quantity/amount/weight, NEVER yield
+2. "yield" is NEVER the same as "quantity" — yield is a %, quantity is weight/count
+3. "rate" is NEVER a percentage — it is always price per unit
+4. Column descriptions (after --) are hints, but YOUR domain knowledge takes priority
+   if the description seems generic or contradicts manufacturing conventions
+5. When in doubt about a column's meaning, prefer the interpretation that matches
+   the steel manufacturing domain
+
+IMPORTANT RULES:
 - Use CTEs for clarity when appropriate.
 - NEVER use DELETE, DROP, ALTER, INSERT, UPDATE, or TRUNCATE.
 - Return ONLY the SQL query, no explanation or markdown fences.
+- When table relationships/joins are provided, use them for cross-table queries.
+- When metric thresholds are available, use CASE WHEN to flag values:
+  e.g., CASE WHEN power_kwh > 750 THEN 'critical'
+             WHEN power_kwh > 625 THEN 'warning'
+             ELSE 'normal' END AS power_status
+- Use meaningful column aliases that reflect business meaning.
+- LIMIT results to 500 rows maximum unless the task explicitly needs more.
+- For aggregations, always include COUNT(*) so analysts know sample sizes.
+- When querying for "efficiency", include SEC, yield, and power factor together.
+- When querying for "cost", include both scrap cost and energy cost components.
+- Always quote table names with double quotes to handle case sensitivity.
 """
 
 _client: genai.Client | None = None
@@ -38,14 +85,28 @@ def _get_client() -> genai.Client:
 
 
 def _format_schema_context(tables: list[dict]) -> str:
-    """Format table schemas into a string for the LLM prompt."""
+    """Format table schemas into a string for the LLM prompt.
+
+    Includes column descriptions (when available) so the LLM can distinguish
+    between similarly-typed columns like ``quantity`` vs ``yield``.
+    """
     parts = []
     for t in tables:
-        cols = ", ".join(
-            f"{c['name']} ({c['type']})" for c in (t.get("columns") or [])
-        )
+        col_parts = []
+        for c in (t.get("columns") or []):
+            col_desc = c.get("description", "")
+            if col_desc:
+                col_parts.append(f"{c['name']} ({c['type']}) -- {col_desc}")
+            else:
+                col_parts.append(f"{c['name']} ({c['type']})")
+        cols = ", ".join(col_parts)
         desc = t.get("description") or "No description"
-        parts.append(f"Table: {t['table_name']} — {desc}\n  Columns: {cols}")
+        rels = t.get("relationships", [])
+
+        table_str = f"Table: {t['table_name']} — {desc}\n  Columns: {cols}"
+        if rels:
+            table_str += f"\n  Joins: {'; '.join(rels)}"
+        parts.append(table_str)
     return "\n\n".join(parts)
 
 
@@ -69,15 +130,106 @@ def _strip_sql_fences(raw: str) -> str:
     return sql
 
 
+def _validate_sql(sql: str) -> str | None:
+    """Basic SQL validation.  Returns error string or None if OK."""
+    upper = sql.upper().strip()
+
+    # Must be a SELECT/WITH statement
+    if not upper.startswith(("SELECT", "WITH")):
+        return f"Generated SQL does not start with SELECT/WITH: {sql[:50]}"
+
+    # Block dangerous operations
+    _BLOCKED = {"DELETE", "DROP", "ALTER", "INSERT", "UPDATE", "TRUNCATE", "CREATE"}
+    # Split by whitespace and check first-level keywords
+    tokens = upper.split()
+    for token in tokens:
+        cleaned = token.strip("(;,)")
+        if cleaned in _BLOCKED:
+            return f"Dangerous SQL keyword detected: {cleaned}"
+
+    return None
+
+
+_MISSING_OBJECT_RE = re.compile(
+    r'relation "(.+?)" does not exist'
+    r'|column "(.+?)" does not exist'
+    r'|table "(.+?)" does not exist'
+    r"|UndefinedTable"
+    r"|UndefinedColumn",
+    re.IGNORECASE,
+)
+
+
+def _is_missing_object_error(error: str) -> bool:
+    """Check if a SQL error is about a missing table or column."""
+    return bool(_MISSING_OBJECT_RE.search(error))
+
+
+async def _build_expanded_schema(
+    db_session: AsyncSession,
+    existing_tables: list[dict],
+) -> str:
+    """Build an expanded schema string that includes ALL known tables.
+
+    When a SQL query fails because a table/column is missing from the schema
+    context, we expand the schema to include every table in the metadata store
+    plus all discovered relationships.
+    """
+    from business_brain.memory import metadata_store
+    from business_brain.memory.schema_rag import _get_relationships
+
+    all_entries = await metadata_store.get_all(db_session)
+    existing_names = {t["table_name"] for t in existing_tables}
+
+    # Start with existing tables (they already have relationship info)
+    expanded = list(existing_tables)
+
+    # Add all tables not already in the set
+    for entry in all_entries:
+        if entry.table_name not in existing_names:
+            expanded.append({
+                "table_name": entry.table_name,
+                "description": entry.description,
+                "columns": entry.columns_metadata,
+            })
+
+    # Fetch all relationships and enrich all tables
+    try:
+        relationships = await _get_relationships(db_session)
+        all_names = {t["table_name"] for t in expanded}
+        for table_info in expanded:
+            if "relationships" in table_info:
+                continue  # already enriched
+            related = []
+            for rel in relationships:
+                if rel["table_a"] == table_info["table_name"] and rel["table_b"] in all_names:
+                    related.append(
+                        f"{rel['table_a']}.{rel['column_a']} → {rel['table_b']}.{rel['column_b']}"
+                    )
+                elif rel["table_b"] == table_info["table_name"] and rel["table_a"] in all_names:
+                    related.append(
+                        f"{rel['table_a']}.{rel['column_a']} → {rel['table_b']}.{rel['column_b']}"
+                    )
+            if related:
+                table_info["relationships"] = related
+    except Exception:
+        logger.debug("Failed to enrich expanded schema with relationships")
+
+    return _format_schema_context(expanded)
+
+
 class SQLAgent:
-    """Translates natural language questions into SQL and returns results."""
+    """Translates natural language questions into SQL and returns results.
+
+    v4: Single-query focus. Receives one SQL task from the Query Router's plan,
+    generates SQL via Gemini, validates, and executes with retry on failure.
+    """
 
     async def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Generate and execute SQL for the current task.
+        """Generate and execute a single SQL query for the routed task.
 
-        Supports multi-query mode: reads ``current_query_index`` from state,
-        executes the matching SQL task from the plan, appends to ``sql_results``,
-        and increments the index for the next pass.
+        Reuses RAG context from state (populated by Query Router),
+        falling back to fresh retrieval if missing.
         """
         db_session: AsyncSession | None = state.get("db_session")
 
@@ -86,20 +238,23 @@ class SQLAgent:
             state["sql_result"] = {"query": "", "rows": [], "error": "No database session"}
             return state
 
-        # Multi-query: determine which SQL task to execute
-        idx = state.get("current_query_index", 0)
-        sql_tasks = [s for s in state.get("plan", []) if s.get("agent") == "sql_agent"]
-
-        if sql_tasks and idx < len(sql_tasks):
-            task = sql_tasks[idx].get("task", "")
-        else:
-            plan = state.get("plan", [])
-            task = plan[0].get("task", "") if plan else ""
-
+        # v4: Single task from Query Router's plan
+        plan = state.get("plan", [])
+        task = plan[0].get("task", "") if plan else ""
         question = state.get("question", task)
 
-        # Retrieve relevant schemas and business context
-        tables, contexts = await retrieve_relevant_tables(db_session, question)
+        # Reuse RAG context from state (populated by Query Router) or fetch fresh
+        tables = state.get("_rag_tables")
+        contexts = state.get("_rag_contexts")
+
+        if tables is None or contexts is None:
+            tables, contexts = await retrieve_relevant_tables(
+                db_session, question,
+                allowed_tables=state.get("allowed_tables"),
+            )
+            state["_rag_tables"] = tables
+            state["_rag_contexts"] = contexts
+
         schema_context = _format_schema_context(tables)
         biz_context = _format_business_context(contexts)
 
@@ -131,10 +286,14 @@ class SQLAgent:
             sql = _strip_sql_fences(response.text)
         except Exception:
             logger.exception("SQL generation failed")
-            result = {"query": "", "rows": [], "error": "SQL generation failed"}
-            state["sql_result"] = result
-            state.setdefault("sql_results", []).append(result)
-            state["current_query_index"] = idx + 1
+            state["sql_result"] = {"query": "", "rows": [], "error": "SQL generation failed"}
+            return state
+
+        # Validate generated SQL before execution
+        validation_error = _validate_sql(sql)
+        if validation_error:
+            logger.warning("SQL validation failed: %s", validation_error)
+            state["sql_result"] = {"query": sql, "rows": [], "error": validation_error, "task": task}
             return state
 
         # Execute the generated SQL (read-only) with retry on failure
@@ -142,7 +301,7 @@ class SQLAgent:
         last_error = None
 
         for attempt in range(max_retries + 1):
-            logger.info("Executing SQL [task %d, attempt %d]: %s", idx, attempt, sql[:200])
+            logger.info("Executing SQL (attempt %d): %s", attempt, sql[:200])
             try:
                 db_result = await db_session.execute(text(sql))
                 rows = [dict(row._mapping) for row in db_result.fetchall()]
@@ -154,10 +313,24 @@ class SQLAgent:
                 logger.warning("SQL execution failed (attempt %d): %s", attempt, last_error)
                 await db_session.rollback()
                 if attempt < max_retries:
-                    # Ask Gemini to fix the query
+                    # If error is about a missing table/column, expand the schema
+                    # to include ALL known tables + relationships
+                    retry_schema = schema_context
+                    if _is_missing_object_error(last_error):
+                        logger.info("Missing table/column detected — expanding schema for retry")
+                        try:
+                            retry_schema = await _build_expanded_schema(db_session, tables)
+                        except Exception:
+                            logger.debug("Schema expansion failed, using original schema")
+
+                    # Ask Gemini to fix the query — include business context
                     retry_prompt = (
                         f"{SYSTEM_PROMPT}\n\n"
-                        f"Schema:\n{schema_context}\n\n"
+                        f"Schema:\n{retry_schema}\n\n"
+                    )
+                    if biz_context:
+                        retry_prompt += f"Business Context:\n{biz_context}\n\n"
+                    retry_prompt += (
                         f"The following SQL query failed:\n{sql}\n\n"
                         f"Error: {last_error}\n\n"
                         f"Fix the query to resolve the error. Return ONLY the corrected SQL."
@@ -175,9 +348,6 @@ class SQLAgent:
         if last_error:
             result = {"query": sql, "rows": [], "error": last_error, "task": task}
 
-        # Update state: latest result + accumulate
+        # Store single result
         state["sql_result"] = result
-        state.setdefault("sql_results", []).append(result)
-        state["current_query_index"] = idx + 1
-
         return state

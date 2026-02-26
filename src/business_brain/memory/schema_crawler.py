@@ -47,7 +47,14 @@ async def crawl_schema(session: AsyncSession, schema: str = "public") -> list[di
 
 
 async def auto_describe(session: AsyncSession) -> None:
-    """Crawl schema and upsert metadata entries with LLM-generated descriptions."""
+    """Crawl schema and upsert metadata entries with LLM-generated descriptions.
+
+    Generates both a table-level description and per-column descriptions so
+    that downstream SQL generation can distinguish similarly-typed columns
+    (e.g. ``quantity`` vs ``yield``).
+    """
+    import json as _json
+
     tables = await crawl_schema(session)
     client = _get_client()
 
@@ -57,9 +64,11 @@ async def auto_describe(session: AsyncSession) -> None:
 
         col_summary = ", ".join(f"{c['name']} ({c['type']})" for c in columns)
         prompt = (
-            f"Write a concise one-sentence description of a database table named "
-            f"'{table_name}' with columns: {col_summary}. "
-            f"Focus on what business data this table likely stores."
+            f"For a database table named '{table_name}' with columns: {col_summary}, "
+            f"return a JSON object with:\n"
+            f"1. \"description\": a concise one-sentence description of what business data this table stores\n"
+            f"2. \"columns\": an object mapping each column name to a short description of what it represents\n"
+            f"Return ONLY valid JSON, no markdown fences."
         )
 
         try:
@@ -67,7 +76,23 @@ async def auto_describe(session: AsyncSession) -> None:
                 model=settings.gemini_model,
                 contents=prompt,
             )
-            description = response.text.strip()
+            raw = (response.text or "").strip()
+            # Strip potential markdown fences
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            if raw.startswith("json"):
+                raw = raw[4:].strip()
+            meta = _json.loads(raw)
+            description = meta.get("description", f"Table {table_name}")
+            col_descs = meta.get("columns", {})
+            for col in columns:
+                col["description"] = col_descs.get(col["name"], "")
+        except (_json.JSONDecodeError, AttributeError, TypeError):
+            logger.warning("Could not parse column descriptions for %s, using plain description", table_name)
+            try:
+                description = (response.text or "").strip() or f"Table {table_name} with {len(columns)} columns."
+            except Exception:
+                description = f"Table {table_name} with {len(columns)} columns."
         except Exception:
             logger.exception("Failed to generate description for %s", table_name)
             description = f"Table {table_name} with {len(columns)} columns."

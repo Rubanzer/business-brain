@@ -59,12 +59,12 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                 ],
             ))
 
-        # 2. Numeric outliers: values > 2 stdev from mean
+        # 2. Numeric outliers: values > 3 stdev from mean (raised from 2σ to reduce noise)
         if stats and "stdev" in stats and stats["stdev"] > 0:
             mean = stats["mean"]
             stdev = stats["stdev"]
-            low_bound = mean - 2 * stdev
-            high_bound = mean + 2 * stdev
+            low_bound = mean - 3 * stdev
+            high_bound = mean + 3 * stdev
 
             outlier_samples = []
             for s in samples:
@@ -83,9 +83,10 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                     impact_score=45,
                     title=f"Outlier values in {profile.table_name}.{col_name}",
                     description=(
-                        f"{col_name} has values beyond 2 standard deviations from mean "
-                        f"(mean={stats['mean']}, stdev={stats['stdev']}). "
-                        f"Examples: {outlier_samples[:3]}"
+                        f"{col_name} has values beyond 3 standard deviations from mean "
+                        f"(mean={stats['mean']:.2f}, stdev={stats['stdev']:.2f}). "
+                        f"Examples: {outlier_samples[:3]}. "
+                        f"These extreme values may indicate measurement errors or exceptional events."
                     ),
                     source_tables=[profile.table_name],
                     source_columns=[col_name],
@@ -144,44 +145,27 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                 ))
 
         # 5. Rare categories: values appearing < 2% of the time
+        # NOTE: "High cardinality categorical" is a data quality note, not a business insight.
+        # Suppressed from Feed — the quality gate will filter it anyway.
         if sem_type == "categorical" and cardinality > 5 and samples:
-            # We can only estimate from sample_values — flag if cardinality is very high
             if row_count > 0 and cardinality > row_count * 0.5:
-                results.append(Insight(
-                    id=str(uuid.uuid4()),
-                    insight_type="anomaly",
-                    severity="info",
-                    impact_score=20,
-                    title=f"High cardinality categorical {profile.table_name}.{col_name}",
-                    description=(
-                        f"{col_name} has {cardinality} unique values across {row_count} rows. "
-                        f"This may actually be an identifier column, not categorical."
-                    ),
-                    source_tables=[profile.table_name],
-                    source_columns=[col_name],
-                    evidence={"cardinality": cardinality, "row_count": row_count},
-                    suggested_actions=["Review if this column should be treated as an identifier"],
-                ))
+                # Log for quality tab but don't create a feed insight
+                logger.debug(
+                    "High cardinality categorical %s.%s: %d unique / %d rows",
+                    profile.table_name, col_name, cardinality, row_count,
+                )
 
         # 6. Constant columns: cardinality of 1 (useless for analysis)
+        # NOTE: "Constant column" is a data quality note, not a business insight.
+        # Suppressed from Feed — logged for quality tracking only.
         if cardinality == 1 and row_count > 1:
-            results.append(Insight(
-                id=str(uuid.uuid4()),
-                insight_type="anomaly",
-                severity="info",
-                impact_score=10,
-                title=f"Constant column {profile.table_name}.{col_name}",
-                description=(
-                    f"{col_name} has only 1 unique value across {row_count} rows. "
-                    f"This column provides no analytical value."
-                ),
-                source_tables=[profile.table_name],
-                source_columns=[col_name],
-                evidence={"cardinality": 1, "sample": samples[:1] if samples else []},
-                suggested_actions=["Consider removing this column from analysis"],
-            ))
+            logger.debug(
+                "Constant column %s.%s: 1 unique value across %d rows",
+                profile.table_name, col_name, row_count,
+            )
 
     # 7. Time-based: detect actual trends from sample data (not just "analysis possible")
+    # NOTE: meta-observations like "time series data available" are suppressed from Feed.
     temp_cols = [c for c, i in cols.items() if i.get("semantic_type") == "temporal"]
     num_cols = [
         c for c, i in cols.items()
@@ -231,6 +215,46 @@ _MANUFACTURING_RANGES: list[dict] = [
         "max": 2000,
         "unit": "kVA",
         "context": "furnace power consumption",
+    },
+    {
+        "keywords": ["sec", "specific_energy", "kwh_per_ton"],
+        "name": "Specific Energy Consumption",
+        "min": 350,
+        "max": 700,
+        "unit": " kWh/ton",
+        "context": "SEC good <500, average 500-600, poor >600. Above 700 suggests furnace issues",
+    },
+    {
+        "keywords": ["yield_pct", "yield_percent"],
+        "name": "Yield",
+        "min": 80,
+        "max": 98,
+        "unit": "%",
+        "context": "output/input weight ratio. Below 85% likely indicates measurement error",
+    },
+    {
+        "keywords": ["tap_to_tap"],
+        "name": "Tap-to-Tap Time",
+        "min": 30,
+        "max": 120,
+        "unit": " min",
+        "context": "total cycle time. Above 120 min suggests operational problems",
+    },
+    {
+        "keywords": ["electrode_consumption"],
+        "name": "Electrode Consumption",
+        "min": 0,
+        "max": 6,
+        "unit": " kg/ton",
+        "context": "electrode consumption per ton of steel produced. Above 5 kg/ton is poor",
+    },
+    {
+        "keywords": ["rejection_rate", "rejection_pct"],
+        "name": "Rejection Rate",
+        "min": 0,
+        "max": 5,
+        "unit": "%",
+        "context": "percentage of output rejected. Above 3% is poor, above 5% is systemic",
     },
 ]
 

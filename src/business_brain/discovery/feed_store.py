@@ -7,7 +7,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, text as sql_text
+from sqlalchemy import func, select, text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.db.discovery_models import DeployedReport, DiscoveryRun, Insight
@@ -19,8 +19,17 @@ async def get_feed(
     session: AsyncSession,
     status: str | None = None,
     limit: int = 50,
+    min_quality: int = 15,
 ) -> list[Insight]:
-    """Get ranked insight feed, optionally filtered by status."""
+    """Get ranked insight feed, optionally filtered by status and minimum quality.
+
+    Args:
+        session: Database session.
+        status: Filter by specific status (new/seen/deployed/dismissed).
+        limit: Maximum number of insights to return.
+        min_quality: Minimum quality_score threshold. Insights below this
+            are filtered out to keep the feed clean. Default 15.
+    """
     q = select(Insight).order_by(Insight.impact_score.desc(), Insight.discovered_at.desc())
 
     if status:
@@ -28,6 +37,15 @@ async def get_feed(
     else:
         # Exclude dismissed by default
         q = q.where(Insight.status != "dismissed")
+
+    # Filter by minimum quality score to keep feed clean
+    # Show unscored (NULL) and legacy unscored (0) insights, only hide explicitly low-scored
+    if min_quality > 0:
+        q = q.where(
+            (Insight.quality_score == None)  # noqa: E711
+            | (Insight.quality_score == 0)
+            | (Insight.quality_score >= min_quality)
+        )
 
     q = q.limit(limit)
     result = await session.execute(q)

@@ -257,7 +257,9 @@ class TestPercentageRange:
 
 
 class TestHighCardinalityCategorical:
-    def test_high_cardinality_detected(self):
+    def test_high_cardinality_suppressed(self):
+        """High cardinality categorical is a data quality note, not a business insight.
+        It is now suppressed from Feed (logged for quality tracking only)."""
         prof = _Prof("t", {"category": {
             "semantic_type": "categorical",
             "null_count": 0,
@@ -266,8 +268,7 @@ class TestHighCardinalityCategorical:
         }}, row_count=100)
         results = _scan_table(prof)
         hc = [i for i in results if "cardinality" in i.title.lower()]
-        assert len(hc) == 1
-        assert hc[0].severity == "info"
+        assert len(hc) == 0
 
     def test_low_cardinality_not_flagged(self):
         prof = _Prof("t", {"category": {
@@ -299,7 +300,9 @@ class TestHighCardinalityCategorical:
 
 
 class TestConstantColumn:
-    def test_constant_column_detected(self):
+    def test_constant_column_suppressed(self):
+        """Constant column is a data quality note, not a business insight.
+        It is now suppressed from Feed (logged for quality tracking only)."""
         prof = _Prof("t", {"status": {
             "semantic_type": "categorical",
             "null_count": 0,
@@ -308,11 +311,10 @@ class TestConstantColumn:
         }}, row_count=50)
         results = _scan_table(prof)
         const = [i for i in results if "constant" in i.title.lower()]
-        assert len(const) == 1
-        assert const[0].impact_score == 10
+        assert len(const) == 0
 
     def test_constant_column_not_flagged_for_single_row(self):
-        """row_count must be > 1 to flag constant column."""
+        """row_count must be > 1 to flag constant column (also suppressed anyway)."""
         prof = _Prof("t", {"status": {
             "semantic_type": "categorical",
             "null_count": 0,
@@ -341,17 +343,16 @@ class TestConstantColumn:
 
 
 class TestTimeSeriesDetection:
-    def test_temporal_plus_numeric_creates_trend_insight(self):
+    def test_temporal_plus_numeric_suppressed(self):
+        """'Time series data available' is a meta-observation, not a business insight.
+        It is now suppressed from Feed (logged for internal use only)."""
         prof = _Prof("sales", {
             "order_date": {"semantic_type": "temporal", "null_count": 0, "cardinality": 30},
             "revenue": {"semantic_type": "numeric_currency", "null_count": 0, "cardinality": 80},
         }, row_count=100)
         results = _scan_table(prof)
         trend = [i for i in results if i.insight_type == "trend"]
-        assert len(trend) == 1
-        assert "time series" in trend[0].title.lower()
-        assert "query" in trend[0].evidence
-        assert "chart_spec" in trend[0].evidence
+        assert len(trend) == 0
 
     def test_no_trend_without_temporal(self):
         prof = _Prof("t", {
@@ -369,32 +370,6 @@ class TestTimeSeriesDetection:
         results = _scan_table(prof)
         trend = [i for i in results if i.insight_type == "trend"]
         assert len(trend) == 0
-
-    def test_trend_chart_spec_structure(self):
-        prof = _Prof("production", {
-            "timestamp": {"semantic_type": "temporal", "null_count": 0, "cardinality": 100},
-            "output_tons": {"semantic_type": "numeric_metric", "null_count": 0, "cardinality": 50},
-            "power_kva": {"semantic_type": "numeric_metric", "null_count": 0, "cardinality": 50},
-        }, row_count=200)
-        results = _scan_table(prof)
-        trend = [i for i in results if i.insight_type == "trend"]
-        chart = trend[0].evidence["chart_spec"]
-        assert chart["type"] == "line"
-        assert chart["x"] == "timestamp"
-        assert len(chart["y"]) <= 2
-
-    def test_trend_limits_to_3_numeric_cols(self):
-        prof = _Prof("t", {
-            "date": {"semantic_type": "temporal", "null_count": 0, "cardinality": 30},
-            "a": {"semantic_type": "numeric_metric", "null_count": 0, "cardinality": 10},
-            "b": {"semantic_type": "numeric_currency", "null_count": 0, "cardinality": 10},
-            "c": {"semantic_type": "numeric_percentage", "null_count": 0, "cardinality": 10},
-            "d": {"semantic_type": "numeric_metric", "null_count": 0, "cardinality": 10},
-        }, row_count=100)
-        results = _scan_table(prof)
-        trend = [i for i in results if i.insight_type == "trend"]
-        # source_columns = temporal + numeric[:3]
-        assert len(trend[0].source_columns) <= 4  # 1 temporal + 3 numeric
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +420,7 @@ class TestDetectAnomalies:
         results = detect_anomalies([prof])
         for insight in results:
             assert insight.id is not None
-            assert insight.insight_type in ("anomaly", "trend")
+            assert insight.insight_type == "anomaly"  # trend is now suppressed
             assert insight.severity in ("critical", "warning", "info")
             assert 0 <= insight.impact_score <= 100
             assert insight.title
@@ -631,7 +606,8 @@ class TestEdgeCases:
         assert len(outlier) == 0
 
     def test_multiple_columns_multiple_anomalies(self):
-        """A profile with many issues should produce multiple insights."""
+        """A profile with many issues should produce multiple insights.
+        Note: constant column and time series trend are now suppressed as meta-insights."""
         prof = _Prof("messy", {
             "amount": {
                 "semantic_type": "numeric_currency",
@@ -653,7 +629,8 @@ class TestEdgeCases:
             },
         }, row_count=100)
         results = _scan_table(prof)
-        # Should have: null spike, outlier, negative currency, constant, trend
+        # Should have: null spike, outlier, negative currency
+        # (constant column and trend are suppressed as meta-insights)
         types = set()
         for r in results:
             if "null" in r.title.lower():
@@ -662,11 +639,7 @@ class TestEdgeCases:
                 types.add("outlier")
             if "negative" in r.title.lower():
                 types.add("negative")
-            if "constant" in r.title.lower():
-                types.add("constant")
-            if r.insight_type == "trend":
-                types.add("trend")
-        assert len(types) >= 4
+        assert len(types) >= 3
 
     def test_percentage_both_violations(self):
         """Both min < 0 and max > 100 should produce one insight."""

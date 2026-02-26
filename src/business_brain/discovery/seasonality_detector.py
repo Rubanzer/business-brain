@@ -64,8 +64,9 @@ def _scan_table_seasonality(profile: TableProfile) -> list[Insight]:
         if shift_insight:
             results.append(shift_insight)
 
-    # 2-3. Day-of-week / monthly: skip "analysis possible" flags.
-    # These are suggestions, not insights. They belong in the recommender, not the feed.
+    # 2-3. Day-of-week / monthly: suppressed as meta-insights ("opportunity" not "finding").
+    # These are pattern _possibilities_, not actual detected patterns.
+    # They belong in the recommender, not the feed. System can still run on-demand.
 
     # 4. Categorical distribution skew detection
     for cat_col in cat_cols:

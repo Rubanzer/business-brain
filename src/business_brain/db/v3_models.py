@@ -36,6 +36,8 @@ class DataSource(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     active = Column(Boolean, default=True)
     session_id = Column(String(64), nullable=True)
+    uploaded_by = Column(String(36), nullable=True)       # user_id of uploader
+    uploaded_by_role = Column(String(20), nullable=True)   # role at upload time
 
 
 class DataChangeLog(Base):
@@ -214,6 +216,12 @@ class MetricThreshold(Base):
     warning_max = Column(Float, nullable=True)
     critical_min = Column(Float, nullable=True)
     critical_max = Column(Float, nullable=True)
+    # Derived metric support
+    is_derived = Column(Boolean, default=False)
+    formula = Column(Text, nullable=True)              # e.g., "total_kwh / output_mt"
+    source_columns = Column(JSON, nullable=True)       # ["table.col_a", "table.col_b"]
+    auto_linked = Column(Boolean, default=False)       # True if system auto-matched to column
+    confidence = Column(Float, nullable=True)           # confidence of auto-linking (0-1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -249,4 +257,152 @@ class SourceMapping(Base):
     entity_type = Column(String(100), nullable=True)  # "production_data", "power_readings"
     authoritative_source = Column(String(255), nullable=True)
     confirmed_by_user = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Structured Process Map & I/O Definitions
+# ---------------------------------------------------------------------------
+
+
+class ProcessStep(Base):
+    """A single step in the company's structured process map."""
+
+    __tablename__ = "process_steps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(36), nullable=True)
+    step_order = Column(Integer, nullable=False, default=0)
+    process_name = Column(String(255), nullable=False)
+    inputs = Column(Text, nullable=True)        # comma-separated input names
+    outputs = Column(Text, nullable=True)       # comma-separated output names
+    key_metric = Column(String(255), nullable=True)          # backward compat (singular)
+    key_metrics = Column(JSON, nullable=True)                  # NEW: multiple metrics array
+    target_range = Column(String(255), nullable=True)  # e.g., "85-95%" (backward compat)
+    target_ranges = Column(JSON, nullable=True)        # {"SEC": "500-625 kWh/ton", "Yield %": "85-95%"}
+    linked_table = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ProcessIO(Base):
+    """Structured input/output definition for the manufacturing process."""
+
+    __tablename__ = "process_ios"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(36), nullable=True)
+    io_type = Column(String(10), nullable=False)  # "input" or "output"
+    name = Column(String(255), nullable=False)
+    source_or_destination = Column(String(255), nullable=True)
+    unit = Column(String(50), nullable=True)
+    typical_range = Column(String(100), nullable=True)  # e.g., "3-5 MT per heat"
+    linked_table = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# ---------------------------------------------------------------------------
+# User & Access Control
+# ---------------------------------------------------------------------------
+
+import uuid as _uuid_mod
+
+
+class User(Base):
+    """User accounts with role-based access control."""
+
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(_uuid_mod.uuid4()))
+    email = Column(String(255), unique=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), default="viewer")  # owner/admin/manager/operator/viewer
+    plan = Column(String(20), default="free")     # free/basic/pro/enterprise
+    company_id = Column(String(36), nullable=True)
+    upload_count = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class InviteToken(Base):
+    """Invite tokens for adding users to a company."""
+
+    __tablename__ = "invite_tokens"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(_uuid_mod.uuid4()))
+    email = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="viewer")
+    plan = Column(String(20), default="free")
+    company_id = Column(String(36), nullable=True)
+    token = Column(String(255), unique=True, nullable=False)
+    used = Column(Boolean, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(String(36), nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Focus Scope — Per-user table filtering
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Data Quarantine
+# ---------------------------------------------------------------------------
+
+
+class DataQuarantine(Base):
+    """Quarantined data rows that failed validation checks on upload.
+
+    Rows are held here until reviewed (approved → inserted into target table,
+    or rejected → discarded).
+    """
+
+    __tablename__ = "data_quarantine"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_name = Column(String(255), nullable=False, index=True)
+    upload_batch_id = Column(String(36), nullable=False, index=True)  # groups rows from same upload
+    row_index = Column(Integer, nullable=False)  # original row position in file
+    row_data = Column(JSON, nullable=False)  # the full row as {col: value}
+    issues = Column(JSON, nullable=False)  # [{check, column, value, message, severity}]
+    validation_status = Column(
+        String(20), nullable=False, default="quarantined"
+    )  # quarantined / approved / rejected
+    quarantined_at = Column(DateTime(timezone=True), server_default=func.now())
+    reviewed_by = Column(String(255), nullable=True)  # user_id or "auto"
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    review_note = Column(Text, nullable=True)
+
+
+class FocusScope(Base):
+    """Per-user table focus/scoping — controls which tables are active for analysis."""
+
+    __tablename__ = "focus_scopes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), nullable=True)       # NULL = anonymous/session-based
+    session_id = Column(String(64), nullable=True)     # for anonymous users
+    table_name = Column(String(255), nullable=False)
+    is_included = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Process-Metric Many-to-Many Link
+# ---------------------------------------------------------------------------
+
+
+class ProcessMetricLink(Base):
+    """Links metrics to process steps (many-to-many relationship)."""
+
+    __tablename__ = "process_metric_links"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    process_step_id = Column(Integer, nullable=False)
+    metric_id = Column(Integer, nullable=False)
+    is_primary = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

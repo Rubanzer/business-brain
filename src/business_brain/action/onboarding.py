@@ -61,11 +61,12 @@ async def save_company_profile(
     await session.refresh(profile)
 
     # Generate natural language context and store it for RAG
+    # Use reingest_context to replace old context on profile updates (avoids duplicates)
     try:
         context_text = _generate_context_text(profile)
         if context_text:
-            from business_brain.ingestion.context_ingestor import ingest_context
-            await ingest_context(context_text, session, source="onboarding:company_profile")
+            from business_brain.ingestion.context_ingestor import reingest_context
+            await reingest_context(context_text, session, source="onboarding:company_profile")
             logger.info("Generated company context (%d chars)", len(context_text))
     except Exception:
         logger.exception("Failed to generate context from company profile")

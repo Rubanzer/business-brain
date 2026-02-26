@@ -16,6 +16,7 @@ from business_brain.db.discovery_models import (
     TableProfile,
 )
 from business_brain.discovery.anomaly_detector import detect_anomalies
+from business_brain.discovery.insight_quality_gate import apply_quality_gate
 from business_brain.discovery.composite_discoverer import discover_composites
 from business_brain.discovery.cross_event_correlator import find_cross_events
 from business_brain.discovery.feed_store import refresh_report
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 async def run_discovery(
     session: AsyncSession,
     trigger: str = "manual",
+    table_filter: list[str] | None = None,
 ) -> DiscoveryRun:
     """Run the full discovery pipeline.
 
@@ -54,7 +56,7 @@ async def run_discovery(
     try:
         # 2. Profile all tables
         logger.info("Discovery: profiling tables...")
-        profiles = await profile_all_tables(session)
+        profiles = await profile_all_tables(session, table_filter=table_filter)
         run.tables_scanned = len(profiles)
 
         if not profiles:
@@ -73,6 +75,16 @@ async def run_discovery(
         logger.info("Discovery: detecting anomalies...")
         anomaly_insights = detect_anomalies(profiles)
         logger.info("Discovery: found %d anomaly insights", len(anomaly_insights))
+
+        # 4b. Check benchmarks against domain knowledge
+        logger.info("Discovery: checking benchmarks...")
+        try:
+            from business_brain.discovery.benchmark_checker import check_benchmarks
+            benchmark_insights = check_benchmarks(profiles)
+            logger.info("Discovery: found %d benchmark insights", len(benchmark_insights))
+        except Exception:
+            logger.exception("Benchmark checking failed, continuing")
+            benchmark_insights = []
 
         # 5. Discover composites
         logger.info("Discovery: discovering composites...")
@@ -121,7 +133,7 @@ async def run_discovery(
 
         # 7. Combine all insights
         all_insights = (
-            anomaly_insights + composite_insights + cross_insights
+            anomaly_insights + benchmark_insights + composite_insights + cross_insights
             + seasonality_insights + correlation_insights + domain_insights
             + entity_insights
         )
@@ -200,7 +212,13 @@ async def run_discovery(
         except Exception:
             logger.exception("Data freshness check failed, continuing")
 
-        # 9. Deduplicate insights against existing DB records
+        # 9. Apply insight quality gate (filter garbage, score business value, rewrite)
+        logger.info("Discovery: applying quality gate...")
+        pre_gate = len(all_insights)
+        all_insights = apply_quality_gate(all_insights, profiles)
+        logger.info("Discovery: quality gate: %d → %d insights", pre_gate, len(all_insights))
+
+        # 10. Deduplicate insights against existing DB records
         logger.info("Discovery: deduplicating insights...")
         try:
             from business_brain.discovery.dedup import compute_insight_key, deduplicate_insights
@@ -221,17 +239,9 @@ async def run_discovery(
         except Exception:
             logger.exception("Insight deduplication failed, continuing")
 
-        # 10. Quality gate — reject insights that are just data descriptions
-        pre_quality = len(all_insights)
-        all_insights = [i for i in all_insights if _passes_quality_gate(i)]
-        rejected = pre_quality - len(all_insights)
-        if rejected:
-            logger.info("Discovery: rejected %d low-quality insights", rejected)
-
-        # 10b. Score all insights
+        # 11. Assign run ID to all insights (scoring already done by quality gate)
         for insight in all_insights:
             insight.discovery_run_id = run.id
-            _apply_scoring(insight)
 
         # 11. Bulk insert insights
         for insight in all_insights:

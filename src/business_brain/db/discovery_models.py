@@ -65,7 +65,8 @@ class Insight(Base):
     id = Column(String(36), primary_key=True, default=_uuid)
     insight_type = Column(String(30), nullable=False)  # anomaly/trend/correlation/composite/cross_event/story
     severity = Column(String(20), nullable=False, default="info")  # critical/warning/info
-    impact_score = Column(Integer, default=0)  # 0-100
+    impact_score = Column(Integer, default=0)  # 0-100 (business value score from quality gate)
+    quality_score = Column(Integer, default=0)  # 0-100 (mirrors impact_score after quality gate)
     title = Column(String(500), nullable=False)
     description = Column(Text, nullable=False)
     narrative = Column(Text, nullable=True)
@@ -79,6 +80,44 @@ class Insight(Base):
     discovery_run_id = Column(String(36), nullable=True)
     status = Column(String(20), nullable=False, default="new")  # new/seen/deployed/dismissed
     session_id = Column(String(64), nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Deep Tier — Analysis Task Queue
+# ---------------------------------------------------------------------------
+
+
+class AnalysisTask(Base):
+    """Task queue for Deep Tier analysis (Claude API).
+
+    Created automatically when Fast Tier confidence < threshold,
+    or manually via the 'Investigate Deeper' button.
+    """
+
+    __tablename__ = "analysis_tasks"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    question = Column(Text, nullable=False)
+    source_tier = Column(String(10), nullable=False, default="fast")  # fast / manual
+    status = Column(String(20), nullable=False, default="pending")
+    # pending / running / completed / failed
+    priority = Column(Integer, default=0)  # higher = more important
+    # Input context from Fast Tier
+    fast_tier_result = Column(JSON, nullable=True)  # summary of fast tier analysis
+    sql_query = Column(Text, nullable=True)  # SQL used by fast tier
+    sql_data = Column(JSON, nullable=True)  # rows from fast tier (anonymized)
+    tables_used = Column(JSON, nullable=True)  # ["table1", "table2"]
+    fast_confidence = Column(Float, nullable=True)  # confidence from router
+    session_id = Column(String(64), nullable=True)
+    # Deep Tier output
+    result = Column(JSON, nullable=True)  # full Claude analysis
+    error = Column(Text, nullable=True)
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    # Audit
+    requested_by = Column(String(255), nullable=True)  # user_id or "auto"
 
 
 class DeployedReport(Base):
@@ -97,3 +136,4 @@ class DeployedReport(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     session_id = Column(String(64), nullable=True)
     active = Column(Boolean, default=True)
+    refresh_frequency = Column(String(20), default="manual")  # manual/hourly/daily/weekly

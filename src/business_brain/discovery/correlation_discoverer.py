@@ -47,7 +47,7 @@ def discover_correlations_from_profiles(profiles: list) -> list[Insight]:
         corr_pairs = _estimate_sample_correlations(numeric_cols)
 
         if not corr_pairs:
-            continue  # No correlations found — don't flag "analysis available"
+            continue  # No correlations found — don't generate meta-insights that clutter the feed
 
         # Generate insights for strong correlations only
         for col_a, col_b, est_r, direction in corr_pairs:
@@ -56,7 +56,7 @@ def discover_correlations_from_profiles(profiles: list) -> list[Insight]:
                 id=str(uuid.uuid4()),
                 insight_type="correlation",
                 severity="warning" if abs(est_r) >= 0.7 else "info",
-                impact_score=55 if abs(est_r) >= 0.7 else 35,
+                impact_score=55 if abs(est_r) >= 0.85 else (45 if abs(est_r) >= 0.7 else (30 if abs(est_r) >= 0.6 else 25)),
                 title=f"{strength.title()} {direction} correlation: {col_a} ↔ {col_b} (r={est_r:.2f})",
                 description=(
                     f"{col_a} and {col_b} in {profile.table_name} have a {strength} "

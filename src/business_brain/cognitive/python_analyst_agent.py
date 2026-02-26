@@ -99,13 +99,22 @@ INTERPRET_PROMPT = """\
 You are formatting raw analysis output into structured JSON for a business dashboard.
 The user wants COMPLETE VISIBILITY — the full picture, not just highlights.
 
+DOMAIN KNOWLEDGE for interpretation (when relevant):
+- SEC (kWh/ton): good <500, average 500-600, poor >600
+- Yield (%): good >92, average 88-92, poor <88
+- Power Factor: good >0.95, average 0.90-0.95, poor <0.90
+- Tap-to-tap (min): good <60, average 60-90, poor >90
+- Rejection rate: good <1.5%, average 1.5-3%, poor >3%
+- Energy cost is typically 35-50% of production cost
+- Scrap cost is typically 55-70% of production cost
+
 Given the printed output from a Python analysis script, return ONLY a JSON object:
 {{
   "computations": [
     {{
       "label": "descriptive metric name",
       "value": "formatted value with appropriate precision",
-      "unit": "%, Rs, Rs/ton, count, etc. or empty string",
+      "unit": "%, ₹, ₹/ton, count, kWh/ton, heats, etc. or empty string",
       "format": "number|currency|percentage|text",
       "priority": 1-10
     }}
@@ -121,15 +130,17 @@ Given the printed output from a Python analysis script, return ONLY a JSON objec
   "narrative": "3-5 sentence executive interpretation. Start with the OVERALL picture
                  (totals, averages), then call out the BEST and WORST performers by name
                  with specific numbers, then state the GAP and what to do about it.
-                 Be specific: 'Rajesh sold ₹45L vs team avg ₹58L' not 'one rep underperformed'."
+                 COMPARE values against the industry benchmarks above when relevant.
+                 Be specific: 'Rajesh sold ₹45L vs team avg ₹58L' not 'one rep underperformed'.
+                 Always include a 'So what?' — what should the owner DO about this?"
 }}
 
 IMPORTANT: Include EVERY entity in full_breakdown — never truncate or say "and X more".
 The full_breakdown is the primary deliverable. Computations are the summary stats on top.
 
 Priority guide: full entity breakdowns=10, per-group comparisons=9, outliers=8,
-key averages=7, correlations=6, distributions=5, time trends=9.
-Format guide: use "currency" for monetary values, "percentage" for rates/ratios/yields,
+key averages=7, correlations=6, distributions=5, time trends=9, threshold breaches=10, benchmark comparisons=9.
+Format guide: use "currency" for monetary values (₹), "percentage" for rates/ratios/yields,
 "number" for counts/quantities.
 """
 
@@ -271,6 +282,7 @@ def _interpret_output(
     question: str,
     stdout: str,
     variables: dict,
+    business_context: str = "",
 ) -> dict[str, Any]:
     """Phase 2: Have Gemini interpret raw execution output into structured format."""
     # Build a summary of what the code produced
@@ -292,11 +304,12 @@ def _interpret_output(
 
     raw_output = "\n\n".join(output_parts)
 
-    prompt = (
-        f"{INTERPRET_PROMPT}\n\n"
-        f"Original question: {question}\n\n"
-        f"Raw analysis output:\n{raw_output}"
-    )
+    prompt_parts = [INTERPRET_PROMPT, ""]
+    if business_context:
+        prompt_parts.append(f"Business Context:\n{business_context}\n")
+    prompt_parts.append(f"Original question: {question}\n")
+    prompt_parts.append(f"Raw analysis output:\n{raw_output}")
+    prompt = "\n".join(prompt_parts)
 
     try:
         response = client.models.generate_content(
@@ -305,8 +318,8 @@ def _interpret_output(
         )
         raw_text = response.text or ""
         text = _extract_code(raw_text)  # reuse fence stripper for JSON
-        if not text:
-            raise ValueError("LLM returned empty response")
+        if not text.strip():
+            raise ValueError("LLM returned empty response for interpretation")
         parsed = json.loads(text)
         return {
             "computations": parsed.get("computations", []),
@@ -453,14 +466,23 @@ class PythonAnalystAgent:
             state["python_analysis"] = {
                 "code": code,
                 "computations": [],
-                "narrative": "",
+                "narrative": f"Python analysis encountered an error: {exec_result['error']}. The SQL data was returned but could not be fully analysed.",
                 "error": f"Execution error: {exec_result['error']}",
             }
             return state
 
-        # --- Phase 3: Interpret ---
+        # --- Phase 3: Interpret (with business context for domain-aware interpretation) ---
+        rag_contexts = state.get("_rag_contexts", [])
+        biz_ctx_parts = []
+        for ctx in rag_contexts:
+            content = ctx.get("content", "")
+            if content:
+                biz_ctx_parts.append(f"[{ctx.get('source', '')}] {content}")
+        biz_context_str = "\n".join(biz_ctx_parts)
+
         interpreted = _interpret_output(
-            client, question, exec_result["stdout"], exec_result["variables"]
+            client, question, exec_result["stdout"], exec_result["variables"],
+            business_context=biz_context_str,
         )
 
         state["python_analysis"] = {

@@ -587,12 +587,78 @@ class DataEngineerAgent:
         use_serial_pk = not _has_unique_first_column(cleaned)
         if use_serial_pk:
             logger.info("First column is not unique — using serial _row_id PK for %s", table_name)
+
+        # --- Validation (Phase 4) ---
+        # Run hard checks (quarantine bad rows) + soft checks (z-score outliers)
+        rows_quarantined = 0
+        outliers_flagged = 0
+        validation_summary = {}
+        try:
+            from business_brain.ingestion.data_validator import validate_rows
+            from business_brain.db.v3_models import DataQuarantine, SanctityIssue
+
+            validation = validate_rows(
+                cleaned, col_types, use_serial_pk=use_serial_pk
+            )
+            rows_to_insert = validation.clean_rows
+            rows_quarantined = len(validation.quarantined)
+            outliers_flagged = len(validation.outliers)
+            validation_summary = validation.summary()
+
+            # Persist quarantined rows
+            if validation.quarantined:
+                batch_id = validation.stats.get("batch_id", "unknown")
+                for q in validation.quarantined:
+                    db_session.add(DataQuarantine(
+                        table_name=table_name,
+                        upload_batch_id=q["batch_id"],
+                        row_index=q["row_index"],
+                        row_data=q["row_data"],
+                        issues=q["issues"],
+                    ))
+                await db_session.flush()
+                issues.append({
+                    "column": "*",
+                    "issue": f"{rows_quarantined} rows quarantined (failed validation)",
+                    "action": "quarantined",
+                })
+
+            # Record outliers as sanctity issues
+            for outlier in validation.outliers:
+                if "z_score" in outlier:
+                    db_session.add(SanctityIssue(
+                        table_name=table_name,
+                        column_name=outlier["column"],
+                        row_identifier=str(outlier.get("row_index", "")),
+                        issue_type="statistical_outlier",
+                        severity="warning",
+                        description=(
+                            f"Value {outlier['value']} in {outlier['column']} "
+                            f"has z-score {outlier['z_score']} "
+                            f"(mean={outlier['mean']}, σ={outlier['stdev']})"
+                        ),
+                        current_value=str(outlier["value"]),
+                        expected_range=(
+                            f"{outlier['mean'] - 3*outlier['stdev']:.2f} to "
+                            f"{outlier['mean'] + 3*outlier['stdev']:.2f}"
+                        ),
+                    ))
+            if validation.outliers:
+                await db_session.flush()
+
+        except ImportError:
+            logger.debug("data_validator not available — skipping validation")
+            rows_to_insert = cleaned
+        except Exception:
+            logger.exception("Validation failed — inserting all rows without quarantine")
+            rows_to_insert = cleaned
+
         await create_table(db_session, table_name, col_types, use_serial_pk=use_serial_pk)
-        rows_inserted = await insert_rows(db_session, table_name, cleaned, col_types, use_serial_pk=use_serial_pk)
+        rows_inserted = await insert_rows(db_session, table_name, rows_to_insert, col_types, use_serial_pk=use_serial_pk)
 
         # --- Gemini metadata ---
         columns = list(col_types.keys())
-        gemini_meta = await generate_metadata_with_gemini(table_name, columns, cleaned)
+        gemini_meta = await generate_metadata_with_gemini(table_name, columns, rows_to_insert or cleaned)
 
         # Build column metadata for metadata_store
         col_descriptions = gemini_meta.get("column_descriptions", {})
@@ -613,12 +679,14 @@ class DataEngineerAgent:
         table_description = gemini_meta.get("table_description", f"Uploaded: {table_name}")
         business_context = gemini_meta.get("business_context", "")
 
-        # Store metadata
+        # Store metadata (with uploader tracking if provided)
         await metadata_store.upsert(
             db_session,
             table_name=table_name,
             description=table_description,
             columns_metadata=columns_metadata,
+            uploaded_by=state.get("uploaded_by"),
+            uploaded_by_role=state.get("uploaded_by_role"),
         )
 
         # Store business context
@@ -631,7 +699,10 @@ class DataEngineerAgent:
             "rows_total": rows_total,
             "rows_inserted": rows_inserted,
             "rows_dropped": rows_dropped,
+            "rows_quarantined": rows_quarantined,
             "duplicates_removed": duplicates_removed,
+            "outliers_flagged": outliers_flagged,
+            "validation": validation_summary,
             "issues": issues,
             "metadata": {
                 "description": table_description,

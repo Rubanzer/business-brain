@@ -1,8 +1,17 @@
 """Tests for the Supervisor Agent — planning, chat history, JSON parsing edge cases."""
 
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from business_brain.cognitive.supervisor import SupervisorAgent
+
+
+def _run(coro):
+    """Helper to run async coroutine in tests."""
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(coro)
 
 
 class TestSupervisorAgent:
@@ -14,7 +23,7 @@ class TestSupervisorAgent:
 
         agent = SupervisorAgent()
         state = {"question": "What are our sales?"}
-        result = agent.invoke(state)
+        result = _run(agent.invoke(state))
         assert len(result["plan"]) == 2
         assert result["plan"][0]["agent"] == "sql_agent"
 
@@ -32,7 +41,7 @@ class TestSupervisorAgent:
                 {"role": "assistant", "content": "Total revenue is $1M"},
             ],
         }
-        result = agent.invoke(state)
+        result = _run(agent.invoke(state))
 
         # Verify the prompt contained chat history
         call_args = mock_client.return_value.models.generate_content.call_args
@@ -46,7 +55,7 @@ class TestSupervisorAgent:
 
         agent = SupervisorAgent()
         state = {"question": "test"}
-        result = agent.invoke(state)
+        result = _run(agent.invoke(state))
         assert len(result["plan"]) >= 2
         assert result["plan"][0]["agent"] == "sql_agent"
 
@@ -59,7 +68,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         assert len(result["plan"]) == 1
         assert result["plan"][0]["agent"] == "sql_agent"
 
@@ -70,7 +79,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         assert len(result["plan"]) == 1
 
     @patch("business_brain.cognitive.supervisor._get_client")
@@ -80,7 +89,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         assert len(result["plan"]) == 2
 
     @patch("business_brain.cognitive.supervisor._get_client")
@@ -90,7 +99,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "some question"})
+        result = _run(agent.invoke({"question": "some question"}))
         # json.loads succeeds but plan is a dict, not list — still set
         # The code just does `state["plan"] = plan` without validating list
         assert "plan" in result
@@ -102,7 +111,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         # Falls back to default plan
         assert result["plan"][0]["agent"] == "sql_agent"
         assert len(result["plan"]) >= 2
@@ -114,7 +123,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         assert result["plan"][0]["agent"] == "sql_agent"
 
     @patch("business_brain.cognitive.supervisor._get_client")
@@ -124,7 +133,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         # Falls back to default
         assert result["plan"][0]["agent"] == "sql_agent"
 
@@ -135,7 +144,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         # Trailing comma = invalid JSON = fallback
         assert result["plan"][0]["agent"] == "sql_agent"
 
@@ -146,7 +155,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         # Unclosed fence: split gives 2 parts, parts[1] = 'json\n[...]'
         # After stripping "json", should parse fine
         assert len(result["plan"]) == 1
@@ -158,7 +167,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test", "chat_history": []})
+        result = _run(agent.invoke({"question": "test", "chat_history": []}))
         assert len(result["plan"]) == 1
 
     @patch("business_brain.cognitive.supervisor._get_client")
@@ -168,10 +177,10 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({
+        result = _run(agent.invoke({
             "question": "test",
             "chat_history": [{"role": "user"}, {"content": "answer"}],
-        })
+        }))
         assert len(result["plan"]) == 1
 
     @patch("business_brain.cognitive.supervisor._get_client")
@@ -181,7 +190,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({})
+        result = _run(agent.invoke({}))
         assert "plan" in result
 
     @patch("business_brain.cognitive.supervisor._get_client")
@@ -193,7 +202,7 @@ class TestSupervisorAgent:
 
         history = [{"role": "user", "content": f"msg-{i}"} for i in range(20)]
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test", "chat_history": history})
+        result = _run(agent.invoke({"question": "test", "chat_history": history}))
 
         prompt = mock_client.return_value.models.generate_content.call_args.kwargs.get(
             "contents",
@@ -212,7 +221,7 @@ class TestSupervisorAgent:
         mock_client.return_value.models.generate_content.return_value = response
 
         agent = SupervisorAgent()
-        result = agent.invoke({"question": "test"})
+        result = _run(agent.invoke({"question": "test"}))
         assert len(result["plan"]) == 1
 
 
@@ -235,7 +244,7 @@ class TestDrillDown:
                 "business_impact": "Premium pricing may reduce competitiveness",
             },
         }
-        result = agent.invoke(state)
+        result = _run(agent.invoke(state))
 
         call_args = mock_client.return_value.models.generate_content.call_args
         prompt = call_args.kwargs.get("contents", call_args.args[0] if call_args.args else "")
@@ -255,7 +264,7 @@ class TestDrillDown:
 
         agent = SupervisorAgent()
         state = {"question": "Compare rates"}
-        result = agent.invoke(state)
+        result = _run(agent.invoke(state))
 
         call_args = mock_client.return_value.models.generate_content.call_args
         prompt = call_args.kwargs.get("contents", call_args.args[0] if call_args.args else "")
@@ -282,7 +291,7 @@ class TestDrillDown:
                 {"role": "assistant", "content": "Analysis shows rate variation"},
             ],
         }
-        result = agent.invoke(state)
+        result = _run(agent.invoke(state))
 
         call_args = mock_client.return_value.models.generate_content.call_args
         prompt = call_args.kwargs.get("contents", call_args.args[0] if call_args.args else "")
@@ -303,7 +312,7 @@ class TestDrillDown:
                 "business_impact": "Quality risk",
             },
         }
-        result = agent.invoke(state)
+        result = _run(agent.invoke(state))
         assert result["plan"][0]["agent"] == "sql_agent"
         assert len(result["plan"]) >= 2
 
@@ -319,5 +328,5 @@ class TestDrillDown:
             "question": "drill deeper",
             "parent_finding": {"description": "Something interesting"},
         }
-        result = agent.invoke(state)
+        result = _run(agent.invoke(state))
         assert len(result["plan"]) == 1

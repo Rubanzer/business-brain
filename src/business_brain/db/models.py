@@ -1,6 +1,6 @@
 """ORM models for metadata and business context storage."""
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import DeclarativeBase
 from pgvector.sqlalchemy import Vector
@@ -19,6 +19,8 @@ class MetadataEntry(Base):
     table_name = Column(String(255), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     columns_metadata = Column(JSON, nullable=True)  # [{name, type, description}, ...]
+    uploaded_by = Column(String(36), nullable=True)       # user_id of uploader
+    uploaded_by_role = Column(String(20), nullable=True)   # role at upload time
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -32,6 +34,10 @@ class BusinessContext(Base):
     content = Column(Text, nullable=False)
     embedding = Column(Vector(3072), nullable=True)
     source = Column(String(255), nullable=True)
+    version = Column(Integer, default=1)  # Version number for this content
+    active = Column(Boolean, default=True)  # False = superseded by newer version
+    superseded_at = Column(DateTime(timezone=True), nullable=True)  # When this version was replaced
+    last_validated_at = Column(DateTime(timezone=True), nullable=True)  # For freshness scoring
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
