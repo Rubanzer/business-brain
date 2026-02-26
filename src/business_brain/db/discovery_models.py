@@ -120,6 +120,109 @@ class AnalysisTask(Base):
     requested_by = Column(String(255), nullable=True)  # user_id or "auto"
 
 
+# ---------------------------------------------------------------------------
+# Pre-computed Analysis Results (Background Intelligence Engine)
+# ---------------------------------------------------------------------------
+
+
+class PrecomputedAnalysis(Base):
+    """Background-computed analysis results backing recommendations.
+
+    After discovery profiles tables, the pre-compute engine scores ALL column
+    combinations, picks the top-N most promising ones, and runs actual SQL
+    queries (GROUP BY, CORR, z-score, regression) to get real results.
+
+    Recommendations matched to a completed PrecomputedAnalysis get
+    confidence="pre-computed" and include a result preview.
+    """
+
+    __tablename__ = "precomputed_analyses"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    table_name = Column(String(255), nullable=False, index=True)
+    analysis_type = Column(String(30), nullable=False)  # benchmark/correlation/anomaly/trend
+    columns = Column(JSON, nullable=False)  # ["supplier", "rate"]
+    column_scores = Column(JSON, nullable=True)  # {"supplier": 0.82, "rate": 0.91}
+
+    status = Column(String(20), default="pending")  # pending/running/completed/failed/stale
+    result_summary = Column(JSON, nullable=True)  # compact result (type-specific shape)
+    result_detail = Column(JSON, nullable=True)  # full result (chart_spec, sample rows)
+    quality_score = Column(Float, default=0.0)  # 0.0-1.0 how interesting the result was
+    error = Column(Text, nullable=True)
+
+    computed_at = Column(DateTime(timezone=True), nullable=True)
+    discovery_run_id = Column(String(36), nullable=True)
+    data_hash = Column(String(64), nullable=True)  # from TableProfile — stale detection
+
+
+# ---------------------------------------------------------------------------
+# Engagement Tracking (Background Intelligence Engine — Phase 2)
+# ---------------------------------------------------------------------------
+
+
+class EngagementEvent(Base):
+    """Tracks user interactions with insights and recommendations.
+
+    Every time a user views the feed, deploys an insight, dismisses insights,
+    or views recommendations, an event is recorded here. These events feed
+    the Phase 3 reinforcement loop for scoring weight adjustment.
+    """
+
+    __tablename__ = "engagement_events"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    event_type = Column(String(30), nullable=False)
+    # Events: insight_shown, insight_seen, insight_deployed,
+    #         insight_dismissed, insights_dismissed_all,
+    #         recommendation_shown
+    entity_type = Column(String(20), nullable=False)  # "insight" | "recommendation"
+    entity_id = Column(String(36), nullable=True)  # insight_id or rec hash
+    analysis_type = Column(String(30), nullable=True)  # benchmark/correlation/anomaly/etc
+    table_name = Column(String(255), nullable=True)  # primary table involved
+    columns = Column(JSON, nullable=True)  # columns involved
+    severity = Column(String(20), nullable=True)  # insight severity if applicable
+    impact_score = Column(Integer, nullable=True)  # insight score if applicable
+    extra_metadata = Column(JSON, nullable=True)  # extra context (count, report_name, etc)
+    session_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Reinforcement Weights (Background Intelligence Engine — Phase 3)
+# ---------------------------------------------------------------------------
+
+
+class ReinforcementWeights(Base):
+    """Versioned weight adjustments from the engagement reinforcement loop.
+
+    Each row is a full snapshot of all multipliers computed from engagement
+    data. Only the most recent row (highest version) is active. Previous
+    rows are kept for audit/history.
+
+    All multipliers default to 1.0 (no change from hardcoded base values).
+    Multipliers are clamped to [0.8, 1.2] to prevent wild swings.
+    """
+
+    __tablename__ = "reinforcement_weights"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    version = Column(Integer, nullable=False, default=1)
+
+    # Multipliers applied to recommendation base priorities
+    analysis_type_multipliers = Column(JSON, nullable=False, default=dict)
+    # Multipliers applied to quality gate severity weights
+    severity_multipliers = Column(JSON, nullable=False, default=dict)
+    # Multipliers applied to quality gate novelty scores
+    insight_type_multipliers = Column(JSON, nullable=False, default=dict)
+
+    # Metadata
+    engagement_summary = Column(JSON, nullable=True)  # input data snapshot
+    computed_at = Column(DateTime(timezone=True), server_default=func.now())
+    discovery_run_id = Column(String(36), nullable=True)
+    period_days = Column(Integer, default=30)
+    total_events = Column(Integer, default=0)
+
+
 class DeployedReport(Base):
     """Persistent reports created from insights."""
 

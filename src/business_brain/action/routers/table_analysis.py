@@ -955,26 +955,58 @@ async def get_recommendations(session: AsyncSession = Depends(get_session)):
     from business_brain.db.discovery_models import (
         DiscoveredRelationship,
         Insight,
+        PrecomputedAnalysis,
         TableProfile,
     )
     from business_brain.discovery.insight_recommender import (
         compute_coverage,
         recommend_analyses_async,
     )
+    from business_brain.memory import metadata_store
 
     profiles = list((await session.execute(sa_select(TableProfile))).scalars().all())
     insights = list((await session.execute(sa_select(Insight))).scalars().all())
     relationships = list((await session.execute(sa_select(DiscoveredRelationship))).scalars().all())
 
+    # Fetch MetadataEntry (Gemini-generated column/table descriptions) for enrichment
+    table_names = [p.table_name for p in profiles]
+    metadata_entries = await metadata_store.get_filtered(session, table_names)
+    meta_by_table = {m.table_name: m for m in metadata_entries}
+
     # Convert ORM objects to dicts — include ALL fields for relationship-based
-    # entity inference (confidence, column_a, column_b are critical)
-    profile_dicts = [
-        {"table_name": p.table_name, "row_count": p.row_count,
-         "column_classification": p.column_classification}
-        for p in profiles
-    ]
+    # entity inference (confidence, column_a, column_b are critical).
+    # Enrich with MetadataEntry descriptions so the recommender can produce
+    # human-readable titles and data-aware reasons.
+    profile_dicts = []
+    for p in profiles:
+        d: dict = {
+            "table_name": p.table_name,
+            "row_count": p.row_count,
+            "column_classification": p.column_classification,
+        }
+        meta = meta_by_table.get(p.table_name)
+        if meta:
+            d["table_description"] = meta.description or ""
+            # Build column_name → description mapping from columns_metadata
+            if meta.columns_metadata:
+                d["column_descriptions"] = {
+                    col["column_name"]: col.get("description", "")
+                    for col in meta.columns_metadata
+                    if col.get("column_name") and col.get("description")
+                }
+        profile_dicts.append(d)
+    # Enrich insight dicts with severity, evidence, source_columns so the
+    # recommender can generate insight-driven follow-up recommendations
     insight_dicts = [
-        {"insight_type": i.insight_type, "source_tables": i.source_tables}
+        {
+            "insight_type": i.insight_type,
+            "source_tables": i.source_tables,
+            "severity": i.severity,
+            "impact_score": i.impact_score,
+            "source_columns": i.source_columns,
+            "evidence": i.evidence,
+            "suggested_actions": i.suggested_actions,
+        }
         for i in insights
     ]
     rel_dicts = [
@@ -1000,15 +1032,71 @@ async def get_recommendations(session: AsyncSession = Depends(get_session)):
         import logging
         logging.getLogger(__name__).debug("Could not fetch company profile for recommendations")
 
+    # Fetch pre-computed analyses to enrich recommendations with real data
+    precomputed_dicts: list[dict] = []
+    try:
+        precomputed_rows = list(
+            (await session.execute(
+                sa_select(PrecomputedAnalysis).where(
+                    PrecomputedAnalysis.status.in_(["completed", "failed"]),
+                    PrecomputedAnalysis.table_name.in_(table_names),
+                )
+            )).scalars().all()
+        )
+        precomputed_dicts = [
+            {
+                "table_name": p.table_name,
+                "analysis_type": p.analysis_type,
+                "columns": p.columns,
+                "status": p.status,
+                "result_summary": p.result_summary,
+                "quality_score": p.quality_score,
+                "precomputed_id": p.id,
+            }
+            for p in precomputed_rows
+        ]
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug("Could not fetch pre-computed analyses")
+
+    # Load reinforcement weights for priority adjustment
+    try:
+        from business_brain.discovery.reinforcement_loop import get_latest_weights
+        rl_weights = await get_latest_weights(session)
+    except Exception:
+        rl_weights = None
+
     recs = await recommend_analyses_async(
         profile_dicts, insight_dicts, rel_dicts, company_context,
+        precomputed=precomputed_dicts or None,
+        reinforcement_weights=rl_weights,
     )
     coverage = compute_coverage(profile_dicts, insight_dicts)
 
+    # Track which recommendations were shown (fire-and-forget)
+    try:
+        from business_brain.discovery.engagement_tracker import track_recommendations_shown
+        await track_recommendations_shown(session, [
+            {"analysis_type": r.analysis_type, "target_table": r.target_table,
+             "columns": r.columns, "confidence": r.confidence, "priority": r.priority}
+            for r in recs
+        ])
+    except Exception:
+        pass
+
     return {
         "recommendations": [
-            {"title": r.title, "description": r.description, "analysis_type": r.analysis_type,
-             "target_table": r.target_table, "columns": r.columns, "priority": r.priority, "reason": r.reason}
+            {
+                "title": r.title,
+                "description": r.description,
+                "analysis_type": r.analysis_type,
+                "target_table": r.target_table,
+                "columns": r.columns,
+                "priority": r.priority,
+                "reason": r.reason,
+                "confidence": r.confidence,
+                "preview": r.precomputed_summary,
+            }
             for r in recs
         ],
         "coverage": coverage,

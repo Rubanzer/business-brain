@@ -16,6 +16,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from business_brain.discovery.insight_quality_gate import (
+    _COLUMN_LABELS,
+    _humanize_column,
+    _humanize_table,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +35,10 @@ class Recommendation:
     columns: list[str]
     priority: int  # 1-100
     reason: str
+    # Pre-computed backing (populated by _enrich_with_precomputed)
+    precomputed_id: str | None = None
+    precomputed_summary: dict | None = None
+    confidence: str = "heuristic"  # "heuristic" | "pre-computed"
 
 
 @dataclass
@@ -297,13 +307,27 @@ def recommend_analyses(
     insights: list[dict],
     relationships: list[dict],
     max_recommendations: int = 10,
+    precomputed: list[dict] | None = None,
+    reinforcement_weights=None,
 ) -> list[Recommendation]:
     """Generate analysis recommendations (sync — Tier 1 only).
 
     Backward-compatible sync entry point. For full Tier 1 + Tier 2 (LLM),
     use ``recommend_analyses_async()`` instead.
+
+    Args:
+        precomputed: Optional list of pre-computed analysis dicts from
+            PrecomputedAnalysis table. When provided, matching recs get
+            enriched with real data (confidence="pre-computed", preview).
+        reinforcement_weights: Optional ReinforcementWeights record. When
+            provided, base priorities are modulated by learned multipliers.
     """
-    recs, _groups, _matched = _recommend_tier1(profiles, insights, relationships)
+    recs, _groups, _matched = _recommend_tier1(
+        profiles, insights, relationships,
+        reinforcement_weights=reinforcement_weights,
+    )
+    if precomputed:
+        recs = _enrich_with_precomputed(recs, precomputed)
     return _finalize(recs, max_recommendations)
 
 
@@ -313,6 +337,8 @@ async def recommend_analyses_async(
     relationships: list[dict],
     company_context: dict | None = None,
     max_recommendations: int = 10,
+    precomputed: list[dict] | None = None,
+    reinforcement_weights=None,
 ) -> list[Recommendation]:
     """Full recommendation pipeline: Tier 1 (templates) + Tier 2 (LLM-generated).
 
@@ -330,9 +356,14 @@ async def recommend_analyses_async(
         relationships: Discovered relationships (with confidence, column_a, column_b).
         company_context: Company profile dict (industry, products, process_flow).
         max_recommendations: Max recs to return.
+        precomputed: Optional list of pre-computed analysis dicts. When provided,
+            matching recs get enriched with real data (confidence, preview).
+        reinforcement_weights: Optional ReinforcementWeights record. When
+            provided, base priorities are modulated by learned multipliers.
     """
     tier1_recs, all_groups, matched_analyses = _recommend_tier1(
         profiles, insights, relationships,
+        reinforcement_weights=reinforcement_weights,
     )
 
     # Tier 2: LLM suggestions for ALL eligible entity groups
@@ -346,6 +377,10 @@ async def recommend_analyses_async(
         except Exception:
             logger.exception("Tier 2 dynamic cross-table suggestions failed")
 
+    # Enrich with pre-computed results (attach real data to heuristic recs)
+    if precomputed:
+        tier1_recs = _enrich_with_precomputed(tier1_recs, precomputed)
+
     return _finalize(tier1_recs, max_recommendations)
 
 
@@ -357,6 +392,7 @@ def _recommend_tier1(
     profiles: list[dict],
     insights: list[dict],
     relationships: list[dict],
+    reinforcement_weights=None,
 ) -> tuple[list[Recommendation], list[EntityGroup], dict[str, list[str]]]:
     """Core Tier 1 recommendation engine.
 
@@ -398,6 +434,7 @@ def _recommend_tier1(
 
         # 0. Domain-specific recommendations (highest priority)
         domain = _get_domain(profile)
+        tbl_label = _table_label(table_name, profile)
         if domain in _DOMAIN_RECOMMENDATIONS:
             col_names_lower = {c.lower() for c in columns}
             for rec in _DOMAIN_RECOMMENDATIONS[domain]:
@@ -407,7 +444,7 @@ def _recommend_tier1(
                 )
                 if matched_keywords >= 2 or (len(rec["keywords"]) <= 2 and matched_keywords >= 1):
                     recommendations.append(Recommendation(
-                        title=rec["title"].format(table=table_name),
+                        title=rec["title"].format(table=tbl_label),
                         description=rec["description"],
                         analysis_type=rec["type"],
                         target_table=table_name,
@@ -421,76 +458,155 @@ def _recommend_tier1(
         numeric_cols = [c for c, info in columns.items() if (info.get("semantic_type") or "").startswith("numeric")]
 
         if temporal_cols and numeric_cols and "trend" not in existing_types:
+            # Rank numeric columns by trend suitability (domain-aware, CV-based)
+            num_subset = {c: columns[c] for c in numeric_cols}
+            ranked_nums = _rank_columns(num_subset, row_count, profile, _score_numeric_for_trend, domain=domain)
+            trend_num = ranked_nums[0] if ranked_nums else numeric_cols[0]
+            trend_cols = [temporal_cols[0], trend_num]
+            num_label = _col_label(trend_num, profile)
+            time_label = _col_label(temporal_cols[0], profile)
+            _time_mult = _get_rl_mult(reinforcement_weights, "time_trend")
+            base_pri = _time_priority(row_count, insight_count, multiplier=_time_mult)
+            priority = min(max(base_pri + _data_fitness_adjustment("time_trend", profile, trend_cols), 10), 100)
             recommendations.append(Recommendation(
-                title=f"Time trend analysis on {table_name}",
-                description=f"Analyze {numeric_cols[0]} trends over {temporal_cols[0]}",
+                title=f"Track {num_label} over {time_label} in {tbl_label}",
+                description=f"Analyze how {num_label} changes over {time_label} — spot trends, seasonality, and shifts",
                 analysis_type="time_trend",
                 target_table=table_name,
-                columns=[temporal_cols[0], numeric_cols[0]],
-                priority=_time_priority(row_count, insight_count),
-                reason="Table has temporal and numeric columns but no trend analysis yet.",
+                columns=trend_cols,
+                priority=priority,
+                reason=_build_reason("time_trend", profile, trend_cols, domain),
             ))
 
         # 2. Benchmark
         cat_cols = [c for c, info in columns.items() if info.get("semantic_type") == "categorical"]
         if cat_cols and numeric_cols:
-            recommendations.append(Recommendation(
-                title=f"Benchmark {numeric_cols[0]} by {cat_cols[0]} in {table_name}",
-                description=f"Compare {numeric_cols[0]} across different {cat_cols[0]} groups",
-                analysis_type="benchmark",
-                target_table=table_name,
-                columns=[cat_cols[0], numeric_cols[0]],
-                priority=_benchmark_priority(row_count, len(cat_cols), insight_count),
-                reason="Table has categorical grouping column for metric comparison.",
-            ))
+            # Rank categoricals and numerics by benchmark suitability
+            cat_subset = {c: columns[c] for c in cat_cols}
+            num_subset = {c: columns[c] for c in numeric_cols}
+            ranked_cats = _rank_columns(cat_subset, row_count, profile, _score_categorical_for_benchmark)
+            ranked_nums = _rank_columns(num_subset, row_count, profile, _score_numeric_for_benchmark)
+            bench_cat = ranked_cats[0] if ranked_cats else cat_cols[0]
+            bench_num = ranked_nums[0] if ranked_nums else numeric_cols[0]
+            # Suppress if both featured columns are unnamed artifacts
+            if not (_is_unnamed_column(bench_cat, profile) and _is_unnamed_column(bench_num, profile)):
+                cat_label = _col_label(bench_cat, profile)
+                num_label = _col_label(bench_num, profile)
+                bench_cols = [bench_cat, bench_num]
+                _bench_mult = _get_rl_mult(reinforcement_weights, "benchmark")
+                base_pri = _benchmark_priority(row_count, len(cat_cols), insight_count, multiplier=_bench_mult)
+                priority = min(max(base_pri + _data_fitness_adjustment("benchmark", profile, bench_cols), 10), 100)
+                recommendations.append(Recommendation(
+                    title=f"Compare {num_label} by {cat_label} in {tbl_label}",
+                    description=f"Benchmark {num_label} across different {cat_label} groups — find best and worst performers",
+                    analysis_type="benchmark",
+                    target_table=table_name,
+                    columns=bench_cols,
+                    priority=priority,
+                    reason=_build_reason("benchmark", profile, bench_cols, domain),
+                ))
 
         # 3. Correlation
         if len(numeric_cols) >= 2 and "correlation" not in existing_types:
+            # Rank by correlation suitability (high variance = more signal)
+            num_subset = {c: columns[c] for c in numeric_cols}
+            ranked_nums = _rank_columns(num_subset, row_count, profile, _score_numeric_for_correlation)
+            corr_cols = ranked_nums[:5]
+            corr_labels = [_col_label(c, profile) for c in corr_cols[:3]]
+            _corr_mult = _get_rl_mult(reinforcement_weights, "correlation")
+            base_pri = _correlation_priority(len(numeric_cols), insight_count, multiplier=_corr_mult)
+            priority = min(max(base_pri + _data_fitness_adjustment("correlation", profile, corr_cols), 10), 100)
             recommendations.append(Recommendation(
-                title=f"Correlation analysis on {table_name}",
-                description=f"Check correlations between {len(numeric_cols)} numeric columns",
+                title=f"Find hidden relationships in {tbl_label}",
+                description=f"Check correlations between {', '.join(corr_labels)} and {len(numeric_cols) - len(corr_labels)} more columns",
                 analysis_type="correlation",
                 target_table=table_name,
-                columns=numeric_cols[:5],
-                priority=_correlation_priority(len(numeric_cols), insight_count),
-                reason=f"Table has {len(numeric_cols)} numeric columns but no correlation analysis.",
+                columns=corr_cols,
+                priority=priority,
+                reason=_build_reason("correlation", profile, corr_cols, domain),
             ))
 
         # 4. Anomaly scan
         if numeric_cols and "anomaly" not in existing_types:
+            # Rank by anomaly suitability (high CV, named, non-constant)
+            num_subset = {c: columns[c] for c in numeric_cols}
+            ranked_nums = _rank_columns(num_subset, row_count, profile, _score_numeric_for_anomaly)
+            anomaly_cols = ranked_nums[:5]
+            # Fallback if all scored 0 (all constant)
+            if not anomaly_cols:
+                anomaly_cols = numeric_cols[:5]
+            headline_col = anomaly_cols[0]
+            headline_label = _col_label(headline_col, profile)
+            _anom_mult = _get_rl_mult(reinforcement_weights, "anomaly")
+            base_pri = _anomaly_priority(row_count, insight_count, multiplier=_anom_mult)
+            priority = min(max(base_pri + _data_fitness_adjustment("anomaly", profile, anomaly_cols), 10), 100)
             recommendations.append(Recommendation(
-                title=f"Anomaly scan on {table_name}",
-                description=f"Scan {len(numeric_cols)} numeric columns for outliers",
+                title=f"Detect outliers in {headline_label} ({tbl_label})",
+                description=f"Scan {len(numeric_cols)} numeric columns for anomalies — flag unusual values that may indicate data issues or opportunities",
                 analysis_type="anomaly",
                 target_table=table_name,
-                columns=numeric_cols[:5],
-                priority=_anomaly_priority(row_count, insight_count),
-                reason="No anomaly detection has been run on this table.",
+                columns=anomaly_cols,
+                priority=priority,
+                reason=_build_reason("anomaly", profile, anomaly_cols, domain),
             ))
 
         # 5. Cohort analysis
         if temporal_cols and cat_cols and numeric_cols:
-            recommendations.append(Recommendation(
-                title=f"Cohort analysis: {cat_cols[0]} over {temporal_cols[0]} in {table_name}",
-                description=f"Track {numeric_cols[0]} for {cat_cols[0]} cohorts over {temporal_cols[0]}",
-                analysis_type="cohort",
-                target_table=table_name,
-                columns=[cat_cols[0], temporal_cols[0], numeric_cols[0]],
-                priority=_cohort_priority(row_count, insight_count),
-                reason="Table has all three column types needed for cohort tracking.",
-            ))
+            cat_subset = {c: columns[c] for c in cat_cols}
+            num_subset = {c: columns[c] for c in numeric_cols}
+            ranked_cats = _rank_columns(cat_subset, row_count, profile, _score_categorical_for_benchmark)
+            ranked_nums = _rank_columns(num_subset, row_count, profile, _score_numeric_for_benchmark)
+            cohort_cat = ranked_cats[0] if ranked_cats else cat_cols[0]
+            cohort_num = ranked_nums[0] if ranked_nums else numeric_cols[0]
+            if not (_is_unnamed_column(cohort_cat, profile) and _is_unnamed_column(cohort_num, profile)):
+                cat_label = _col_label(cohort_cat, profile)
+                num_label = _col_label(cohort_num, profile)
+                time_label = _col_label(temporal_cols[0], profile)
+                cohort_cols = [cohort_cat, temporal_cols[0], cohort_num]
+                _cohort_mult = _get_rl_mult(reinforcement_weights, "cohort")
+                base_pri = _cohort_priority(row_count, insight_count, multiplier=_cohort_mult)
+                priority = min(max(base_pri + _data_fitness_adjustment("cohort", profile, cohort_cols), 10), 100)
+                recommendations.append(Recommendation(
+                    title=f"Track {num_label} by {cat_label} over {time_label} in {tbl_label}",
+                    description=f"Cohort analysis — how does {num_label} evolve for each {cat_label} group over {time_label}?",
+                    analysis_type="cohort",
+                    target_table=table_name,
+                    columns=cohort_cols,
+                    priority=priority,
+                    reason=_build_reason("cohort", profile, cohort_cols, domain),
+                ))
 
         # 6. Forecast
         if temporal_cols and numeric_cols and row_count >= 20:
+            num_subset = {c: columns[c] for c in numeric_cols}
+            ranked_nums = _rank_columns(num_subset, row_count, profile, _score_numeric_for_trend, domain=domain)
+            fc_num = ranked_nums[0] if ranked_nums else numeric_cols[0]
+            num_label = _col_label(fc_num, profile)
+            time_label = _col_label(temporal_cols[0], profile)
+            fc_cols = [temporal_cols[0], fc_num]
+            _fc_mult = _get_rl_mult(reinforcement_weights, "forecast")
+            base_pri = _forecast_priority(row_count, insight_count, multiplier=_fc_mult)
+            priority = min(max(base_pri + _data_fitness_adjustment("forecast", profile, fc_cols), 10), 100)
             recommendations.append(Recommendation(
-                title=f"Forecast {numeric_cols[0]} in {table_name}",
-                description=f"Predict future values of {numeric_cols[0]} based on {temporal_cols[0]}",
+                title=f"Forecast {num_label} in {tbl_label}",
+                description=f"Predict future {num_label} based on {time_label} — plan ahead with data-driven projections",
                 analysis_type="forecast",
                 target_table=table_name,
-                columns=[temporal_cols[0], numeric_cols[0]],
-                priority=_forecast_priority(row_count, insight_count),
-                reason="Sufficient temporal data for forecasting.",
+                columns=fc_cols,
+                priority=priority,
+                reason=_build_reason("forecast", profile, fc_cols, domain),
             ))
+
+        # 7. Insight-driven follow-up recommendations
+        table_insights = [
+            ins for ins in insights
+            if table_name in (ins.get("source_tables") or [])
+        ]
+        if table_insights:
+            followup_recs = _recommend_insight_followups(
+                profile, table_insights, columns, domain,
+            )
+            recommendations.extend(followup_recs)
 
     # --- Cross-table intelligence ---
     entity_groups = _build_entity_groups(profiles, relationships)
@@ -506,16 +622,22 @@ def _recommend_tier1(
 
         for template in templates:
             if _check_template_coverage(group, template, profiles):
-                table_str = " + ".join(sorted(group.tables)[:6])
+                # Humanize table names in cross-table titles
+                table_labels = []
+                for tn in sorted(group.tables)[:6]:
+                    prof = next((p for p in profiles if p.get("table_name") == tn), {})
+                    table_labels.append(_table_label(tn, prof))
+                table_str_human = " + ".join(table_labels)
+                table_str_raw = " + ".join(sorted(group.tables)[:6])
                 recommendations.append(Recommendation(
-                    title=template["title"].format(tables=table_str),
+                    title=template["title"].format(tables=table_str_human),
                     description=template["description"],
                     analysis_type="cross_table_intelligence",
                     target_table=group.tables[0],
                     columns=[],
                     priority=template["priority"],
                     reason=template.get("reason", "Cross-table analysis").format(
-                        tables=table_str, entity=entity_type,
+                        tables=table_str_human, entity=entity_type,
                     ),
                 ))
                 matched_analyses.setdefault(entity_type, []).append(
@@ -525,9 +647,15 @@ def _recommend_tier1(
     # Fallback: generic cross-table for related tables with few insights
     for table_name, related in related_tables.items():
         if len(related) >= 2 and insight_tables.get(table_name, 0) < 3:
+            prof = next((p for p in profiles if p.get("table_name") == table_name), {})
+            fb_tbl_label = _table_label(table_name, prof)
+            related_labels = []
+            for rtn in list(related)[:3]:
+                rprof = next((p for p in profiles if p.get("table_name") == rtn), {})
+                related_labels.append(_table_label(rtn, rprof))
             recommendations.append(Recommendation(
-                title=f"Cross-table analysis for {table_name}",
-                description=f"Explore relationships between {table_name} and {', '.join(list(related)[:3])}",
+                title=f"Cross-table analysis for {fb_tbl_label}",
+                description=f"Explore relationships between {fb_tbl_label} and {', '.join(related_labels)}",
                 analysis_type="correlation",
                 target_table=table_name,
                 columns=[],
@@ -538,8 +666,88 @@ def _recommend_tier1(
     return recommendations, all_eligible_groups, matched_analyses
 
 
+# ---------------------------------------------------------------------------
+# Pre-computed result enrichment
+# ---------------------------------------------------------------------------
+
+# Mapping from recommendation analysis_type → precomputed analysis_type.
+# The recommender uses "time_trend" while precompute uses "trend", etc.
+_REC_TYPE_TO_PRECOMPUTE_TYPE: dict[str, str] = {
+    "benchmark": "benchmark",
+    "correlation": "correlation",
+    "anomaly": "anomaly",
+    "time_trend": "trend",
+    "forecast": "trend",
+    "cohort": "benchmark",  # cohort recs can match benchmark pre-computation
+}
+
+
+def _enrich_with_precomputed(
+    recommendations: list[Recommendation],
+    precomputed: list[dict],
+) -> list[Recommendation]:
+    """Match recommendations to pre-computed results by (table, type, columns).
+
+    When a recommendation matches a completed pre-computation:
+      - confidence → "pre-computed"
+      - precomputed_summary → result_summary from DB
+      - precomputed_id → record ID
+      - priority adjusted: quality_score > 0.5 → +15, < 0.2 → -10
+
+    When matched but status = "failed":
+      - priority -= 20 (analysis errored on real data)
+    """
+    if not precomputed:
+        return recommendations
+
+    # Build lookup index: (table, precompute_type, frozenset(columns)) → dict
+    pc_index: dict[tuple, dict] = {}
+    for pc in precomputed:
+        key = (
+            pc.get("table_name", ""),
+            pc.get("analysis_type", ""),
+            frozenset(pc.get("columns", [])),
+        )
+        # Keep the highest-quality match if duplicates exist
+        existing = pc_index.get(key)
+        if not existing or (pc.get("quality_score", 0) or 0) > (existing.get("quality_score", 0) or 0):
+            pc_index[key] = pc
+
+    for rec in recommendations:
+        precompute_type = _REC_TYPE_TO_PRECOMPUTE_TYPE.get(rec.analysis_type)
+        if not precompute_type:
+            continue
+
+        key = (rec.target_table, precompute_type, frozenset(rec.columns))
+        pc = pc_index.get(key)
+        if not pc:
+            continue
+
+        status = pc.get("status", "")
+
+        if status == "completed":
+            rec.confidence = "pre-computed"
+            rec.precomputed_summary = pc.get("result_summary")
+            rec.precomputed_id = pc.get("precomputed_id")
+
+            quality = pc.get("quality_score", 0) or 0
+            if quality > 0.5:
+                rec.priority = min(100, rec.priority + 15)
+            elif quality < 0.2:
+                rec.priority = max(10, rec.priority - 10)
+
+        elif status == "failed":
+            rec.priority = max(10, rec.priority - 20)
+
+    return recommendations
+
+
 def _finalize(recs: list[Recommendation], max_recs: int) -> list[Recommendation]:
-    """Sort by priority, deduplicate by table+type, cap at max."""
+    """Sort by priority, deduplicate by table+type, cap at max.
+
+    Applies a diversity pass: no single table dominates the top results.
+    Each table gets a fair share of slots, then remaining slots fill by priority.
+    """
     seen: set[tuple[str, str]] = set()
     unique: list[Recommendation] = []
     for r in sorted(recs, key=lambda x: -x.priority):
@@ -547,6 +755,31 @@ def _finalize(recs: list[Recommendation], max_recs: int) -> list[Recommendation]
         if key not in seen:
             seen.add(key)
             unique.append(r)
+
+    # Diversity pass: ensure no single table dominates
+    if len(unique) > max_recs:
+        distinct_tables = {r.target_table for r in unique}
+        max_per_table = max(2, max_recs // max(len(distinct_tables), 1) + 1)
+
+        table_counts: dict[str, int] = {}
+        final: list[Recommendation] = []
+        overflow: list[Recommendation] = []
+
+        for r in unique:
+            count = table_counts.get(r.target_table, 0)
+            if count < max_per_table:
+                final.append(r)
+                table_counts[r.target_table] = count + 1
+            else:
+                overflow.append(r)
+
+        # Fill remaining slots from overflow
+        remaining = max_recs - len(final)
+        if remaining > 0:
+            final.extend(overflow[:remaining])
+
+        return final[:max_recs]
+
     return unique[:max_recs]
 
 
@@ -944,6 +1177,628 @@ def _get_domain(profile: dict) -> str:
     return "general"
 
 
+def _col_label(col_name: str, profile: dict) -> str:
+    """Best available human-readable label for a column.
+
+    Priority: (1) Gemini description first sentence (≤40 chars),
+              (2) _COLUMN_LABELS explicit mapping,
+              (3) _humanize_column() auto-generation.
+    """
+    descs = profile.get("column_descriptions", {})
+    desc = descs.get(col_name, "")
+    if desc:
+        first_sentence = desc.split(".")[0].strip()
+        if 3 <= len(first_sentence) <= 40:
+            return first_sentence
+
+    if col_name.lower() in _COLUMN_LABELS:
+        return _COLUMN_LABELS[col_name.lower()]
+
+    return _humanize_column(col_name)
+
+
+def _table_label(table_name: str, profile: dict) -> str:
+    """Best available human-readable label for a table.
+
+    Priority: (1) table_description first sentence (≤50 chars),
+              (2) _humanize_table().
+    """
+    desc = profile.get("table_description", "")
+    if desc:
+        first_sentence = desc.split(".")[0].strip()
+        if 3 <= len(first_sentence) <= 50:
+            return first_sentence
+    return _humanize_table(table_name)
+
+
+def _is_unnamed_column(col_name: str, profile: dict) -> bool:
+    """True if the column is a spreadsheet artifact like col_1, col_3.
+
+    These produce useless recommendation titles and are suppressed.
+    Columns with a Gemini description are allowed through.
+    """
+    if re.match(r"^col_?\d+$", col_name.lower()):
+        descs = profile.get("column_descriptions", {})
+        return col_name not in descs or not descs[col_name]
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Domain-flavored vocabulary for reason builder
+# ---------------------------------------------------------------------------
+
+_DOMAIN_VOCABULARY: dict[str, dict[str, str]] = {
+    "manufacturing": {
+        "benchmark": "benchmarking reveals best and worst performers across production",
+        "anomaly": "outlier detection can flag process deviations or equipment issues",
+        "correlation": "finding hidden relationships can reveal cost drivers or yield levers",
+        "trend": "spot production trends, seasonality, and shift patterns",
+        "cohort": "reveals which groups are improving or declining over time",
+        "forecast": "predict future output to plan capacity and resources",
+    },
+    "energy": {
+        "benchmark": "comparison identifies high and low consumption units",
+        "anomaly": "detect power spikes or inefficient consumption patterns",
+        "correlation": "understand what drives energy cost per unit of output",
+        "trend": "track consumption patterns and peak demand periods",
+        "cohort": "compare energy efficiency across equipment groups over time",
+        "forecast": "predict future energy demand for load planning",
+    },
+    "procurement": {
+        "benchmark": "comparison reveals which suppliers deliver the best value",
+        "anomaly": "detect pricing anomalies or unusual purchase patterns",
+        "correlation": "understand price-quality-delivery relationships",
+        "trend": "track rate changes and purchasing patterns over time",
+        "cohort": "compare supplier performance trajectories",
+        "forecast": "predict future procurement costs and quantities",
+    },
+    "quality": {
+        "benchmark": "comparison shows which entities have best and worst quality",
+        "anomaly": "flag sudden quality drops or unusual defect patterns",
+        "correlation": "link quality metrics to process parameters",
+        "trend": "track defect rate progression and quality improvements",
+        "cohort": "compare quality across product lines or batches over time",
+        "forecast": "predict quality outcomes for proactive intervention",
+    },
+    "logistics": {
+        "benchmark": "reveals fastest and slowest dispatch routes or carriers",
+        "anomaly": "detect delays, bottlenecks, or unusual traffic patterns",
+        "correlation": "understand what drives turnaround time and throughput",
+        "trend": "track dispatch volumes and delivery performance over time",
+        "cohort": "compare carrier or route performance trajectories",
+        "forecast": "predict future dispatch volumes for capacity planning",
+    },
+}
+
+
+def _domain_phrase(domain: str, rec_type: str) -> str:
+    """Get domain-specific trailing phrase for a reason."""
+    vocab = _DOMAIN_VOCABULARY.get(domain, {})
+    return vocab.get(rec_type, {
+        "benchmark": "comparison reveals performance differences across groups",
+        "anomaly": "detect unusual values that warrant investigation",
+        "correlation": "discover hidden relationships between measures",
+        "trend": "spot patterns and inflection points over time",
+        "cohort": "track how groups evolve over time",
+        "forecast": "predict future values from historical patterns",
+    }.get(rec_type, "analysis recommended based on data characteristics"))
+
+
+def _build_reason(
+    rec_type: str,
+    profile: dict,
+    columns: list[str],
+    domain: str,
+) -> str:
+    """Generate a business-relevant reason from actual data characteristics.
+
+    Uses column stats, sample values, cardinality, and domain vocabulary to
+    produce specific reasons instead of generic system-status messages.
+    """
+    cls = _get_columns(profile)
+    parts: list[str] = []
+
+    if rec_type == "benchmark" and len(columns) >= 2:
+        cat_col, num_col = columns[0], columns[1]
+        cat_info = cls.get(cat_col, {})
+        num_info = cls.get(num_col, {})
+        stats = num_info.get("stats", {})
+        cardinality = cat_info.get("cardinality", 0)
+        samples = cat_info.get("sample_values", [])[:3]
+        num_label = _col_label(num_col, profile)
+
+        if stats and stats.get("min") is not None and stats.get("max") is not None:
+            parts.append(f"{num_label} ranges from {stats['min']:g} to {stats['max']:g}")
+        if cardinality:
+            cat_label = _col_label(cat_col, profile)
+            parts.append(f"across {cardinality} {cat_label} groups")
+        if samples:
+            sample_strs = [str(s).replace("_", " ").title() for s in samples[:3]]
+            parts.append(f"(e.g., {', '.join(sample_strs)})")
+
+    elif rec_type == "correlation" and columns:
+        col_labels = [_col_label(c, profile) for c in columns[:3]]
+        parts.append(f"Columns like {', '.join(col_labels)} may be interdependent")
+
+    elif rec_type == "anomaly" and columns:
+        col = columns[0]
+        stats = cls.get(col, {}).get("stats", {})
+        label = _col_label(col, profile)
+        if stats and stats.get("stdev") is not None:
+            parts.append(f"{label} has high variability (stdev {stats['stdev']:g})")
+        else:
+            parts.append(f"Scan {label} for unusual values")
+
+    elif rec_type == "time_trend" and len(columns) >= 2:
+        num_label = _col_label(columns[1], profile)
+        time_label = _col_label(columns[0], profile)
+        row_count = profile.get("row_count", 0)
+        parts.append(f"Track how {num_label} changes over {time_label}")
+        if row_count and row_count > 50:
+            parts.append(f"({row_count} data points)")
+
+    elif rec_type == "cohort" and len(columns) >= 3:
+        cat_label = _col_label(columns[0], profile)
+        num_label = _col_label(columns[2], profile)
+        parts.append(f"Track {num_label} for each {cat_label} group over time")
+
+    elif rec_type == "forecast" and len(columns) >= 2:
+        num_label = _col_label(columns[1], profile)
+        row_count = profile.get("row_count", 0)
+        parts.append(f"Predict future {num_label}")
+        if row_count:
+            parts.append(f"from {row_count} historical data points")
+
+    # Append domain-specific trailing phrase
+    parts.append(f"— {_domain_phrase(domain, rec_type)}")
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Column scoring — rank columns by suitability for each analysis type
+# ---------------------------------------------------------------------------
+
+def _coefficient_of_variation(stats: dict) -> float:
+    """Compute coefficient of variation from column stats. Returns 0.0 if not computable."""
+    mean = stats.get("mean")
+    stdev = stats.get("stdev")
+    if mean is None or stdev is None or mean == 0:
+        return 0.0
+    return abs(stdev / mean)
+
+
+def _column_completeness(col_info: dict, row_count: int) -> float:
+    """Return fraction of non-null values (0.0 to 1.0). Returns 1.0 if unknown."""
+    null_count = col_info.get("null_count", 0)
+    if not row_count or row_count <= 0:
+        return 1.0
+    return max(0.0, 1.0 - null_count / row_count)
+
+
+def _score_categorical_for_benchmark(
+    col_name: str,
+    col_info: dict,
+    row_count: int,
+    profile: dict,
+) -> float:
+    """Score a categorical column for benchmark suitability (0.0 - 1.0).
+
+    Scoring: cardinality sweet spot [3-50] peak at ~15, named column bonus,
+    description bonus, completeness, sample diversity.
+    """
+    score = 0.0
+    cardinality = col_info.get("cardinality", 0)
+
+    # Cardinality fitness: ideal 3-50, peak around 15
+    if 3 <= cardinality <= 50:
+        distance = abs(cardinality - 15) / 15
+        score += 0.4 * max(0.0, 1.0 - distance)
+    elif cardinality > 50:
+        score += max(0.0, 0.2 - (cardinality - 50) * 0.002)
+    elif cardinality == 2:
+        score += 0.15
+
+    # Named column bonus
+    if not _is_unnamed_column(col_name, profile):
+        score += 0.25
+
+    # Has description bonus
+    descs = profile.get("column_descriptions", {})
+    if descs.get(col_name):
+        score += 0.1
+
+    # Completeness
+    completeness = _column_completeness(col_info, row_count)
+    score += 0.15 * completeness
+
+    # Sample diversity
+    samples = col_info.get("sample_values", [])
+    if len(set(samples)) >= 3:
+        score += 0.1
+
+    return min(score, 1.0)
+
+
+def _score_numeric_for_benchmark(
+    col_name: str,
+    col_info: dict,
+    row_count: int,
+    profile: dict,
+) -> float:
+    """Score a numeric column for benchmark suitability (0.0 - 1.0).
+
+    Scoring: high CV, non-zero range, named column, completeness.
+    """
+    score = 0.0
+    stats = col_info.get("stats", {})
+
+    cv = _coefficient_of_variation(stats)
+    if cv > 0:
+        score += min(0.4, cv * 0.4)
+
+    min_val = stats.get("min")
+    max_val = stats.get("max")
+    if min_val is not None and max_val is not None and max_val > min_val:
+        score += 0.2
+
+    if not _is_unnamed_column(col_name, profile):
+        score += 0.2
+
+    descs = profile.get("column_descriptions", {})
+    if descs.get(col_name):
+        score += 0.05
+
+    completeness = _column_completeness(col_info, row_count)
+    if completeness < 0.7:
+        score -= 0.15
+    else:
+        score += 0.15 * completeness
+
+    return max(0.0, min(score, 1.0))
+
+
+def _score_numeric_for_correlation(
+    col_name: str,
+    col_info: dict,
+    row_count: int,
+    profile: dict,
+) -> float:
+    """Score a numeric column for correlation analysis (0.0 - 1.0).
+
+    Higher variance = more likely to show correlation patterns.
+    """
+    score = 0.0
+    stats = col_info.get("stats", {})
+    stdev = stats.get("stdev", 0) or 0
+
+    cv = _coefficient_of_variation(stats)
+    score += min(0.4, cv * 0.5)
+
+    if stdev > 0:
+        score += 0.2
+
+    if not _is_unnamed_column(col_name, profile):
+        score += 0.2
+
+    completeness = _column_completeness(col_info, row_count)
+    score += 0.2 * completeness
+
+    return max(0.0, min(score, 1.0))
+
+
+def _score_numeric_for_anomaly(
+    col_name: str,
+    col_info: dict,
+    row_count: int,
+    profile: dict,
+) -> float:
+    """Score a numeric column for anomaly detection (0.0 - 1.0).
+
+    High CV = most variable = most likely to have meaningful outliers.
+    Constant columns (stdev=0) → hard 0.
+    """
+    stats = col_info.get("stats", {})
+    if (stats.get("stdev") or 0) == 0:
+        return 0.0
+
+    score = 0.0
+    cv = _coefficient_of_variation(stats)
+    score += min(0.45, cv * 0.5)
+
+    if not _is_unnamed_column(col_name, profile):
+        score += 0.25
+
+    completeness = _column_completeness(col_info, row_count)
+    score += 0.15 * completeness
+
+    descs = profile.get("column_descriptions", {})
+    if descs.get(col_name):
+        score += 0.1
+
+    return max(0.0, min(score, 1.0))
+
+
+_TREND_DOMAIN_KEYWORDS: dict[str, list[str]] = {
+    "manufacturing": ["output", "yield", "tonnage", "weight", "production", "power", "energy", "cost"],
+    "procurement": ["rate", "price", "cost", "amount", "quantity"],
+    "quality": ["defect", "rejection", "scrap", "yield"],
+    "energy": ["kwh", "kva", "power", "consumption", "demand"],
+    "logistics": ["dispatch", "delivery", "turnaround"],
+}
+
+
+def _score_numeric_for_trend(
+    col_name: str,
+    col_info: dict,
+    row_count: int,
+    profile: dict,
+    domain: str = "general",
+) -> float:
+    """Score a numeric column for time trend analysis (0.0 - 1.0).
+
+    Prefers business-relevant numerics. Domain keywords boost score.
+    """
+    stats = col_info.get("stats", {})
+    if (stats.get("stdev") or 0) == 0:
+        return 0.0
+
+    score = 0.0
+
+    if not _is_unnamed_column(col_name, profile):
+        score += 0.25
+
+    descs = profile.get("column_descriptions", {})
+    if descs.get(col_name):
+        score += 0.15
+
+    kws = _TREND_DOMAIN_KEYWORDS.get(domain, [])
+    col_lower = col_name.lower()
+    if any(kw in col_lower for kw in kws):
+        score += 0.25
+
+    cv = _coefficient_of_variation(stats)
+    score += min(0.2, cv * 0.25)
+
+    completeness = _column_completeness(col_info, row_count)
+    score += 0.15 * completeness
+
+    return max(0.0, min(score, 1.0))
+
+
+def _rank_columns(
+    columns: dict[str, dict],
+    row_count: int,
+    profile: dict,
+    scorer,
+    **scorer_kwargs,
+) -> list[str]:
+    """Rank columns by score using the given scorer function.
+
+    Returns column names sorted descending by score.
+    """
+    scored = []
+    for col_name, col_info in columns.items():
+        s = scorer(col_name, col_info, row_count, profile, **scorer_kwargs)
+        scored.append((col_name, s))
+    scored.sort(key=lambda x: -x[1])
+    return [name for name, _ in scored]
+
+
+# ---------------------------------------------------------------------------
+# Data fitness priority adjustment
+# ---------------------------------------------------------------------------
+
+def _data_fitness_adjustment(
+    rec_type: str,
+    profile: dict,
+    columns: list[str],
+) -> int:
+    """Return a priority adjustment (-20 to +20) based on data fitness.
+
+    Boosts high-quality column combinations, penalizes low-quality ones.
+    """
+    cls = _get_columns(profile)
+    row_count = profile.get("row_count", 0) or 0
+    adjustment = 0
+
+    if rec_type == "benchmark" and len(columns) >= 2:
+        cat_info = cls.get(columns[0], {})
+        num_info = cls.get(columns[1], {})
+
+        card = cat_info.get("cardinality", 0)
+        if 5 <= card <= 30:
+            adjustment += 10
+        elif 3 <= card <= 50:
+            adjustment += 5
+        elif card > 100:
+            adjustment -= 10
+        elif card < 3:
+            adjustment -= 5
+
+        cv = _coefficient_of_variation(num_info.get("stats", {}))
+        if cv > 0.5:
+            adjustment += 8
+        elif cv > 0.2:
+            adjustment += 4
+        elif cv < 0.05:
+            adjustment -= 8
+
+        for col in columns[:2]:
+            info = cls.get(col, {})
+            if _column_completeness(info, row_count) < 0.7:
+                adjustment -= 5
+
+    elif rec_type == "correlation":
+        cvs = []
+        for col in columns:
+            info = cls.get(col, {})
+            cvs.append(_coefficient_of_variation(info.get("stats", {})))
+        avg_cv = sum(cvs) / len(cvs) if cvs else 0
+        if avg_cv > 0.5:
+            adjustment += 10
+        elif avg_cv > 0.2:
+            adjustment += 5
+        elif avg_cv < 0.05:
+            adjustment -= 10
+
+    elif rec_type == "anomaly":
+        if columns:
+            info = cls.get(columns[0], {})
+            cv = _coefficient_of_variation(info.get("stats", {}))
+            if cv > 0.5:
+                adjustment += 10
+            elif cv > 0.2:
+                adjustment += 5
+
+    elif rec_type in ("time_trend", "forecast"):
+        if len(columns) >= 2:
+            info = cls.get(columns[1], {})
+            cv = _coefficient_of_variation(info.get("stats", {}))
+            if cv > 0.3:
+                adjustment += 8
+            if row_count > 200:
+                adjustment += 5
+
+    elif rec_type == "cohort":
+        if len(columns) >= 3:
+            cat_info = cls.get(columns[0], {})
+            card = cat_info.get("cardinality", 0)
+            if 3 <= card <= 20:
+                adjustment += 8
+            elif card > 50:
+                adjustment -= 8
+
+    return max(-20, min(20, adjustment))
+
+
+# ---------------------------------------------------------------------------
+# Insight-driven follow-up recommendations
+# ---------------------------------------------------------------------------
+
+def _recommend_insight_followups(
+    profile: dict,
+    table_insights: list[dict],
+    columns: dict,
+    domain: str,
+) -> list[Recommendation]:
+    """Generate follow-up recommendations based on existing insight results.
+
+    Maps insight findings to targeted next-step analyses:
+    - Critical/warning anomaly → correlate with categoricals + time to find root cause
+    - Strong correlation → track relationship over time
+    - Multiple insights → suggest composite/story analysis
+    """
+    recs: list[Recommendation] = []
+    table_name = profile.get("table_name", "")
+    tbl_label = _table_label(table_name, profile)
+    row_count = profile.get("row_count", 0) or 0
+
+    # Categorize insights by type and severity
+    critical_anomalies: list[dict] = []
+    strong_correlations: list[dict] = []
+
+    for ins in table_insights:
+        itype = ins.get("insight_type", "")
+        severity = ins.get("severity", "info")
+        evidence = ins.get("evidence") or {}
+
+        if itype == "anomaly" and severity in ("critical", "warning"):
+            critical_anomalies.append(ins)
+        elif itype == "correlation":
+            r_val = evidence.get("estimated_correlation") or evidence.get("r_value") or 0
+            if abs(r_val) >= 0.7:
+                strong_correlations.append(ins)
+
+    cat_cols = [c for c, info in columns.items() if info.get("semantic_type") == "categorical"]
+    temporal_cols = [c for c, info in columns.items() if info.get("semantic_type") == "temporal"]
+
+    # Follow-up 1: Critical anomaly → investigate root cause
+    for anom in critical_anomalies[:2]:
+        anom_cols = anom.get("source_columns") or []
+        if not anom_cols:
+            continue
+        anom_col = anom_cols[0]
+        anom_label = _col_label(anom_col, profile)
+
+        # Benchmark: break anomalous column down by categorical
+        if cat_cols:
+            # Pick best categorical using ranking
+            cat_subset = {c: columns[c] for c in cat_cols}
+            ranked_cats = _rank_columns(cat_subset, row_count, profile, _score_categorical_for_benchmark)
+            best_cat = ranked_cats[0] if ranked_cats else cat_cols[0]
+            cat_label = _col_label(best_cat, profile)
+            recs.append(Recommendation(
+                title=f"Investigate {anom_label} anomalies by {cat_label} in {tbl_label}",
+                description=(
+                    f"Critical anomalies detected in {anom_label}. "
+                    f"Break down by {cat_label} to identify which group is driving the outliers."
+                ),
+                analysis_type="benchmark",
+                target_table=table_name,
+                columns=[best_cat, anom_col],
+                priority=88,
+                reason=f"Follow-up: {anom.get('severity', 'warning')} anomaly in {anom_label} needs root-cause analysis — {_domain_phrase(domain, 'benchmark')}",
+            ))
+
+        # Time trend: check if anomaly is increasing, seasonal, or one-time
+        if temporal_cols:
+            time_col = temporal_cols[0]
+            time_label = _col_label(time_col, profile)
+            recs.append(Recommendation(
+                title=f"Track {anom_label} anomaly pattern over {time_label}",
+                description=(
+                    f"Check whether anomalies in {anom_label} are increasing, seasonal, or one-time events."
+                ),
+                analysis_type="time_trend",
+                target_table=table_name,
+                columns=[time_col, anom_col],
+                priority=85,
+                reason=f"Follow-up: track when {anom_label} outliers occur — {_domain_phrase(domain, 'trend')}",
+            ))
+
+    # Follow-up 2: Strong correlation → track over time
+    for corr in strong_correlations[:2]:
+        corr_cols = corr.get("source_columns") or []
+        evidence = corr.get("evidence") or {}
+        r_val = evidence.get("estimated_correlation") or evidence.get("r_value") or 0
+
+        if len(corr_cols) >= 2 and temporal_cols:
+            col_a_label = _col_label(corr_cols[0], profile)
+            col_b_label = _col_label(corr_cols[1], profile)
+            time_col = temporal_cols[0]
+            recs.append(Recommendation(
+                title=f"Track {col_a_label}–{col_b_label} relationship over time",
+                description=(
+                    f"Strong correlation (r={r_val:.2f}) found between {col_a_label} and {col_b_label}. "
+                    f"Check if this relationship is stable or changing."
+                ),
+                analysis_type="time_trend",
+                target_table=table_name,
+                columns=[time_col, corr_cols[0], corr_cols[1]],
+                priority=82,
+                reason=f"Follow-up: r={r_val:.2f} correlation warrants temporal tracking — {_domain_phrase(domain, 'trend')}",
+            ))
+
+    # Follow-up 3: Multiple insights on same table → suggest story/composite
+    if len(table_insights) >= 3:
+        insight_types_present = {ins.get("insight_type") for ins in table_insights}
+        if len(insight_types_present) >= 2:
+            recs.append(Recommendation(
+                title=f"Build data story for {tbl_label}",
+                description=(
+                    f"This table has {len(table_insights)} insights across {len(insight_types_present)} types. "
+                    f"Combine into a narrative that explains the big picture."
+                ),
+                analysis_type="story",
+                target_table=table_name,
+                columns=[],
+                priority=78,
+                reason=f"Multiple findings ({', '.join(sorted(insight_types_present))}) suggest a composite narrative would be valuable.",
+            ))
+
+    return recs
+
+
 def _infer_entity_type_from_column(col_name: str) -> str | None:
     """Try to infer which entity type a column represents from its name."""
     if not col_name:
@@ -955,8 +1810,16 @@ def _infer_entity_type_from_column(col_name: str) -> str | None:
     return None
 
 
-def _time_priority(row_count: int, insight_count: int) -> int:
-    base = 80
+def _get_rl_mult(reinforcement_weights, analysis_type: str) -> float:
+    """Get reinforcement multiplier for an analysis type. Returns 1.0 if None."""
+    if reinforcement_weights is None:
+        return 1.0
+    from business_brain.discovery.reinforcement_loop import get_multiplier
+    return get_multiplier(reinforcement_weights, "analysis_type_multipliers", analysis_type)
+
+
+def _time_priority(row_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(80 * multiplier)
     if insight_count > 5:
         base -= 20
     if row_count > 100:
@@ -964,8 +1827,8 @@ def _time_priority(row_count: int, insight_count: int) -> int:
     return min(max(base, 10), 100)
 
 
-def _benchmark_priority(row_count: int, cat_count: int, insight_count: int) -> int:
-    base = 70
+def _benchmark_priority(row_count: int, cat_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(70 * multiplier)
     if cat_count > 2:
         base += 10
     if insight_count > 5:
@@ -973,8 +1836,8 @@ def _benchmark_priority(row_count: int, cat_count: int, insight_count: int) -> i
     return min(max(base, 10), 100)
 
 
-def _correlation_priority(num_col_count: int, insight_count: int) -> int:
-    base = 65
+def _correlation_priority(num_col_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(65 * multiplier)
     if num_col_count > 4:
         base += 15
     if insight_count > 3:
@@ -982,8 +1845,8 @@ def _correlation_priority(num_col_count: int, insight_count: int) -> int:
     return min(max(base, 10), 100)
 
 
-def _anomaly_priority(row_count: int, insight_count: int) -> int:
-    base = 75
+def _anomaly_priority(row_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(75 * multiplier)
     if row_count > 200:
         base += 5
     if insight_count > 5:
@@ -991,8 +1854,8 @@ def _anomaly_priority(row_count: int, insight_count: int) -> int:
     return min(max(base, 10), 100)
 
 
-def _cohort_priority(row_count: int, insight_count: int) -> int:
-    base = 60
+def _cohort_priority(row_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(60 * multiplier)
     if row_count > 100:
         base += 10
     if insight_count > 5:
@@ -1000,8 +1863,8 @@ def _cohort_priority(row_count: int, insight_count: int) -> int:
     return min(max(base, 10), 100)
 
 
-def _forecast_priority(row_count: int, insight_count: int) -> int:
-    base = 55
+def _forecast_priority(row_count: int, insight_count: int, multiplier: float = 1.0) -> int:
+    base = int(55 * multiplier)
     if row_count > 50:
         base += 10
     if insight_count > 5:

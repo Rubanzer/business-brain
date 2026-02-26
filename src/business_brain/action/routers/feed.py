@@ -60,6 +60,17 @@ async def get_feed(session: AsyncSession = Depends(get_session)) -> list[dict]:
                 if not i.source_tables or any(t in focus_set for t in (i.source_tables or []))
             ]
 
+        # Track which insights were shown (fire-and-forget)
+        try:
+            from business_brain.discovery.engagement_tracker import track_insights_shown
+            await track_insights_shown(session, [
+                {"id": i.id, "insight_type": i.insight_type, "severity": i.severity,
+                 "impact_score": i.impact_score, "source_tables": i.source_tables}
+                for i in insights
+            ])
+        except Exception:
+            pass
+
         return [
             {
                 "id": i.id,
@@ -129,6 +140,14 @@ async def dismiss_all_insights(session: AsyncSession = Depends(get_session)) -> 
     from business_brain.discovery.feed_store import dismiss_all
 
     count = await dismiss_all(session)
+
+    # Track bulk dismiss (fire-and-forget)
+    try:
+        from business_brain.discovery.engagement_tracker import track_insights_dismissed_all
+        await track_insights_dismissed_all(session, count)
+    except Exception:
+        pass
+
     return {"status": "ok", "dismissed": count}
 
 
@@ -142,6 +161,26 @@ async def update_insight_status(
     from business_brain.discovery.feed_store import update_status
 
     await update_status(session, insight_id, req.status)
+
+    # Track status change (fire-and-forget)
+    try:
+        from sqlalchemy import select as sa_select
+        from business_brain.db.discovery_models import Insight
+        from business_brain.discovery.engagement_tracker import track_insight_action
+        insight = (await session.execute(
+            sa_select(Insight).where(Insight.id == insight_id)
+        )).scalar_one_or_none()
+        if insight:
+            await track_insight_action(
+                session, insight_id, req.status,
+                insight_type=insight.insight_type,
+                severity=insight.severity,
+                impact_score=insight.impact_score,
+                source_tables=insight.source_tables,
+            )
+    except Exception:
+        pass
+
     return {"status": "updated", "insight_id": insight_id, "new_status": req.status}
 
 
@@ -156,6 +195,26 @@ async def deploy_insight_as_report(
 
     try:
         report = await deploy_insight(session, insight_id, req.name)
+
+        # Track deployment (fire-and-forget)
+        try:
+            from sqlalchemy import select as sa_select
+            from business_brain.db.discovery_models import Insight
+            from business_brain.discovery.engagement_tracker import track_insight_action
+            insight = (await session.execute(
+                sa_select(Insight).where(Insight.id == insight_id)
+            )).scalar_one_or_none()
+            if insight:
+                await track_insight_action(
+                    session, insight_id, "deployed",
+                    insight_type=insight.insight_type,
+                    severity=insight.severity,
+                    impact_score=insight.impact_score,
+                    source_tables=insight.source_tables,
+                )
+        except Exception:
+            pass
+
         return {
             "status": "deployed",
             "report_id": report.id,
@@ -222,3 +281,23 @@ async def export_feed(session: AsyncSession = Depends(get_session)):
         media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="insights_feed.json"'},
     )
+
+
+@router.get("/engagement/summary")
+async def get_engagement_summary_endpoint(
+    days: int = 30,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get aggregated engagement metrics for the last N days.
+
+    Returns breakdowns by event_type, analysis_type (with engagement rates),
+    severity, and table. Used by Phase 3 reinforcement loop and admin dashboards.
+    """
+    from business_brain.discovery.engagement_tracker import get_engagement_summary
+
+    try:
+        return await get_engagement_summary(session, days=days)
+    except Exception:
+        logger.exception("Engagement summary failed")
+        return {"period_days": days, "total_events": 0, "by_event_type": {},
+                "by_analysis_type": {}, "by_severity": {}, "by_table": {}}
