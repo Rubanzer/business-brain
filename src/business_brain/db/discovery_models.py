@@ -155,6 +155,38 @@ class PrecomputedAnalysis(Base):
     data_hash = Column(String(64), nullable=True)  # from TableProfile — stale detection
 
 
+# ---------------------------------------------------------------------------
+# Engagement Tracking (Background Intelligence Engine — Phase 2)
+# ---------------------------------------------------------------------------
+
+
+class EngagementEvent(Base):
+    """Tracks user interactions with insights and recommendations.
+
+    Every time a user views the feed, deploys an insight, dismisses insights,
+    or views recommendations, an event is recorded here. These events feed
+    the Phase 3 reinforcement loop for scoring weight adjustment.
+    """
+
+    __tablename__ = "engagement_events"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    event_type = Column(String(30), nullable=False)
+    # Events: insight_shown, insight_seen, insight_deployed,
+    #         insight_dismissed, insights_dismissed_all,
+    #         recommendation_shown
+    entity_type = Column(String(20), nullable=False)  # "insight" | "recommendation"
+    entity_id = Column(String(36), nullable=True)  # insight_id or rec hash
+    analysis_type = Column(String(30), nullable=True)  # benchmark/correlation/anomaly/etc
+    table_name = Column(String(255), nullable=True)  # primary table involved
+    columns = Column(JSON, nullable=True)  # columns involved
+    severity = Column(String(20), nullable=True)  # insight severity if applicable
+    impact_score = Column(Integer, nullable=True)  # insight score if applicable
+    extra_metadata = Column(JSON, nullable=True)  # extra context (count, report_name, etc)
+    session_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class DeployedReport(Base):
     """Persistent reports created from insights."""
 

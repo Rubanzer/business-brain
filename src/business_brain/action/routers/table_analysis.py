@@ -1065,6 +1065,17 @@ async def get_recommendations(session: AsyncSession = Depends(get_session)):
     )
     coverage = compute_coverage(profile_dicts, insight_dicts)
 
+    # Track which recommendations were shown (fire-and-forget)
+    try:
+        from business_brain.discovery.engagement_tracker import track_recommendations_shown
+        await track_recommendations_shown(session, [
+            {"analysis_type": r.analysis_type, "target_table": r.target_table,
+             "columns": r.columns, "confidence": r.confidence, "priority": r.priority}
+            for r in recs
+        ])
+    except Exception:
+        pass
+
     return {
         "recommendations": [
             {
