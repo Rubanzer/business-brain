@@ -466,6 +466,25 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    .btn-loading {
+      opacity: 0.7;
+      cursor: wait;
+      pointer-events: none;
+      position: relative;
+    }
+    .btn-loading::after {
+      content: '';
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
     .meta-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -2134,8 +2153,8 @@
         <div class="disc-stats" id="disc-stats">
           <span>No discovery runs yet</span>
         </div>
-        <button class="btn-export btn-sm" onclick="exportFeed('json')" title="Export insights as JSON">Export JSON</button>
-        <button class="btn-export btn-sm" onclick="exportFeed('csv')" title="Export insights as CSV">Export CSV</button>
+        <button class="btn-export btn-sm" onclick="exportFeed('json', this)" title="Export insights as JSON">Export JSON</button>
+        <button class="btn-export btn-sm" onclick="exportFeed('csv', this)" title="Export insights as CSV">Export CSV</button>
         <button class="btn-sm btn-secondary" onclick="dismissAllInsights()" id="dismiss-all-btn">Dismiss All</button>
         <button class="btn-sm btn-secondary" onclick="loadDailyBriefing()" id="briefing-btn" title="View daily intelligence briefing">Daily Briefing</button>
         <button class="btn-sm" onclick="triggerDiscovery()" id="scan-btn">Scan Now</button>
@@ -2191,7 +2210,7 @@
         <textarea id="ctx-text" placeholder="Enter business context (e.g., 'Enterprise customers generate 80% of our revenue')"></textarea>
         <div class="context-row">
           <input type="text" id="ctx-source" placeholder="Source (optional)" value="manual" />
-          <button onclick="submitContext()">Submit Context</button>
+          <button onclick="submitContext(this)">Submit Context</button>
         </div>
       </div>
       <div class="ctx-file-zone" id="ctx-file-zone">
@@ -2235,12 +2254,12 @@
     <div id="alerts" class="panel">
       <div class="alert-nl-input">
         <input type="text" id="alert-text" placeholder="Describe an alert condition (e.g., 'Alert me when truck count exceeds 40')..." />
-        <button onclick="deployAlert()">Deploy Alert</button>
+        <button onclick="deployAlert(this)">Deploy Alert</button>
       </div>
       <div id="alert-confirmation" style="display:none;" class="meta-card">
         <p id="alert-confirm-text"></p>
         <div style="display:flex;gap:0.4rem;margin-top:0.5rem;">
-          <button class="btn-sm" onclick="confirmAlertDeploy()">Confirm</button>
+          <button class="btn-sm" onclick="confirmAlertDeploy(this)">Confirm</button>
           <button class="btn-sm btn-secondary" onclick="cancelAlertDeploy()">Cancel</button>
         </div>
       </div>
@@ -2473,7 +2492,7 @@
           <textarea id="ob-systems" rows="4" placeholder="Tally - Financial accounting&#10;VEGA - Truck/logistics management&#10;SCADA - Electrical monitoring"></textarea>
         </div>
         <div style="display:flex;gap:0.5rem;">
-          <button onclick="saveOnboarding()">Save Profile</button>
+          <button onclick="saveOnboarding(this)">Save Profile</button>
           <button class="btn-secondary" onclick="loadOnboarding()">Refresh</button>
         </div>
       </div>
@@ -2563,7 +2582,7 @@
           <textarea id="ctx-text" rows="2" placeholder="Enter business context (e.g., 'Enterprise customers generate 80% of our revenue')" style="font-size:0.75rem;"></textarea>
           <div style="display:flex;gap:0.3rem;margin-top:0.3rem;">
             <input type="text" id="ctx-source" placeholder="Source label" value="manual" style="font-size:0.72rem;flex:1;" />
-            <button class="btn-sm" onclick="submitContext()">Add</button>
+            <button class="btn-sm" onclick="submitContext(this)">Add</button>
           </div>
         </div>
         <div id="context-entries-body">
@@ -2616,7 +2635,7 @@
         <input type="hidden" id="ps-edit-id" value="" />
         <input type="hidden" id="ps-table" value="" />
         <div class="form-actions">
-          <button onclick="submitProcessStep()">Save Step</button>
+          <button onclick="submitProcessStep(this)">Save Step</button>
           <button class="btn-secondary" onclick="document.getElementById('process-step-modal').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -2641,7 +2660,7 @@
           <div><label>Critical Above</label><input type="number" id="dm-crit-max" step="any" placeholder="e.g., 750" /></div>
         </div>
         <div class="form-actions">
-          <button onclick="submitDerivedMetric()">Create Metric</button>
+          <button onclick="submitDerivedMetric(this)">Create Metric</button>
           <button class="btn-secondary" onclick="document.getElementById('derived-metric-modal').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -2674,7 +2693,7 @@
         <label>Linked Table</label>
         <input type="text" id="io-table" placeholder="e.g., purchases" />
         <div class="form-actions">
-          <button onclick="submitProcessIO()">Save</button>
+          <button onclick="submitProcessIO(this)">Save</button>
           <button class="btn-secondary" onclick="document.getElementById('process-io-modal').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -2860,7 +2879,7 @@
             <option value="basic">Basic</option>
             <option value="pro" selected>Pro</option>
           </select>
-          <button onclick="sendInvite()" style="margin-top:0.8rem;">Send Invite</button>
+          <button onclick="sendInvite(this)" style="margin-top:0.8rem;">Send Invite</button>
           <div id="invite-result" style="display:none;margin-top:0.7rem;"></div>
         </div>
       </div>
@@ -2969,7 +2988,7 @@
             </div>
             <div style="display:flex;justify-content:space-between;">
               <button class="btn-sm btn-secondary" onclick="goDeployStep(2)">&#8592; Back</button>
-              <button onclick="confirmDeploy()">Deploy Report &#8594;</button>
+              <button onclick="confirmDeploy(this)">Deploy Report &#8594;</button>
             </div>
           </div>
         </div>
@@ -3021,7 +3040,7 @@
             <input type="text" id="src-table-name" placeholder="auto-generated from sheet name" />
             <label>Sync Frequency (minutes, 0 = manual only)</label>
             <input type="number" id="src-freq" value="5" min="0" />
-            <button onclick="submitGoogleSheet()">Connect Sheet</button>
+            <button onclick="submitGoogleSheet(this)">Connect Sheet</button>
           </div>
         </div>
         <div id="source-api-form" style="display:none;">
@@ -3034,7 +3053,7 @@
             <input type="text" id="src-api-table" placeholder="erp_production" />
             <label>Sync Frequency (minutes, 0 = manual only)</label>
             <input type="number" id="src-api-freq" value="0" min="0" />
-            <button onclick="submitApiSource()">Connect API</button>
+            <button onclick="submitApiSource(this)">Connect API</button>
           </div>
         </div>
       </div>
@@ -3073,7 +3092,7 @@
             <input type="number" id="th-critical-min" placeholder="Min" />
             <input type="number" id="th-critical-max" placeholder="Max" />
           </div>
-          <button onclick="submitThreshold()">Save Threshold</button>
+          <button onclick="submitThreshold(this)">Save Threshold</button>
         </div>
       </div>
     </div>
@@ -3174,6 +3193,39 @@
       const text = await res.text();
       try { return JSON.parse(text); } catch (_) {
         throw new Error('Invalid response from server');
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Async button helpers — loading state, double-click prevention, error toast
+    // -----------------------------------------------------------------------
+    async function asyncAction(btn, asyncFn, opts = {}) {
+      if (!btn || btn.disabled || btn.classList.contains('btn-loading')) return;
+      const origHTML = btn.innerHTML;
+      btn.classList.add('btn-loading');
+      btn.disabled = true;
+      if (opts.loadingText) btn.textContent = opts.loadingText;
+      try {
+        const result = await asyncFn();
+        if (opts.successText) toast(opts.successText);
+        return result;
+      } catch (e) {
+        toast((opts.errorPrefix || 'Error') + ': ' + e.message);
+      } finally {
+        btn.classList.remove('btn-loading');
+        btn.disabled = false;
+        if (opts.restoreHTML !== false) btn.innerHTML = origHTML;
+      }
+    }
+
+    const _inflightOps = new Set();
+    async function asyncActionKeyed(key, btn, asyncFn, opts = {}) {
+      if (_inflightOps.has(key)) { toast('Already in progress\u2026'); return; }
+      _inflightOps.add(key);
+      try {
+        return await asyncAction(btn, asyncFn, opts);
+      } finally {
+        _inflightOps.delete(key);
       }
     }
 
@@ -3420,7 +3472,7 @@
                   ${isOwner || isSelf ? 'disabled' : ''}>
                   ${roleOptions}
                 </select>
-                ${!isSelf && !isOwner && u.is_active ? `<button class="btn-sm" style="background:var(--red);color:#fff;font-size:0.65rem;" onclick="deactivateUser('${u.id}', '${esc(u.name)}')">Deactivate</button>` : ''}
+                ${!isSelf && !isOwner && u.is_active ? `<button class="btn-sm" style="background:var(--red);color:#fff;font-size:0.65rem;" onclick="deactivateUser('${u.id}', '${esc(u.name)}', this)">Deactivate</button>` : ''}
               </div>
             </div>`;
         }).join('');
@@ -3430,36 +3482,30 @@
     }
 
     async function changeUserRole(userId, newRole, selectEl) {
-      try {
+      await asyncAction(selectEl, async () => {
         await apiFetch(API + `/users/${userId}/role`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ role: newRole }),
         });
-        toast('Role updated to ' + newRole);
-      } catch (e) {
-        toast('Failed: ' + e.message);
-        loadUsersList(); // reload to reset dropdown
-      }
+      }, { successText: 'Role updated to ' + newRole, errorPrefix: 'Failed' });
     }
 
-    async function deactivateUser(userId, userName) {
+    async function deactivateUser(userId, userName, btn) {
       if (!confirm(`Deactivate user "${userName}"? They will lose access immediately.`)) return;
-      try {
+      await asyncAction(btn, async () => {
         await apiFetch(API + `/users/${userId}`, { method: 'DELETE' });
-        toast(userName + ' has been deactivated');
         loadUsersList();
-      } catch (e) {
-        toast('Failed: ' + e.message);
-      }
+      }, { successText: userName + ' has been deactivated', errorPrefix: 'Failed' });
     }
 
-    async function sendInvite() {
+    async function sendInvite(btn) {
       const email = document.getElementById('invite-email').value.trim();
       const role = document.getElementById('invite-role').value;
       const plan = document.getElementById('invite-plan').value;
       if (!email) { toast('Email is required'); return; }
-      try {
+
+      await asyncAction(btn, async () => {
         const result = await apiFetch(API + '/auth/invite', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3475,9 +3521,7 @@
             <span style="font-size:0.62rem;color:var(--muted);">Expires in 7 days. Role: ${esc(role)} &middot; Plan: ${esc(plan)}</span>
           </div>`;
         document.getElementById('invite-email').value = '';
-      } catch (e) {
-        toast('Invite failed: ' + e.message);
-      }
+      }, { loadingText: 'Sending\u2026', errorPrefix: 'Invite failed' });
     }
 
     async function loadPendingInvites() {
@@ -4027,14 +4071,13 @@
       } catch (e) { /* ignore */ }
     }
 
-    async function submitProcessStep() {
+    async function submitProcessStep(btn) {
       const name = document.getElementById('ps-name').value.trim();
       if (!name) return toast('Process name is required');
 
       // Build target_ranges from per-metric range inputs, or fallback to single range
       const singleRange = document.getElementById('ps-range')?.value?.trim() || '';
       const targetRanges = Object.keys(currentMetricRanges).length ? { ...currentMetricRanges } : {};
-      // If single range input was used (no per-metric inputs) and we have metrics, map it
       if (singleRange && !Object.keys(targetRanges).length && currentMetricTags.length) {
         targetRanges[currentMetricTags[0]] = singleRange;
       }
@@ -4053,27 +4096,24 @@
 
       const editId = document.getElementById('ps-edit-id').value;
 
-      try {
+      await asyncAction(btn, async () => {
         if (editId) {
           await apiFetch(`/process-steps/${editId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          toast('Step updated');
         } else {
           await apiFetch('/process-steps', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          toast('Step added');
         }
         document.getElementById('process-step-modal').style.display = 'none';
         loadProcessSteps();
         updateSetupChecklist();
 
-        // Green glow effect on the newly added row
         setTimeout(() => {
           const table = document.getElementById('process-steps-body')?.querySelector('table');
           if (table) {
@@ -4085,9 +4125,7 @@
             }
           }
         }, 300);
-      } catch (e) {
-        toast('Failed to save step: ' + e.message);
-      }
+      }, { successText: editId ? 'Step updated' : 'Step added', errorPrefix: 'Failed to save step' });
     }
 
     // -----------------------------------------------------------------------
@@ -4111,7 +4149,7 @@
       document.getElementById('io-name').focus();
     }
 
-    async function submitProcessIO() {
+    async function submitProcessIO(btn) {
       const name = document.getElementById('io-name').value.trim();
       if (!name) return toast('Name is required');
 
@@ -4125,18 +4163,16 @@
         linked_table: document.getElementById('io-table').value.trim(),
       };
 
-      try {
+      await asyncAction(btn, async () => {
         await apiFetch('/process-io', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        toast(`${ioType.charAt(0).toUpperCase() + ioType.slice(1)} added`);
         document.getElementById('process-io-modal').style.display = 'none';
         loadProcessIO();
         updateSetupChecklist();
 
-        // Green glow on new entry
         setTimeout(() => {
           const body = document.getElementById('process-io-body');
           if (body) {
@@ -4152,9 +4188,7 @@
             }
           }
         }, 300);
-      } catch (e) {
-        toast('Failed to save: ' + e.message);
-      }
+      }, { successText: `${ioType.charAt(0).toUpperCase() + ioType.slice(1)} added`, errorPrefix: 'Failed to save' });
     }
 
     // Load Data tab sub-content (wiring to existing functions where possible)
@@ -4230,7 +4264,7 @@
             html += `<div class="ctx-entry">
               <div class="ctx-actions">
                 ${isEditable ? `<button onclick="editContextEntry(${entry.id})">Edit</button>` : ''}
-                <button onclick="deleteContextEntry(${entry.id})" style="color:#e74c3c;">Delete</button>
+                <button onclick="deleteContextEntry(${entry.id}, this)" style="color:#e74c3c;">Delete</button>
               </div>
               <div style="padding-right:5rem;">${truncated}</div>
             </div>`;
@@ -4269,37 +4303,31 @@
           addBtn.onclick = async () => {
             const newContent = ctxText.value.trim();
             if (!newContent) return toast('Enter content');
-            try {
-              await fetch(`/context/entries/${id}`, {
+            await asyncAction(addBtn, async () => {
+              await apiFetch(`/context/entries/${id}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({content: newContent})
               });
-              toast('Context updated');
               ctxText.value = '';
               ctxText.placeholder = "Enter business context (e.g., 'Enterprise customers generate 80% of our revenue')";
               delete ctxText.dataset.editId;
               addBtn.textContent = 'Add';
-              addBtn.onclick = () => submitContext();
+              addBtn.onclick = () => submitContext(addBtn);
               loadContextEntries();
               updateSetupChecklist();
-            } catch (e) {
-              toast('Failed to update context');
-            }
+            }, { successText: 'Context updated', errorPrefix: 'Failed to update context', restoreHTML: false });
           };
         }
       }
     }
 
-    async function deleteContextEntry(id) {
+    async function deleteContextEntry(id, btn) {
       if (!confirm('Delete this context entry?')) return;
-      try {
-        await fetch(`/context/entries/${id}`, {method: 'DELETE'});
-        toast('Context deleted');
+      await asyncAction(btn, async () => {
+        await apiFetch(`/context/entries/${id}`, {method: 'DELETE'});
         loadContextEntries();
-      } catch (e) {
-        toast('Failed to delete context');
-      }
+      }, { successText: 'Context deleted', errorPrefix: 'Failed to delete context' });
     }
 
     // ---- Process Steps Management ----
@@ -4339,7 +4367,7 @@
             })()}</td>
             <td style="white-space:nowrap;">
               <button class="btn-sm" onclick="editProcessStep(${s.id})" style="font-size:0.6rem;">Edit</button>
-              <button class="btn-sm" onclick="deleteProcessStep(${s.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button>
+              <button class="btn-sm" onclick="deleteProcessStep(${s.id}, this)" style="font-size:0.6rem;color:#e74c3c;">Del</button>
             </td>
           </tr>`;
         }
@@ -4355,9 +4383,12 @@
     function showAddProcessStepModal() { openProcessStepModal(); }
     function editProcessStep(id) { openProcessStepModal(id); }
 
-    async function deleteProcessStep(id) {
+    async function deleteProcessStep(id, btn) {
       if (!confirm('Delete this process step?')) return;
-      fetch(`/process-steps/${id}`, {method: 'DELETE'}).then(() => { toast('Deleted'); loadProcessSteps(); }).catch(() => toast('Failed'));
+      await asyncAction(btn, async () => {
+        await apiFetch(`/process-steps/${id}`, {method: 'DELETE'});
+        loadProcessSteps();
+      }, { successText: 'Deleted', errorPrefix: 'Failed to delete step' });
     }
 
     // ---- Process I/O Management ----
@@ -4379,7 +4410,7 @@
           html += '<table class="process-table"><tr><th>Name</th><th>Source</th><th>Unit</th><th>Range</th><th>Table</th><th></th></tr>';
           for (const io of inputs) {
             html += `<tr><td>${io.name}</td><td>${io.source_or_destination || '-'}</td><td>${io.unit || '-'}</td><td>${io.typical_range || '-'}</td><td>${io.linked_table || '-'}</td>
-              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
+              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id}, this)" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
           }
           html += '</table>';
         }
@@ -4389,7 +4420,7 @@
           html += '<table class="process-table"><tr><th>Name</th><th>Destination</th><th>Unit</th><th>Range</th><th>Table</th><th></th></tr>';
           for (const io of outputs) {
             html += `<tr><td>${io.name}</td><td>${io.source_or_destination || '-'}</td><td>${io.unit || '-'}</td><td>${io.typical_range || '-'}</td><td>${io.linked_table || '-'}</td>
-              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
+              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id}, this)" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
           }
           html += '</table>';
         }
@@ -4403,9 +4434,12 @@
     // showAddIOModal replaced by openIOModal/submitProcessIO above
     function showAddIOModal(ioType) { openIOModal(ioType); }
 
-    async function deleteProcessIO(id) {
+    async function deleteProcessIO(id, btn) {
       if (!confirm('Delete this entry?')) return;
-      fetch(`/process-io/${id}`, {method: 'DELETE'}).then(() => { toast('Deleted'); loadProcessIO(); }).catch(() => toast('Failed'));
+      await asyncAction(btn, async () => {
+        await apiFetch(`/process-io/${id}`, {method: 'DELETE'});
+        loadProcessIO();
+      }, { successText: 'Deleted', errorPrefix: 'Failed to delete' });
     }
 
     function showAddContextModal() {
@@ -4502,7 +4536,7 @@
             html += `<div class="auto-link-item">
               <span><strong>${s.metric_name}</strong> &rarr; ${s.table_name}.${s.column_name}?</span>
               <span class="confidence-badge">${Math.round((s.confidence||0)*100)}%</span>
-              <button class="btn-sm" onclick="acceptAutoLink('${s.metric_name}','${s.table_name}','${s.column_name}')" style="font-size:0.6rem;">Accept</button>
+              <button class="btn-sm" onclick="acceptAutoLink('${s.metric_name}','${s.table_name}','${s.column_name}', this)" style="font-size:0.6rem;">Accept</button>
             </div>`;
           }
         }
@@ -4520,18 +4554,15 @@
       }
     }
 
-    async function acceptAutoLink(metricName, tableName, columnName) {
-      try {
+    async function acceptAutoLink(metricName, tableName, columnName, btn) {
+      await asyncAction(btn, async () => {
         await apiFetch('/setup/auto-link-metrics', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accept: { metric_name: metricName, table_name: tableName, column_name: columnName } }),
         });
-        toast(`Linked ${metricName} to ${tableName}.${columnName}`);
         runAutoLink();
-      } catch (e) {
-        toast('Failed to accept link');
-      }
+      }, { successText: `Linked ${metricName} to ${tableName}.${columnName}`, errorPrefix: 'Failed to accept link' });
     }
 
     function openDerivedMetricModal() {
@@ -4546,7 +4577,7 @@
       document.getElementById('dm-name').focus();
     }
 
-    async function submitDerivedMetric() {
+    async function submitDerivedMetric(btn) {
       const name = document.getElementById('dm-name').value.trim();
       const formula = document.getElementById('dm-formula').value.trim();
       if (!name) return toast('Metric name is required');
@@ -4562,23 +4593,17 @@
         critical_max: parseFloat(document.getElementById('dm-crit-max').value) || null,
       };
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch('/metrics/derived', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        if (data.error) {
-          toast('Error: ' + data.error);
-          return;
-        }
-        toast(`Derived metric "${name}" created`);
+        if (data.error) throw new Error(data.error);
         document.getElementById('derived-metric-modal').style.display = 'none';
         loadThresholds();
         loadDerivedMetrics();
-      } catch (e) {
-        toast('Failed: ' + (e.message || 'unknown error'));
-      }
+      }, { successText: `Derived metric "${name}" created`, errorPrefix: 'Failed' });
     }
 
     async function loadDerivedMetrics() {
@@ -4678,17 +4703,16 @@
       const status = document.getElementById('analyze-status');
       const body = document.getElementById('analyze-body');
 
-      btn.disabled = true;
-      status.innerHTML = '<span class="spinner"></span> Running...';
-      body.innerHTML = '';
-      destroyCharts();
+      await asyncAction(btn, async () => {
+        status.innerHTML = '<span class="spinner"></span> Running...';
+        body.innerHTML = '';
+        destroyCharts();
 
-      addChatMessage('user', q);
+        addChatMessage('user', q);
 
-      // Fresh query → reset drill-down stack
-      if (!parentFinding) analysisStack = [];
+        // Fresh query → reset drill-down stack
+        if (!parentFinding) analysisStack = [];
 
-      try {
         const payload = { question: q, session_id: sessionId };
         if (parentFinding) payload.parent_finding = parentFinding;
 
@@ -4716,7 +4740,6 @@
             <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem;">Try rephrasing your question or check if the relevant data has been uploaded.</p>
           </div>`;
           addChatMessage('assistant', 'Analysis failed: ' + (data.error || 'Unknown error'));
-          btn.disabled = false;
           return;
         }
 
@@ -4742,11 +4765,7 @@
         autoRenderCharts(data);
 
         document.getElementById('question').value = '';
-      } catch (e) {
-        status.innerHTML = '<span class="badge badge-red">ERROR</span>';
-        body.textContent = e.message;
-      }
-      btn.disabled = false;
+      }, { restoreHTML: false });
     }
 
     document.getElementById('question').addEventListener('keydown', e => {
@@ -4800,13 +4819,13 @@
         html += `<div style="background:rgba(254,202,87,0.15);border:1px solid var(--yellow);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--yellow);display:flex;align-items:center;gap:0.5rem;">`;
         html += `<span style="font-size:1rem;">&#9888;</span>`;
         html += `<span><strong>Low Confidence (${(confidence*100).toFixed(0)}%)</strong> — The available data may not fully answer this question.</span>`;
-        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;margin-left:auto;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
+        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;margin-left:auto;" onclick="investigateDeeper(this)">&#9889; Investigate Deeper</button>`;
         html += `</div>`;
       } else if (confidence < 0.6) {
         html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">`;
         html += `<span style="font-size:0.65rem;color:var(--muted);background:rgba(68,147,248,0.1);padding:2px 8px;border-radius:10px;">`;
         html += `${queryType} &middot; ${(confidence*100).toFixed(0)}% confidence</span>`;
-        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
+        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;" onclick="investigateDeeper(this)">&#9889; Investigate Deeper</button>`;
         html += `</div>`;
       } else {
         html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">`;
@@ -4843,9 +4862,9 @@
 
       // Analysis Actions Bar (Feed-parity)
       html += `<div style="display:flex;gap:0.4rem;margin-bottom:0.75rem;flex-wrap:wrap;">`;
-      html += `<button class="btn-sm" style="background:var(--accent);color:#fff;border:none;font-weight:600;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
-      html += `<button class="btn-sm" onclick="deployFullAnalysis()">Deploy Full Analysis</button>`;
-      html += `<button class="btn-sm btn-secondary" onclick="saveFullAnalysisToFeed()">Save to Feed</button>`;
+      html += `<button class="btn-sm" style="background:var(--accent);color:#fff;border:none;font-weight:600;" onclick="investigateDeeper(this)">&#9889; Investigate Deeper</button>`;
+      html += `<button class="btn-sm" onclick="deployFullAnalysis(this)">Deploy Full Analysis</button>`;
+      html += `<button class="btn-sm btn-secondary" onclick="saveFullAnalysisToFeed(this)">Save to Feed</button>`;
       html += `<button class="btn-sm btn-secondary" onclick="exportCSV()">Export CSV</button>`;
       html += `<button class="btn-sm btn-secondary" onclick="exportPDF()">Export PDF</button>`;
       html += `</div>`;
@@ -4909,7 +4928,7 @@
             html += `<div class="finding-actions">`;
             html += `<button class="btn-sm" onclick="event.stopPropagation();deployFromAnalysis(${i})">Deploy as Report</button>`;
             html += `<button class="btn-sm btn-secondary" onclick="event.stopPropagation();drillDown(_currentFindings[${i}])">Go Deeper</button>`;
-            html += `<button class="btn-sm btn-secondary" onclick="event.stopPropagation();saveToFeed(${i})">Save to Feed</button>`;
+            html += `<button class="btn-sm btn-secondary" onclick="event.stopPropagation();saveToFeed(${i}, this)">Save to Feed</button>`;
             html += `</div>`;
             html += `</div>`;
           });
@@ -5300,39 +5319,37 @@
       autoRenderCharts(entry.data);
     }
 
-    async function investigateDeeper() {
-      // v4: Call Deep Tier API with context from last analysis
+    async function investigateDeeper(btn) {
       const lastEntry = analysisStack.length > 0
         ? analysisStack[analysisStack.length - 1]
         : null;
       if (!lastEntry) return;
 
-      const body = document.getElementById('analyze-body');
-      const question = lastEntry.question;
-      const data = lastEntry.data;
+      await asyncActionKeyed('deep-tier', btn, async () => {
+        const body = document.getElementById('analyze-body');
+        const question = lastEntry.question;
+        const data = lastEntry.data;
 
-      // Build context payload
-      const payload = {
-        question: question,
-        session_id: sessionId,
-        fast_findings: data.analysis?.findings || [],
-        sql_query: data.sql_results?.[0]?.query || data.sql_result?.query || '',
-        tables_used: data.tables_used || [],
-        fast_confidence: data.query_confidence || 0.5,
-      };
+        const payload = {
+          question: question,
+          session_id: sessionId,
+          fast_findings: data.analysis?.findings || [],
+          sql_query: data.sql_results?.[0]?.query || data.sql_result?.query || '',
+          tables_used: data.tables_used || [],
+          fast_confidence: data.query_confidence || 0.5,
+        };
 
-      // Show "queued" banner
-      const deepBanner = document.createElement('div');
-      deepBanner.id = 'deep-tier-banner';
-      deepBanner.innerHTML = `
-        <div style="background:rgba(68,147,248,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-top:0.75rem;font-size:0.75rem;">
-          <span class="spinner" style="margin-right:0.4rem;"></span>
-          <strong style="color:var(--accent);">Deep Tier Analysis</strong> — Queuing deeper investigation with Claude...
-          <div id="deep-tier-status" style="color:var(--muted);margin-top:0.3rem;font-size:0.7rem;"></div>
-        </div>`;
-      body.appendChild(deepBanner);
+        // Show "queued" banner
+        const deepBanner = document.createElement('div');
+        deepBanner.id = 'deep-tier-banner';
+        deepBanner.innerHTML = `
+          <div style="background:rgba(68,147,248,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-top:0.75rem;font-size:0.75rem;">
+            <span class="spinner" style="margin-right:0.4rem;"></span>
+            <strong style="color:var(--accent);">Deep Tier Analysis</strong> — Queuing deeper investigation with Claude...
+            <div id="deep-tier-status" style="color:var(--muted);margin-top:0.3rem;font-size:0.7rem;"></div>
+          </div>`;
+        body.appendChild(deepBanner);
 
-      try {
         const res = await apiFetch(API + '/deep-tier/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5352,10 +5369,7 @@
           document.getElementById('deep-tier-status').innerHTML =
             '<span style="color:var(--yellow);">Deep Tier not available. Configure ANTHROPIC_API_KEY to enable.</span>';
         }
-      } catch (e) {
-        document.getElementById('deep-tier-status').innerHTML =
-          `<span style="color:var(--red);">Error: ${esc(e.message)}</span>`;
-      }
+      }, { loadingText: 'Queuing\u2026', errorPrefix: 'Deep Tier error' });
     }
 
     async function pollDeepTierTask(taskId, retries = 0) {
@@ -5538,11 +5552,11 @@
       }
     }
 
-    async function saveToFeed(findingIndex) {
+    async function saveToFeed(findingIndex, btn) {
       const finding = _currentFindings[findingIndex];
       if (!finding || !lastAnalysisData) return;
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/feed/from-analysis', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5556,20 +5570,16 @@
             source_tables: lastAnalysisData.sql_results?.map(sr => sr.task) || [],
           }),
         });
-
-        if (data.error) return toast('Error: ' + data.error);
-        toast('Saved to Feed');
+        if (data.error) throw new Error(data.error);
         markFeedDirty();
-      } catch (e) {
-        toast('Failed: ' + e.message);
-      }
+      }, { successText: 'Saved to Feed', errorPrefix: 'Failed' });
     }
 
-    async function deployFullAnalysis() {
+    async function deployFullAnalysis(btn) {
       if (!lastAnalysisData) return toast('No analysis to deploy');
 
-      const summary = lastAnalysisData.analysis?.summary || 'Full Analysis';
-      try {
+      await asyncAction(btn, async () => {
+        const summary = lastAnalysisData.analysis?.summary || 'Full Analysis';
         const data = await apiFetch(API + '/feed/from-analysis', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5586,19 +5596,17 @@
             source_tables: lastAnalysisData.sql_results?.map(sr => sr.task) || [],
           }),
         });
-
-        if (data.error) return toast('Error: ' + data.error);
+        if (data.error) throw new Error(data.error);
+        markFeedDirty();
         showDeployModal(data.insight_id, summary.substring(0, 100));
-      } catch (e) {
-        toast('Failed: ' + e.message);
-      }
+      }, { loadingText: 'Deploying\u2026', errorPrefix: 'Deploy failed' });
     }
 
-    async function saveFullAnalysisToFeed() {
+    async function saveFullAnalysisToFeed(btn) {
       if (!lastAnalysisData) return toast('No analysis to save');
 
-      const summary = lastAnalysisData.analysis?.summary || 'Full Analysis';
-      try {
+      await asyncAction(btn, async () => {
+        const summary = lastAnalysisData.analysis?.summary || 'Full Analysis';
         const data = await apiFetch(API + '/feed/from-analysis', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5612,13 +5620,9 @@
             source_tables: lastAnalysisData.sql_results?.map(sr => sr.task) || [],
           }),
         });
-
-        if (data.error) return toast('Error: ' + data.error);
-        toast('Full analysis saved to Feed');
+        if (data.error) throw new Error(data.error);
         markFeedDirty();
-      } catch (e) {
-        toast('Failed: ' + e.message);
-      }
+      }, { successText: 'Full analysis saved to Feed', errorPrefix: 'Failed to save' });
     }
 
     function buildCustomChart() {
@@ -5825,12 +5829,12 @@
     // ---------------------------------------------------------------------------
     // Context
     // ---------------------------------------------------------------------------
-    async function submitContext() {
+    async function submitContext(btn) {
       const text = document.getElementById('ctx-text').value.trim();
       const source = document.getElementById('ctx-source').value.trim() || 'manual';
       if (!text) return;
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(`${API}/context`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5839,10 +5843,7 @@
         const body = document.getElementById('context-body');
         body.innerHTML = `<p>Stored context <strong>${data.chunks} chunk${data.chunks !== 1 ? 's' : ''}</strong> (ids: ${data.ids.join(', ')}) from source <span class="badge badge-accent">${esc(data.source)}</span></p>` + body.innerHTML;
         document.getElementById('ctx-text').value = '';
-        toast('Context ingested successfully');
-      } catch (e) {
-        toast('Error: ' + e.message);
-      }
+      }, { successText: 'Context ingested successfully', errorPrefix: 'Error' });
     }
 
     // Context file upload
@@ -6438,7 +6439,7 @@
           }
 
           html += `<div class="feed-card-actions">`;
-          html += `<button class="btn-sm" onclick="investigateInsight(${i})">Investigate</button>`;
+          html += `<button class="btn-sm" onclick="investigateInsight(${i}, this)">Investigate</button>`;
           html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
           html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
           html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
@@ -6489,65 +6490,54 @@
       loadRecommendations().catch(() => {});
     }
 
-    async function investigateInsight(index) {
+    async function investigateInsight(index, btn) {
       const ins = feedInsights[index];
       if (!ins) return;
 
-      // Mark as seen
-      try {
-        await fetch(`${API}/feed/${ins.id}/status`, {
+      await asyncActionKeyed('investigate-' + index, btn, async () => {
+        // Mark as seen (fire-and-forget via apiFetch)
+        apiFetch(`${API}/feed/${ins.id}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'seen' }),
+        }).catch(() => {});
+
+        // Switch to analyze tab
+        switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
+
+        // Set question and run analysis with insight as parent finding
+        const q = `Investigate: ${ins.title} — ${ins.description}`;
+        document.getElementById('question').value = q;
+        await runAnalysis({
+          type: ins.insight_type,
+          description: ins.description,
+          business_impact: ins.suggested_actions?.[0] || '',
         });
-      } catch(e) {}
-
-      // Switch to analyze tab
-      switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
-
-      // Set question and run analysis with insight as parent finding
-      const q = `Investigate: ${ins.title} — ${ins.description}`;
-      document.getElementById('question').value = q;
-      runAnalysis({
-        type: ins.insight_type,
-        description: ins.description,
-        business_impact: ins.suggested_actions?.[0] || '',
-      });
+      }, { loadingText: 'Investigating\u2026', errorPrefix: 'Investigation failed' });
     }
 
     async function dismissInsight(insightId, btn) {
-      try {
-        await fetch(`${API}/feed/${insightId}/status`, {
+      await asyncAction(btn, async () => {
+        await apiFetch(`${API}/feed/${insightId}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'dismissed' }),
         });
-        // Remove card from DOM
         const card = btn.closest('.feed-card');
         if (card) card.remove();
-        toast('Insight dismissed');
-      } catch (e) {
-        toast('Failed to dismiss: ' + e.message);
-      }
+      }, { successText: 'Insight dismissed', errorPrefix: 'Failed to dismiss', restoreHTML: false });
     }
 
     async function dismissAllInsights() {
       const cards = document.querySelectorAll('.feed-card');
       if (!cards.length) { toast('No insights to dismiss'); return; }
       const btn = document.getElementById('dismiss-all-btn');
-      btn.disabled = true;
-      btn.textContent = 'Dismissing...';
-      try {
+      await asyncAction(btn, async () => {
         await apiFetch(`${API}/feed/dismiss-all`, { method: 'POST' });
         feedInsights = [];
         document.getElementById('feed-body').innerHTML =
           '<div class="feed-empty">All insights dismissed. Run a new scan to discover fresh insights.</div>';
-        toast('All insights dismissed');
-      } catch (e) {
-        toast('Failed to dismiss all: ' + e.message);
-      }
-      btn.disabled = false;
-      btn.textContent = 'Dismiss All';
+      }, { loadingText: 'Dismissing\u2026', successText: 'All insights dismissed', errorPrefix: 'Failed to dismiss all' });
     }
 
     // -----------------------------------------------------------------------
@@ -6578,56 +6568,61 @@
     }
 
     function showComparisonView(idxA, idxB) {
-      const a = feedInsights[idxA];
-      const b = feedInsights[idxB];
-      if (!a || !b) return;
+      try {
+        const a = feedInsights[idxA];
+        const b = feedInsights[idxB];
+        if (!a || !b) return;
 
-      const overlay = document.getElementById('time-analysis-overlay');
-      const title = document.getElementById('time-analysis-title');
-      const body = document.getElementById('time-analysis-body');
-      title.textContent = 'Insight Comparison';
+        const overlay = document.getElementById('time-analysis-overlay');
+        const title = document.getElementById('time-analysis-title');
+        const body = document.getElementById('time-analysis-body');
+        title.textContent = 'Insight Comparison';
 
-      let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">';
+        let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">';
 
-      for (const ins of [a, b]) {
-        const borderColor = ins.severity === 'critical' ? 'var(--red)' :
-                            ins.severity === 'warning' ? 'var(--yellow)' : 'var(--green)';
-        html += `<div class="feed-card" style="border-left:3px solid ${borderColor};">`;
-        html += `<div style="font-size:0.65rem;text-transform:uppercase;color:${borderColor};font-weight:600;">${esc(ins.severity)} / ${esc(ins.insight_type)}</div>`;
-        html += `<div style="font-weight:600;margin:0.3rem 0;">${esc(ins.title)}</div>`;
-        html += `<div style="font-size:0.75rem;color:var(--muted);">${esc(ins.description)}</div>`;
-        html += `<div style="margin-top:0.4rem;font-size:0.7rem;">`;
-        html += `<strong>Impact:</strong> ${ins.impact_score}/100<br>`;
-        html += `<strong>Tables:</strong> ${(ins.source_tables||[]).join(', ')}<br>`;
-        html += `<strong>Columns:</strong> ${(ins.source_columns||[]).join(', ')}<br>`;
-        if (ins.composite_template) html += `<strong>Template:</strong> ${esc(ins.composite_template)}<br>`;
-        if (ins.suggested_actions?.length) {
-          html += `<strong>Actions:</strong><br>`;
-          ins.suggested_actions.forEach(a => { html += `&nbsp;&nbsp;- ${esc(a)}<br>`; });
+        for (const ins of [a, b]) {
+          const borderColor = ins.severity === 'critical' ? 'var(--red)' :
+                              ins.severity === 'warning' ? 'var(--yellow)' : 'var(--green)';
+          html += `<div class="feed-card" style="border-left:3px solid ${borderColor};">`;
+          html += `<div style="font-size:0.65rem;text-transform:uppercase;color:${borderColor};font-weight:600;">${esc(ins.severity)} / ${esc(ins.insight_type)}</div>`;
+          html += `<div style="font-weight:600;margin:0.3rem 0;">${esc(ins.title)}</div>`;
+          html += `<div style="font-size:0.75rem;color:var(--muted);">${esc(ins.description)}</div>`;
+          html += `<div style="margin-top:0.4rem;font-size:0.7rem;">`;
+          html += `<strong>Impact:</strong> ${ins.impact_score}/100<br>`;
+          html += `<strong>Tables:</strong> ${(ins.source_tables||[]).join(', ')}<br>`;
+          html += `<strong>Columns:</strong> ${(ins.source_columns||[]).join(', ')}<br>`;
+          if (ins.composite_template) html += `<strong>Template:</strong> ${esc(ins.composite_template)}<br>`;
+          if (ins.suggested_actions?.length) {
+            html += `<strong>Actions:</strong><br>`;
+            ins.suggested_actions.forEach(a => { html += `&nbsp;&nbsp;- ${esc(a)}<br>`; });
+          }
+          html += `</div></div>`;
         }
-        html += `</div></div>`;
+        html += '</div>';
+
+        // Differences summary
+        html += '<div style="margin-top:1rem;padding:0.8rem;background:var(--surface);border-radius:8px;font-size:0.75rem;">';
+        html += '<strong>Key Differences:</strong><br>';
+        if (a.severity !== b.severity) html += `Severity: ${a.severity} vs ${b.severity}<br>`;
+        if (a.impact_score !== b.impact_score) html += `Impact: ${a.impact_score} vs ${b.impact_score} (delta: ${Math.abs(a.impact_score - b.impact_score)})<br>`;
+        if (a.insight_type !== b.insight_type) html += `Type: ${a.insight_type} vs ${b.insight_type}<br>`;
+        const tablesA = new Set(a.source_tables || []);
+        const tablesB = new Set(b.source_tables || []);
+        const shared = [...tablesA].filter(t => tablesB.has(t));
+        if (shared.length > 0) html += `Shared tables: ${shared.join(', ')}<br>`;
+        else html += `No shared tables<br>`;
+        html += '</div>';
+
+        html += '<div style="margin-top:0.8rem;text-align:center;">';
+        html += '<button onclick="clearComparison()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;">Close</button>';
+        html += '</div>';
+
+        body.innerHTML = html;
+        overlay.style.display = 'block';
+      } catch (e) {
+        toast('Comparison failed: ' + e.message);
+        clearComparison();
       }
-      html += '</div>';
-
-      // Differences summary
-      html += '<div style="margin-top:1rem;padding:0.8rem;background:var(--surface);border-radius:8px;font-size:0.75rem;">';
-      html += '<strong>Key Differences:</strong><br>';
-      if (a.severity !== b.severity) html += `Severity: ${a.severity} vs ${b.severity}<br>`;
-      if (a.impact_score !== b.impact_score) html += `Impact: ${a.impact_score} vs ${b.impact_score} (delta: ${Math.abs(a.impact_score - b.impact_score)})<br>`;
-      if (a.insight_type !== b.insight_type) html += `Type: ${a.insight_type} vs ${b.insight_type}<br>`;
-      const tablesA = new Set(a.source_tables || []);
-      const tablesB = new Set(b.source_tables || []);
-      const shared = [...tablesA].filter(t => tablesB.has(t));
-      if (shared.length > 0) html += `Shared tables: ${shared.join(', ')}<br>`;
-      else html += `No shared tables<br>`;
-      html += '</div>';
-
-      html += '<div style="margin-top:0.8rem;text-align:center;">';
-      html += '<button onclick="clearComparison()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;">Close</button>';
-      html += '</div>';
-
-      body.innerHTML = html;
-      overlay.style.display = 'block';
     }
 
     function clearComparison() {
@@ -6717,41 +6712,34 @@
 
     async function triggerDiscovery() {
       const btn = document.getElementById('scan-btn');
-      btn.disabled = true;
-      btn.textContent = 'Scanning...';
-
-      try {
-        await fetch(`${API}/discovery/trigger`, { method: 'POST' });
+      await asyncAction(btn, async () => {
+        await apiFetch(`${API}/discovery/trigger`, { method: 'POST' });
         toast('Discovery scan started');
 
-        // Poll for completion
-        let attempts = 0;
-        const poll = setInterval(async () => {
-          attempts++;
-          try {
-            const data = await apiFetch(`${API}/discovery/status`);
-            if (data.status === 'completed' || data.status === 'failed' || attempts > 60) {
-              clearInterval(poll);
-              btn.disabled = false;
-              btn.textContent = 'Scan Now';
-              if (data.status === 'completed') {
-                toast(`Discovery complete: ${data.insights_found} insights found`);
-              } else if (data.status === 'failed') {
-                toast('Discovery failed: ' + (data.error || 'Unknown error'));
+        // Poll for completion — await a promise that resolves when done
+        await new Promise((resolve) => {
+          let attempts = 0;
+          const poll = setInterval(async () => {
+            attempts++;
+            try {
+              const data = await apiFetch(`${API}/discovery/status`);
+              if (data.status === 'completed' || data.status === 'failed' || attempts > 60) {
+                clearInterval(poll);
+                if (data.status === 'completed') {
+                  toast(`Discovery complete: ${data.insights_found} insights found`);
+                } else if (data.status === 'failed') {
+                  toast('Discovery failed: ' + (data.error || 'Unknown error'));
+                }
+                await loadFeed();
+                resolve();
               }
-              await loadFeed();
+            } catch(e) {
+              clearInterval(poll);
+              resolve();
             }
-          } catch(e) {
-            clearInterval(poll);
-            btn.disabled = false;
-            btn.textContent = 'Scan Now';
-          }
-        }, 2000);
-      } catch (e) {
-        btn.disabled = false;
-        btn.textContent = 'Scan Now';
-        toast('Failed to trigger discovery: ' + e.message);
-      }
+          }, 2000);
+        });
+      }, { loadingText: 'Scanning\u2026', errorPrefix: 'Failed to trigger discovery' });
     }
 
     function _timeAgo(date) {
@@ -6851,28 +6839,23 @@
       if (e.target === document.getElementById('deploy-modal')) closeDeployModal();
     });
 
-    async function confirmDeploy() {
+    async function confirmDeploy(btn) {
       if (!_deployInsightId) return;
       const name = document.getElementById('deploy-name').value.trim();
       if (!name) { toast('Enter a report name'); return; }
 
       const freq = document.querySelector('input[name="deploy-freq"]:checked')?.value || 'manual';
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(`${API}/feed/${_deployInsightId}/deploy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, refresh_frequency: freq }),
         });
-        if (data.error) {
-          toast('Deploy failed: ' + data.error);
-        } else {
-          closeDeployModal();
-          showDeploySuccess(name, data.report_id);
-        }
-      } catch (e) {
-        toast('Deploy failed: ' + e.message);
-      }
+        if (data.error) throw new Error(data.error);
+        closeDeployModal();
+        showDeploySuccess(name, data.report_id);
+      }, { loadingText: 'Deploying\u2026', errorPrefix: 'Deploy failed' });
     }
 
     let _lastDeployedReportId = null;
@@ -6926,8 +6909,8 @@
           html += `<div class="report-card-actions">`;
           html += `<button class="btn-sm" onclick="viewReport('${r.id}')">View Full Report</button>`;
           html += `<button class="btn-sm btn-secondary" onclick="refreshReport('${r.id}', this)">Refresh Now</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="exportReport('${r.id}', 'json')">Export JSON</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="exportReport('${r.id}', 'csv')">Export CSV</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="exportReport('${r.id}', 'json', this)">Export JSON</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="exportReport('${r.id}', 'csv', this)">Export CSV</button>`;
           html += `<button class="btn-sm btn-secondary" style="color:var(--red);" onclick="removeReport('${r.id}', this)">Remove</button>`;
           html += `</div>`;
           html += `</div>`;
@@ -7011,19 +6994,19 @@
     }
 
     async function removeReport(reportId, btn) {
-      try {
-        await fetch(`${API}/reports/${reportId}`, { method: 'DELETE' });
+      await asyncAction(btn, async () => {
+        await apiFetch(`${API}/reports/${reportId}`, { method: 'DELETE' });
         const card = btn.closest('.report-card');
         if (card) card.remove();
-        toast('Report removed');
-      } catch (e) {
-        toast('Remove failed: ' + e.message);
-      }
+      }, { successText: 'Report removed', errorPrefix: 'Remove failed', restoreHTML: false });
     }
 
-    async function exportReport(reportId, format) {
-      try {
-        const resp = await fetch(`${API}/reports/${reportId}/export?format=${format}`);
+    async function exportReport(reportId, format, btn) {
+      await asyncAction(btn, async () => {
+        const resp = await fetch(`${API}/reports/${reportId}/export?format=${format}`, {
+          headers: getAuthHeaders(),
+        });
+        if (!resp.ok) throw new Error('Export failed (' + resp.status + ')');
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -7031,10 +7014,7 @@
         a.download = `report_${reportId.substring(0, 8)}.${format === 'csv' ? 'csv' : 'json'}`;
         a.click();
         URL.revokeObjectURL(url);
-        toast(`Report exported as ${format.toUpperCase()}`);
-      } catch (e) {
-        toast('Export failed: ' + e.message);
-      }
+      }, { successText: `Report exported as ${format.toUpperCase()}`, errorPrefix: 'Export failed' });
     }
 
     // Auto-load reports on tab click
@@ -7143,15 +7123,11 @@
       });
     }
 
-    async function exportFeed(format) {
+    async function exportFeed(format, btn) {
       format = format || 'json';
-      try {
+      await asyncAction(btn, async () => {
         if (format === 'csv') {
-          // Client-side CSV generation from feedInsights
-          if (!feedInsights || feedInsights.length === 0) {
-            toast('No insights to export');
-            return;
-          }
+          if (!feedInsights || feedInsights.length === 0) throw new Error('No insights to export');
           const headers = ['id','insight_type','severity','impact_score','title','description','source_tables','source_columns','status','discovered_at'];
           const rows = feedInsights.map(ins => headers.map(h => {
             let val = ins[h];
@@ -7167,9 +7143,8 @@
           a.download = 'insights_feed.csv';
           a.click();
           URL.revokeObjectURL(url);
-          toast('Feed exported as CSV');
         } else {
-          const resp = await fetch(API + '/feed/export');
+          const resp = await fetch(API + '/feed/export', { headers: getAuthHeaders() });
           if (!resp.ok) throw new Error('Failed to fetch');
           const blob = await resp.blob();
           const url = URL.createObjectURL(blob);
@@ -7178,11 +7153,8 @@
           a.download = 'insights_feed.json';
           a.click();
           URL.revokeObjectURL(url);
-          toast('Feed exported as JSON');
         }
-      } catch (e) {
-        toast('Feed export failed: ' + e.message);
-      }
+      }, { successText: `Feed exported as ${format.toUpperCase()}`, errorPrefix: 'Feed export failed' });
     }
 
     // -----------------------------------------------------------------------
@@ -9492,58 +9464,55 @@
           html += `</div>`;
           html += `<div class="alert-card-actions">`;
           if (r.active) {
-            html += `<button class="btn-sm btn-secondary" onclick="pauseAlert('${r.id}')">Pause</button>`;
+            html += `<button class="btn-sm btn-secondary" onclick="pauseAlert('${r.id}', this)">Pause</button>`;
           } else {
-            html += `<button class="btn-sm" onclick="resumeAlert('${r.id}')">Resume</button>`;
+            html += `<button class="btn-sm" onclick="resumeAlert('${r.id}', this)">Resume</button>`;
           }
           html += `<button class="btn-sm" onclick="previewAlert('${r.id}')">Preview</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="deleteAlert('${r.id}')">Delete</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="deleteAlert('${r.id}', this)">Delete</button>`;
           html += `</div></div>`;
         }
         body.innerHTML = html;
       } catch (e) { console.error('loadAlerts:', e); }
     }
 
-    async function deployAlert() {
+    async function deployAlert(btn) {
       const text = document.getElementById('alert-text').value.trim();
       if (!text) return toast('Enter an alert description');
 
-      // Step 1: Parse the alert (don't deploy yet)
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/alerts/parse', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ text }),
         });
-        if (data.error) return toast('Error: ' + data.error);
+        if (data.error) throw new Error(data.error);
 
-        // Store parsed rule for confirmation step
         pendingAlertRule = { text, parsed_rule: data.parsed_rule };
 
-        // Show confirmation message
         const confirmEl = document.getElementById('alert-confirmation');
         document.getElementById('alert-confirm-text').textContent = data.confirmation || 'Deploy this alert rule?';
         confirmEl.style.display = 'block';
-      } catch (e) { toast('Failed to parse alert'); }
+      }, { loadingText: 'Parsing\u2026', errorPrefix: 'Failed to parse alert' });
     }
 
-    async function confirmAlertDeploy() {
+    async function confirmAlertDeploy(btn) {
       if (!pendingAlertRule) return;
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/alerts/deploy', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(pendingAlertRule),
         });
-        if (data.error) return toast('Error: ' + data.error);
+        if (data.error) throw new Error(data.error);
 
         toast('Alert deployed: ' + (data.parsed_rule?.name || ''));
         document.getElementById('alert-text').value = '';
         pendingAlertRule = null;
         document.getElementById('alert-confirmation').style.display = 'none';
         loadAlerts();
-      } catch (e) { toast('Failed to deploy alert'); }
+      }, { loadingText: 'Deploying\u2026', errorPrefix: 'Failed to deploy alert' });
     }
 
     function cancelAlertDeploy() {
@@ -9551,22 +9520,25 @@
       document.getElementById('alert-confirmation').style.display = 'none';
     }
 
-    async function pauseAlert(id) {
-      await fetch(API + '/alerts/' + id + '/pause', { method: 'POST' });
-      toast('Alert paused');
-      loadAlerts();
+    async function pauseAlert(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/alerts/' + id + '/pause', { method: 'POST' });
+        loadAlerts();
+      }, { successText: 'Alert paused', errorPrefix: 'Failed to pause alert' });
     }
 
-    async function resumeAlert(id) {
-      await fetch(API + '/alerts/' + id + '/resume', { method: 'POST' });
-      toast('Alert resumed');
-      loadAlerts();
+    async function resumeAlert(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/alerts/' + id + '/resume', { method: 'POST' });
+        loadAlerts();
+      }, { successText: 'Alert resumed', errorPrefix: 'Failed to resume alert' });
     }
 
-    async function deleteAlert(id) {
-      await fetch(API + '/alerts/' + id, { method: 'DELETE' });
-      toast('Alert deleted');
-      loadAlerts();
+    async function deleteAlert(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/alerts/' + id, { method: 'DELETE' });
+        loadAlerts();
+      }, { successText: 'Alert deleted', errorPrefix: 'Failed to delete alert' });
     }
 
     async function previewAlert(id) {
@@ -9633,13 +9605,13 @@
           if (s.last_sync_at) html += ` · Last: ${_timeAgo(s.last_sync_at)}`;
           html += `</div></div>`;
           html += `<div class="source-card-actions">`;
-          html += `<button class="btn-sm" onclick="syncSource('${s.id}')">Sync</button>`;
+          html += `<button class="btn-sm" onclick="syncSource('${s.id}', this)">Sync</button>`;
           if (s.active) {
-            html += `<button class="btn-sm btn-secondary" onclick="pauseSource('${s.id}')">Pause</button>`;
+            html += `<button class="btn-sm btn-secondary" onclick="pauseSource('${s.id}', this)">Pause</button>`;
           } else {
-            html += `<button class="btn-sm" onclick="resumeSource('${s.id}')">Resume</button>`;
+            html += `<button class="btn-sm" onclick="resumeSource('${s.id}', this)">Resume</button>`;
           }
-          html += `<button class="btn-sm btn-secondary" onclick="deleteSource('${s.id}')">Remove</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="deleteSource('${s.id}', this)">Remove</button>`;
           html += `</div></div>`;
         }
         body.innerHTML = html;
@@ -9668,11 +9640,11 @@
       if (e.target === document.getElementById('source-modal')) closeSourceModal();
     });
 
-    async function submitGoogleSheet() {
+    async function submitGoogleSheet(btn) {
       const url = document.getElementById('src-sheet-url').value.trim();
       if (!url) return toast('Enter a Google Sheets URL');
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/sources/google-sheet', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -9684,20 +9656,19 @@
             sync_frequency_minutes: parseInt(document.getElementById('src-freq').value) || 5,
           }),
         });
-        if (data.error) return toast('Error: ' + data.error);
-        toast('Sheet connected: ' + (data.table_name || ''));
+        if (data.error) throw new Error(data.error);
         closeSourceModal();
         loadSources();
-      } catch (e) { toast('Failed to connect sheet: ' + e.message); }
+      }, { loadingText: 'Connecting\u2026', successText: 'Sheet connected', errorPrefix: 'Failed to connect sheet' });
     }
 
-    async function submitApiSource() {
+    async function submitApiSource(btn) {
       const url = document.getElementById('src-api-url').value.trim();
       const name = document.getElementById('src-api-name').value.trim();
       const table = document.getElementById('src-api-table').value.trim();
       if (!url || !name || !table) return toast('Fill in all fields');
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/sources/api', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -9706,36 +9677,39 @@
             sync_frequency_minutes: parseInt(document.getElementById('src-api-freq').value) || 0,
           }),
         });
-        if (data.error) return toast('Error: ' + data.error);
-        toast('API source connected');
+        if (data.error) throw new Error(data.error);
         closeSourceModal();
         loadSources();
-      } catch (e) { toast('Failed to connect API'); }
+      }, { loadingText: 'Connecting\u2026', successText: 'API source connected', errorPrefix: 'Failed to connect API' });
     }
 
-    async function syncSource(id) {
-      toast('Syncing...');
-      const data = await apiFetch(API + '/sources/' + id + '/sync', { method: 'POST' });
-      toast(data.error ? 'Sync error: ' + data.error : 'Synced successfully');
-      loadSources();
+    async function syncSource(id, btn) {
+      await asyncAction(btn, async () => {
+        const data = await apiFetch(API + '/sources/' + id + '/sync', { method: 'POST' });
+        if (data.error) throw new Error(data.error);
+        loadSources();
+      }, { loadingText: 'Syncing\u2026', successText: 'Synced successfully', errorPrefix: 'Sync error' });
     }
 
-    async function pauseSource(id) {
-      await fetch(API + '/sources/' + id + '/pause', { method: 'POST' });
-      toast('Source paused');
-      loadSources();
+    async function pauseSource(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/sources/' + id + '/pause', { method: 'POST' });
+        loadSources();
+      }, { successText: 'Source paused', errorPrefix: 'Failed to pause source' });
     }
 
-    async function resumeSource(id) {
-      await fetch(API + '/sources/' + id + '/resume', { method: 'POST' });
-      toast('Source resumed');
-      loadSources();
+    async function resumeSource(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/sources/' + id + '/resume', { method: 'POST' });
+        loadSources();
+      }, { successText: 'Source resumed', errorPrefix: 'Failed to resume source' });
     }
 
-    async function deleteSource(id) {
-      await fetch(API + '/sources/' + id, { method: 'DELETE' });
-      toast('Source removed');
-      loadSources();
+    async function deleteSource(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/sources/' + id, { method: 'DELETE' });
+        loadSources();
+      }, { successText: 'Source removed', errorPrefix: 'Failed to remove source' });
     }
 
     // -----------------------------------------------------------------------
@@ -9768,7 +9742,7 @@
       setTimeout(updateSetupChecklist, 500);
     }
 
-    async function saveOnboarding() {
+    async function saveOnboarding(btn) {
       const systems = document.getElementById('ob-systems').value.trim().split('\n')
         .filter(l => l.trim())
         .map(l => {
@@ -9779,7 +9753,7 @@
       const products = document.getElementById('ob-products').value.trim()
         .split(',').map(p => p.trim()).filter(Boolean);
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/company/onboard', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -9791,13 +9765,12 @@
             systems,
           }),
         });
-        if (data.error) return toast('Error: ' + data.error);
+        if (data.error) throw new Error(data.error);
         const pct = data.completeness || 0;
         document.getElementById('setup-completeness').textContent = pct + '% complete';
         document.getElementById('setup-progress').style.width = pct + '%';
-        toast('Company profile saved');
         markFeedDirty();
-      } catch (e) { toast('Failed to save profile'); }
+      }, { loadingText: 'Saving\u2026', successText: 'Company profile saved', errorPrefix: 'Failed to save profile' });
     }
 
     async function loadThresholds() {
@@ -9820,7 +9793,7 @@
           html += `Normal: ${t.normal_min ?? '—'}–${t.normal_max ?? '—'}`;
           if (t.unit) html += ` ${esc(t.unit)}`;
           html += `</div>`;
-          html += `<button class="btn-sm btn-secondary" onclick="deleteThreshold(${t.id})">Remove</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="deleteThreshold(${t.id}, this)">Remove</button>`;
           html += `</div>`;
         }
         body.innerHTML = html;
@@ -9837,13 +9810,13 @@
         document.getElementById('threshold-modal').classList.remove('active');
     });
 
-    async function submitThreshold() {
+    async function submitThreshold(btn) {
       const metric = document.getElementById('th-metric').value.trim();
       if (!metric) return toast('Enter a metric name');
 
       const getNum = id => { const v = document.getElementById(id).value; return v ? parseFloat(v) : null; };
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/thresholds', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -9860,19 +9833,19 @@
             critical_max: getNum('th-critical-max'),
           }),
         });
-        if (data.error) return toast('Error: ' + data.error);
-        toast('Threshold saved');
+        if (data.error) throw new Error(data.error);
         markFeedDirty();
         document.getElementById('threshold-modal').classList.remove('active');
         loadThresholds();
-      } catch (e) { toast('Failed to save threshold'); }
+      }, { successText: 'Threshold saved', errorPrefix: 'Failed to save threshold' });
     }
 
-    async function deleteThreshold(id) {
-      await fetch(API + '/thresholds/' + id, { method: 'DELETE' });
-      toast('Threshold removed');
-      markFeedDirty();
-      loadThresholds();
+    async function deleteThreshold(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/thresholds/' + id, { method: 'DELETE' });
+        markFeedDirty();
+        loadThresholds();
+      }, { successText: 'Threshold removed', errorPrefix: 'Failed to remove threshold' });
     }
 
     // -----------------------------------------------------------------------
