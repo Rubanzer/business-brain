@@ -7,15 +7,29 @@ from business_brain.discovery.insight_recommender import (
     Recommendation,
     _build_entity_groups,
     _build_cross_table_prompt,
+    _build_reason,
     _check_template_coverage,
+    _coefficient_of_variation,
+    _col_label,
+    _column_completeness,
+    _data_fitness_adjustment,
+    _finalize,
+    _is_unnamed_column,
     _parse_cross_table_suggestions,
+    _rank_columns,
+    _recommend_insight_followups,
     _recommend_tier1,
+    _score_categorical_for_benchmark,
+    _score_numeric_for_anomaly,
+    _score_numeric_for_benchmark,
+    _table_label,
     compute_coverage,
     recommend_analyses,
 )
 
 
-def _profile(name, row_count=100, columns=None, domain_hint=None):
+def _profile(name, row_count=100, columns=None, domain_hint=None,
+             table_description=None, column_descriptions=None):
     """Helper to create a profile dict."""
     d = {
         "table_name": name,
@@ -24,6 +38,10 @@ def _profile(name, row_count=100, columns=None, domain_hint=None):
     }
     if domain_hint:
         d["domain_hint"] = domain_hint
+    if table_description:
+        d["table_description"] = table_description
+    if column_descriptions:
+        d["column_descriptions"] = column_descriptions
     return d
 
 
@@ -682,3 +700,318 @@ class TestComputeCoverage:
         cov = compute_coverage([], [])
         assert cov["total_tables"] == 0
         assert cov["coverage_pct"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Humanized names & data-aware reasons
+# ---------------------------------------------------------------------------
+
+
+class TestHumanizedRecommendations:
+    def test_benchmark_uses_humanized_names(self):
+        """When column_descriptions are provided, titles use human labels."""
+        cols = {
+            "gajkesari_steels___alloys_pvt__ltd": {"semantic_type": "categorical",
+                                                    "cardinality": 12,
+                                                    "sample_values": ["Gajkesari", "Tata", "JSW"]},
+            "rate_per_mt": {"semantic_type": "numeric_metric",
+                           "stats": {"min": 3200, "max": 5800, "stdev": 450}},
+        }
+        profile = _profile(
+            "sponge_purchase_3",
+            row_count=200,
+            columns=cols,
+            table_description="Sponge iron purchase register for FY 2018-19",
+            column_descriptions={
+                "gajkesari_steels___alloys_pvt__ltd": "Supplier name",
+                "rate_per_mt": "Purchase rate per metric ton",
+            },
+        )
+        recs = recommend_analyses([profile], [], [])
+        bench = [r for r in recs if r.analysis_type == "benchmark"]
+        assert bench, "Expected a benchmark recommendation"
+        r = bench[0]
+        # Title should use human labels, not raw column names
+        assert "gajkesari_steels___alloys_pvt__ltd" not in r.title
+        assert "sponge_purchase_3" not in r.title
+        # Should contain human-readable labels
+        assert "Purchase rate per metric ton" in r.title or "Supplier name" in r.title
+
+    def test_unnamed_columns_suppressed(self):
+        """Columns like col_3 without descriptions are not featured in titles."""
+        cols = {
+            "col_3": {"semantic_type": "categorical"},
+            "col_5": {"semantic_type": "numeric_metric"},
+            "supplier": {"semantic_type": "categorical"},
+            "amount": {"semantic_type": "numeric_metric"},
+        }
+        profile = _profile("sale_register", row_count=100, columns=cols)
+        recs = recommend_analyses([profile], [], [])
+        bench = [r for r in recs if r.analysis_type == "benchmark"]
+        assert bench, "Expected a benchmark recommendation"
+        # Benchmark should prefer named columns over col_N artifacts
+        assert "col_3" not in bench[0].title
+        assert "col_5" not in bench[0].title
+
+    def test_reason_includes_stats(self):
+        """Benchmark reason includes min/max from column stats."""
+        cols = {
+            "dept": {"semantic_type": "categorical", "cardinality": 5,
+                     "sample_values": ["HR", "Sales", "Ops"]},
+            "revenue": {"semantic_type": "numeric_metric",
+                        "stats": {"min": 1000, "max": 50000, "stdev": 8000}},
+        }
+        profile = _profile("departments", row_count=100, columns=cols)
+        reason = _build_reason("benchmark", profile, ["dept", "revenue"], "general")
+        # Should include actual min/max numbers
+        assert "1000" in reason
+        assert "50000" in reason
+        # Should include cardinality
+        assert "5" in reason
+
+    def test_backward_compat_no_enrichment(self):
+        """Profiles without enrichment still produce valid recommendations."""
+        cols = {
+            "date": {"semantic_type": "temporal"},
+            "val": {"semantic_type": "numeric_metric"},
+            "dept": {"semantic_type": "categorical"},
+        }
+        # No table_description, no column_descriptions — classic format
+        profile = _profile("basic_table", row_count=100, columns=cols)
+        recs = recommend_analyses([profile], [], [])
+        # Should still generate recs without crashing
+        assert len(recs) >= 3  # time_trend, benchmark, correlation, anomaly, cohort, forecast
+        for r in recs:
+            assert r.title
+            assert r.reason
+            assert r.target_table == "basic_table"
+
+
+# ---------------------------------------------------------------------------
+# Column scoring system
+# ---------------------------------------------------------------------------
+
+
+class TestColumnScoring:
+    def test_cv_computation(self):
+        assert _coefficient_of_variation({"mean": 10, "stdev": 5}) == 0.5
+        assert _coefficient_of_variation({"mean": 0, "stdev": 5}) == 0.0
+        assert _coefficient_of_variation({}) == 0.0
+
+    def test_completeness(self):
+        assert _column_completeness({"null_count": 0}, 100) == 1.0
+        assert _column_completeness({"null_count": 50}, 100) == 0.5
+        assert _column_completeness({"null_count": 0}, 0) == 1.0
+
+    def test_cat_benchmark_ideal_cardinality(self):
+        """Cardinality 10 scores higher than cardinality 200."""
+        profile = _profile("t", 100)
+        good = _score_categorical_for_benchmark(
+            "supplier", {"cardinality": 10, "sample_values": ["A", "B", "C"]}, 100, profile,
+        )
+        bad = _score_categorical_for_benchmark(
+            "supplier", {"cardinality": 200, "sample_values": ["A"]}, 100, profile,
+        )
+        assert good > bad
+
+    def test_cat_benchmark_unnamed_penalized(self):
+        """col_3 scores lower than supplier for benchmark categorical."""
+        profile = _profile("t", 100)
+        named = _score_categorical_for_benchmark("supplier", {"cardinality": 10}, 100, profile)
+        unnamed = _score_categorical_for_benchmark("col_3", {"cardinality": 10}, 100, profile)
+        assert named > unnamed
+
+    def test_num_benchmark_high_cv_preferred(self):
+        """High CV column scores higher for benchmark."""
+        profile = _profile("t", 100)
+        high_cv = _score_numeric_for_benchmark(
+            "amount", {"stats": {"mean": 100, "stdev": 80, "min": 5, "max": 500}}, 100, profile,
+        )
+        low_cv = _score_numeric_for_benchmark(
+            "amount", {"stats": {"mean": 100, "stdev": 1, "min": 99, "max": 101}}, 100, profile,
+        )
+        assert high_cv > low_cv
+
+    def test_num_anomaly_constant_zero(self):
+        """Constant column (stdev=0) scores 0 for anomaly."""
+        profile = _profile("t", 100)
+        score = _score_numeric_for_anomaly(
+            "x", {"stats": {"mean": 5, "stdev": 0, "min": 5, "max": 5}}, 100, profile,
+        )
+        assert score == 0.0
+
+    def test_rank_columns_returns_sorted(self):
+        """_rank_columns returns columns sorted by descending score."""
+        cols = {
+            "bad": {"stats": {"mean": 100, "stdev": 0.1, "min": 99, "max": 101}},
+            "good": {"stats": {"mean": 100, "stdev": 80, "min": 5, "max": 500}},
+        }
+        profile = _profile("t", 100, cols)
+        ranked = _rank_columns(cols, 100, profile, _score_numeric_for_benchmark)
+        assert ranked[0] == "good"
+        assert ranked[1] == "bad"
+
+
+# ---------------------------------------------------------------------------
+# Data fitness priority adjustment
+# ---------------------------------------------------------------------------
+
+
+class TestDataFitnessAdjustment:
+    def test_benchmark_sweet_spot_boost(self):
+        """Benchmark with cardinality=10 and high CV gets positive adjustment."""
+        cols = {
+            "dept": {"semantic_type": "categorical", "cardinality": 10, "null_count": 0},
+            "revenue": {"semantic_type": "numeric_metric", "null_count": 0,
+                        "stats": {"mean": 1000, "stdev": 800, "min": 50, "max": 5000}},
+        }
+        profile = _profile("t", 100, cols)
+        adj = _data_fitness_adjustment("benchmark", profile, ["dept", "revenue"])
+        assert adj > 0
+
+    def test_benchmark_high_cardinality_penalty(self):
+        """Benchmark with cardinality=200 and low CV gets negative adjustment."""
+        cols = {
+            "item": {"semantic_type": "categorical", "cardinality": 200, "null_count": 0},
+            "val": {"semantic_type": "numeric_metric", "null_count": 0,
+                    "stats": {"mean": 100, "stdev": 1, "min": 99, "max": 101}},
+        }
+        profile = _profile("t", 100, cols)
+        adj = _data_fitness_adjustment("benchmark", profile, ["item", "val"])
+        assert adj < 0
+
+    def test_correlation_high_cv_boost(self):
+        """Correlation columns with high average CV get boosted."""
+        cols = {
+            "a": {"semantic_type": "numeric_metric", "stats": {"mean": 10, "stdev": 8}},
+            "b": {"semantic_type": "numeric_metric", "stats": {"mean": 20, "stdev": 15}},
+        }
+        profile = _profile("t", 100, cols)
+        adj = _data_fitness_adjustment("correlation", profile, ["a", "b"])
+        assert adj > 0
+
+
+# ---------------------------------------------------------------------------
+# Insight-driven follow-up recommendations
+# ---------------------------------------------------------------------------
+
+
+class TestInsightFollowups:
+    def test_critical_anomaly_generates_benchmark_followup(self):
+        """Critical anomaly with categorical columns suggests root-cause benchmark."""
+        cols = {
+            "supplier": {"semantic_type": "categorical", "cardinality": 8},
+            "rate": {"semantic_type": "numeric_metric",
+                     "stats": {"mean": 100, "stdev": 50, "min": 30, "max": 250}},
+            "date": {"semantic_type": "temporal"},
+        }
+        profile = _profile("purchases", 200, cols)
+        insights = [{
+            "insight_type": "anomaly",
+            "severity": "critical",
+            "source_tables": ["purchases"],
+            "source_columns": ["rate"],
+            "evidence": {},
+        }]
+        recs = _recommend_insight_followups(profile, insights, cols, "procurement")
+        assert any(r.analysis_type == "benchmark" for r in recs)
+        assert any("anomal" in r.title.lower() or "investigate" in r.title.lower() for r in recs)
+
+    def test_strong_correlation_generates_trend_followup(self):
+        """Strong correlation suggests tracking the relationship over time."""
+        cols = {
+            "cost": {"semantic_type": "numeric_metric"},
+            "weight": {"semantic_type": "numeric_metric"},
+            "date": {"semantic_type": "temporal"},
+        }
+        profile = _profile("production", 200, cols)
+        insights = [{
+            "insight_type": "correlation",
+            "severity": "info",
+            "source_tables": ["production"],
+            "source_columns": ["cost", "weight"],
+            "evidence": {"estimated_correlation": 0.92},
+        }]
+        recs = _recommend_insight_followups(profile, insights, cols, "manufacturing")
+        assert any("relationship" in r.title.lower() or "track" in r.title.lower() for r in recs)
+
+    def test_multiple_insights_suggest_story(self):
+        """3+ insights of different types suggest a data story."""
+        cols = {"val": {"semantic_type": "numeric_metric"}}
+        profile = _profile("data", 200, cols)
+        insights = [
+            {"insight_type": "anomaly", "severity": "warning", "source_tables": ["data"],
+             "source_columns": ["val"], "evidence": {}},
+            {"insight_type": "correlation", "severity": "info", "source_tables": ["data"],
+             "source_columns": ["val"], "evidence": {}},
+            {"insight_type": "trend", "severity": "info", "source_tables": ["data"],
+             "source_columns": ["val"], "evidence": {}},
+        ]
+        recs = _recommend_insight_followups(profile, insights, cols, "general")
+        assert any(r.analysis_type == "story" for r in recs)
+
+    def test_no_insights_no_followups(self):
+        """No insights means no follow-up recommendations."""
+        cols = {"val": {"semantic_type": "numeric_metric"}}
+        profile = _profile("data", 200, cols)
+        recs = _recommend_insight_followups(profile, [], cols, "general")
+        assert recs == []
+
+    def test_info_anomaly_no_followup(self):
+        """Info-level anomalies do not trigger follow-ups."""
+        cols = {"val": {"semantic_type": "numeric_metric"}, "cat": {"semantic_type": "categorical"}}
+        profile = _profile("data", 200, cols)
+        insights = [{
+            "insight_type": "anomaly", "severity": "info",
+            "source_tables": ["data"], "source_columns": ["val"], "evidence": {},
+        }]
+        recs = _recommend_insight_followups(profile, insights, cols, "general")
+        assert not any(r.analysis_type == "benchmark" and "anomal" in r.title.lower() for r in recs)
+
+
+# ---------------------------------------------------------------------------
+# Finalize diversity
+# ---------------------------------------------------------------------------
+
+
+class TestFinalizeDiversity:
+    def test_diversity_prevents_single_table_domination(self):
+        """When one table has much higher priorities, other tables still appear."""
+        recs = [
+            Recommendation("R1", "", "anomaly", "table_A", [], 95, ""),
+            Recommendation("R2", "", "benchmark", "table_A", [], 93, ""),
+            Recommendation("R3", "", "correlation", "table_A", [], 91, ""),
+            Recommendation("R4", "", "time_trend", "table_A", [], 89, ""),
+            Recommendation("R5", "", "cohort", "table_A", [], 87, ""),
+            Recommendation("R6", "", "anomaly", "table_B", [], 70, ""),
+            Recommendation("R7", "", "benchmark", "table_B", [], 68, ""),
+        ]
+        result = _finalize(recs, 5)
+        tables = {r.target_table for r in result}
+        # table_B should appear in top 5 despite lower priority
+        assert "table_B" in tables
+
+
+# ---------------------------------------------------------------------------
+# Backward compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestBackwardCompatibility:
+    def test_profiles_without_stats_still_work(self):
+        """Profiles with minimal column info (no stats, no cardinality) still generate recs."""
+        cols = {
+            "cat": {"semantic_type": "categorical"},
+            "num": {"semantic_type": "numeric_metric"},
+        }
+        profile = _profile("t", 100, cols)
+        recs = recommend_analyses([profile], [], [])
+        assert len(recs) >= 1
+
+    def test_insight_dicts_without_new_fields_still_work(self):
+        """Legacy insight dicts (only insight_type + source_tables) work with new code."""
+        cols = {"val": {"semantic_type": "numeric_metric"}}
+        profile = _profile("data", 100, cols)
+        insights = [{"insight_type": "anomaly", "source_tables": ["data"]}]
+        recs = recommend_analyses([profile], insights, [])
+        assert isinstance(recs, list)
