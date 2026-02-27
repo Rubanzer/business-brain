@@ -3641,11 +3641,11 @@
     // Load plan limits after auth
     setTimeout(loadPlanLimits, 1000);
 
-    // Session management
-    let sessionId = localStorage.getItem('bb_session_id');
+    // Session management — use sessionStorage so each tab gets its own session
+    let sessionId = sessionStorage.getItem('bb_session_id');
     if (!sessionId) {
       sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-      localStorage.setItem('bb_session_id', sessionId);
+      sessionStorage.setItem('bb_session_id', sessionId);
     }
 
     const chatMessages = [];
@@ -3663,7 +3663,7 @@
 
     function newChat() {
       sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-      localStorage.setItem('bb_session_id', sessionId);
+      sessionStorage.setItem('bb_session_id', sessionId);
       chatMessages.length = 0;
       analysisStack = [];
       destroyCharts();
@@ -4725,7 +4725,7 @@
         // Update session_id if server returns one
         if (data.session_id) {
           sessionId = data.session_id;
-          localStorage.setItem('bb_session_id', sessionId);
+          sessionStorage.setItem('bb_session_id', sessionId);
           updateSessionLabel();
         }
 
@@ -5274,7 +5274,7 @@
 
         if (data.session_id) {
           sessionId = data.session_id;
-          localStorage.setItem('bb_session_id', sessionId);
+          sessionStorage.setItem('bb_session_id', sessionId);
           updateSessionLabel();
         }
 
@@ -6370,6 +6370,75 @@
     // ---------------------------------------------------------------------------
     var feedInsights = [];
 
+    function renderFeedCards(insights, emptyMessage) {
+      const body = document.getElementById('feed-body');
+      feedInsights = insights;
+
+      if (!insights.length) {
+        body.innerHTML = `<div class="feed-empty">${emptyMessage || 'No insights found.'}</div>`;
+        return;
+      }
+
+      body.innerHTML = insights.map((ins, i) => {
+        const sevClass = ins.insight_type === 'story' ? 'type-story' : `severity-${ins.severity}`;
+        const sevBadge = ins.severity === 'critical' ? 'badge-red'
+          : ins.severity === 'warning' ? 'badge-yellow'
+          : ins.insight_type === 'story' ? 'badge-accent'
+          : 'badge-green';
+
+        // Determine card type for feed filtering
+        const cardType = ins.insight_type === 'anomaly' ? 'sanctity'
+          : ins.severity === 'critical' ? 'alert'
+          : ins.insight_type === 'story' ? 'insight'
+          : ins.insight_type === 'correlation' ? 'insight'
+          : ins.insight_type === 'composite' ? 'insight'
+          : ins.insight_type === 'cross_event' ? 'insight'
+          : ins.insight_type === 'trend' ? 'alert'
+          : 'insight';
+        let html = `<div class="feed-card ${sevClass}" data-type="${cardType}" data-status="${ins.status || 'new'}">`;
+        html += `<div class="feed-card-title">${esc(ins.title)}</div>`;
+        html += `<div class="feed-card-desc">${esc(ins.description)}</div>`;
+        html += `<div class="feed-card-meta">`;
+        html += `<span class="badge ${sevBadge}">${esc(ins.insight_type)}</span>`;
+        html += `<span class="badge badge-accent">Score: ${ins.impact_score}</span>`;
+        if (ins.source_tables?.length) {
+          ins.source_tables.forEach(t => {
+            html += `<span class="table-chip">${esc(t)}</span>`;
+          });
+        }
+        if (ins.discovered_at) {
+          html += `<span style="font-size:0.65rem;color:var(--muted);">${_timeAgo(new Date(ins.discovered_at))}</span>`;
+        }
+        html += `</div>`;
+
+        // Narrative for stories
+        if (ins.narrative && ins.insight_type === 'story') {
+          html += `<div style="font-size:0.78rem;color:var(--text);line-height:1.5;margin:0.3rem 0;padding:0.5rem;background:rgba(68,147,248,0.05);border-radius:4px;">${esc(ins.narrative)}</div>`;
+        }
+
+        // Suggested actions
+        if (ins.suggested_actions?.length) {
+          html += `<div style="font-size:0.7rem;color:var(--muted);margin-top:0.3rem;">`;
+          ins.suggested_actions.forEach(a => {
+            html += `<div style="margin-bottom:0.15rem;">&#8226; ${esc(a)}</div>`;
+          });
+          html += `</div>`;
+        }
+
+        html += `<div class="feed-card-actions">`;
+        html += `<button class="btn-sm" onclick="investigateInsight(${i}, this)">Investigate</button>`;
+        html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
+        html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
+        html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
+        html += `</div>`;
+        html += `</div>`;
+        return html;
+      }).join('');
+
+      // Apply current type filter after rendering
+      if (currentFeedFilter !== 'all') filterFeed(currentFeedFilter);
+    }
+
     async function loadFeed() {
       const body = document.getElementById('feed-body');
 
@@ -6385,68 +6454,11 @@
 
       // Render feed IMMEDIATELY (what users care about)
       const insights = insightsResult.status === 'fulfilled' ? insightsResult.value : [];
-      feedInsights = insights;
 
-      if (!insights.length) {
-        body.innerHTML = insightsResult.status === 'rejected'
-          ? `<div class="feed-empty" style="color:var(--red);">Failed to load feed: ${esc(insightsResult.reason?.message || 'Unknown error')}</div>`
-          : '<div class="feed-empty">No insights discovered yet. Upload data and click "Scan Now" to discover insights.</div>';
+      if (insightsResult.status === 'rejected') {
+        renderFeedCards([], `<span style="color:var(--red);">Failed to load feed: ${esc(insightsResult.reason?.message || 'Unknown error')}</span>`);
       } else {
-        body.innerHTML = insights.map((ins, i) => {
-          const sevClass = ins.insight_type === 'story' ? 'type-story' : `severity-${ins.severity}`;
-          const sevBadge = ins.severity === 'critical' ? 'badge-red'
-            : ins.severity === 'warning' ? 'badge-yellow'
-            : ins.insight_type === 'story' ? 'badge-accent'
-            : 'badge-green';
-
-          // Determine card type for feed filtering
-          const cardType = ins.insight_type === 'anomaly' ? 'sanctity'
-            : ins.severity === 'critical' ? 'alert'
-            : ins.insight_type === 'story' ? 'insight'
-            : ins.insight_type === 'correlation' ? 'insight'
-            : ins.insight_type === 'composite' ? 'insight'
-            : ins.insight_type === 'cross_event' ? 'insight'
-            : ins.insight_type === 'trend' ? 'alert'
-            : 'insight';
-          let html = `<div class="feed-card ${sevClass}" data-type="${cardType}" data-status="${ins.status || 'new'}">`;
-          html += `<div class="feed-card-title">${esc(ins.title)}</div>`;
-          html += `<div class="feed-card-desc">${esc(ins.description)}</div>`;
-          html += `<div class="feed-card-meta">`;
-          html += `<span class="badge ${sevBadge}">${esc(ins.insight_type)}</span>`;
-          html += `<span class="badge badge-accent">Score: ${ins.impact_score}</span>`;
-          if (ins.source_tables?.length) {
-            ins.source_tables.forEach(t => {
-              html += `<span class="table-chip">${esc(t)}</span>`;
-            });
-          }
-          if (ins.discovered_at) {
-            html += `<span style="font-size:0.65rem;color:var(--muted);">${_timeAgo(new Date(ins.discovered_at))}</span>`;
-          }
-          html += `</div>`;
-
-          // Narrative for stories
-          if (ins.narrative && ins.insight_type === 'story') {
-            html += `<div style="font-size:0.78rem;color:var(--text);line-height:1.5;margin:0.3rem 0;padding:0.5rem;background:rgba(68,147,248,0.05);border-radius:4px;">${esc(ins.narrative)}</div>`;
-          }
-
-          // Suggested actions
-          if (ins.suggested_actions?.length) {
-            html += `<div style="font-size:0.7rem;color:var(--muted);margin-top:0.3rem;">`;
-            ins.suggested_actions.forEach(a => {
-              html += `<div style="margin-bottom:0.15rem;">&#8226; ${esc(a)}</div>`;
-            });
-            html += `</div>`;
-          }
-
-          html += `<div class="feed-card-actions">`;
-          html += `<button class="btn-sm" onclick="investigateInsight(${i}, this)">Investigate</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
-          html += `</div>`;
-          html += `</div>`;
-          return html;
-        }).join('');
+        renderFeedCards(insights, 'No insights discovered yet. Upload data and click "Scan Now" to discover insights.');
       }
 
       // Decorate discovery status bar (already resolved, no wait)
@@ -6682,6 +6694,12 @@
       }
     }
 
+    function useRecommendation(description) {
+      switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
+      document.getElementById('question').value = description;
+      runAnalysis();
+    }
+
     async function loadRecommendations() {
       const container = document.getElementById('recommendations-bar');
       try {
@@ -6698,7 +6716,8 @@
           const typeColor = r.analysis_type === 'anomaly' ? 'var(--red)' :
                            r.analysis_type === 'correlation' ? 'var(--accent)' :
                            r.analysis_type === 'benchmark' ? 'var(--green)' : 'var(--yellow)';
-          html += `<div style="flex:0 0 auto;background:var(--surface);border:1px solid var(--border);border-top:3px solid ${typeColor};border-radius:6px;padding:6px 10px;min-width:160px;font-size:0.65rem;cursor:default;">`;
+          const safeDesc = esc(r.description).replace(/'/g, "\\'");
+          html += `<div onclick="useRecommendation('${safeDesc}')" style="flex:0 0 auto;background:var(--surface);border:1px solid var(--border);border-top:3px solid ${typeColor};border-radius:6px;padding:6px 10px;min-width:160px;font-size:0.65rem;cursor:pointer;" title="Click to run this analysis">`;
           html += `<div style="font-weight:600;margin-bottom:2px;">${esc(r.title)}</div>`;
           html += `<div style="color:var(--muted);">${esc(r.reason)}</div>`;
           html += `</div>`;
@@ -7161,11 +7180,21 @@
     // v3: Feed Filters
     // -----------------------------------------------------------------------
     let currentFeedFilter = 'all';
+    let _currentStatusFilter = null;
     function filterFeed(filter, btn) {
       currentFeedFilter = filter;
       document.querySelectorAll('.feed-filter').forEach(f => f.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      // Re-render feed with filter
+
+      // If "All" type filter is clicked and we were in a status filter, re-fetch default feed
+      if (filter === 'all' && _currentStatusFilter) {
+        _currentStatusFilter = null;
+        loadFeed();
+        return;
+      }
+      _currentStatusFilter = null;
+
+      // Client-side type filter on already-loaded cards
       const cards = document.querySelectorAll('.feed-card');
       cards.forEach(card => {
         const type = card.dataset.type || '';
@@ -7176,14 +7205,20 @@
       });
     }
 
-    function filterFeedByStatus(status, btn) {
+    async function filterFeedByStatus(status, btn) {
       document.querySelectorAll('.feed-filter').forEach(f => f.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      const cards = document.querySelectorAll('.feed-card');
-      cards.forEach(card => {
-        const cardStatus = card.dataset.status || 'new';
-        card.style.display = cardStatus === status ? '' : 'none';
-      });
+      _currentStatusFilter = status;
+
+      const body = document.getElementById('feed-body');
+      body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading...</div>';
+
+      try {
+        const insights = await apiFetch(`${API}/feed?status=${encodeURIComponent(status)}`);
+        renderFeedCards(insights, `No ${status} insights found.`);
+      } catch (e) {
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">Failed to load: ${esc(e.message)}</div>`;
+      }
     }
 
     // -----------------------------------------------------------------------
