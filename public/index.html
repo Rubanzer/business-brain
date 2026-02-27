@@ -3215,8 +3215,8 @@
     let _analysisSessions = [];
     let _activeSessionIndex = 0;
 
-    function AnalysisSession(label) {
-      this.id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    function AnalysisSession(label, existingSessionId) {
+      this.id = existingSessionId || (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
       this.label = label || 'New Analysis';
       this.sessionId = this.id;
       this.chatMessages = [];
@@ -3231,7 +3231,9 @@
 
     function getActiveSession() {
       if (!_analysisSessions.length) {
-        _analysisSessions.push(new AnalysisSession('Chat 1'));
+        // Restore session ID from sessionStorage so the backend retains chat history
+        const savedId = sessionStorage.getItem('bb_session_id');
+        _analysisSessions.push(new AnalysisSession('Chat 1', savedId));
       }
       return _analysisSessions[_activeSessionIndex];
     }
@@ -3246,6 +3248,8 @@
       analysisStack = s.analysisStack;
       chatMessages = s.chatMessages;
       activeCharts = s.activeCharts;
+      // Persist active session ID so backend retains chat history across reloads
+      sessionStorage.setItem('bb_session_id', s.sessionId);
     }
 
     function createNewSession(label) {
@@ -3781,6 +3785,20 @@
     let _currentFindings = [];
     let _currentMetrics = [];
     let _currentComputations = [];
+
+    // All mutable globals consolidated here to avoid let-before-init errors
+    let _focusState = {};
+    let _investigateQueue = [];
+    let compareSelection = [];
+    let _deployInsightId = null;
+    let _deployInsightData = null;
+    let _lastDeployedReportId = null;
+    let currentFeedFilter = 'all';
+    let _currentStatusFilter = null;
+    let savedGoals = JSON.parse(localStorage.getItem('bb_goals') || '[]');
+    let pendingAlertRule = null;
+    let tutorialStep = 0;
+    let tutorialActive = false;
 
     // Initialize first session and sync aliases
     getActiveSession();
@@ -4336,22 +4354,46 @@
       }
     }
 
-    function loadDataQualityIntoData() {
+    async function loadDataQualityIntoData() {
       const body = document.getElementById('data-quality-body');
-      const existingQuality = document.getElementById('quality-body');
-      if (existingQuality && existingQuality.innerHTML.trim()) {
-        body.innerHTML = existingQuality.innerHTML;
-      } else {
-        if (typeof loadDataQuality === 'function') loadDataQuality();
+      if (!body) return;
+      body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading quality scores...</div>';
+      try {
+        const scores = await apiFetch(API + '/data-quality');
+        if (!scores || !scores.length) {
+          body.innerHTML = '<div class="feed-empty">No quality data available. Upload data first.</div>';
+          return;
+        }
+        let html = '';
+        scores.forEach(function(t) {
+          const score = t.overall_score ?? t.score ?? 0;
+          const pct = Math.round(score * 100);
+          const color = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--yellow, orange)' : 'var(--red)';
+          html += '<div class="report-section" style="margin-bottom:0.75rem;">';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+          html += '<strong>' + esc(t.table_name || t.table || 'Unknown') + '</strong>';
+          html += '<span style="color:' + color + ';font-weight:600;">' + pct + '%</span>';
+          html += '</div>';
+          if (t.issues && t.issues.length) {
+            html += '<ul style="margin:0.3rem 0 0 1rem;font-size:0.75rem;color:var(--muted);">';
+            t.issues.forEach(function(issue) { html += '<li>' + esc(issue) + '</li>'; });
+            html += '</ul>';
+          }
+          html += '</div>';
+        });
+        body.innerHTML = html;
+      } catch (err) {
+        body.innerHTML = '<div class="feed-empty">Error loading quality: ' + esc(err.message) + '</div>';
       }
     }
 
-    // Auto-load Data tab schema on first visit (once per session)
+    // Auto-load Data tab content on first visit (once per session)
     let dataTabLoaded = false;
     document.querySelector('[data-panel="data"]')?.addEventListener('click', () => {
       if (!dataTabLoaded) {
         dataTabLoaded = true;
         loadSchemaIntoData();
+        loadDataQualityIntoData();
       }
     });
 
@@ -5274,7 +5316,7 @@
     // ---------------------------------------------------------------------------
     function destroyCharts() {
       activeCharts.forEach(c => c.destroy());
-      activeCharts = [];
+      activeCharts.length = 0;
     }
 
     function renderSuggestedChart(index, source) {
@@ -6308,8 +6350,6 @@
     // ---------------------------------------------------------------------------
     // Schema
     // ---------------------------------------------------------------------------
-    let _focusState = {}; // {table_name: is_included}
-
     async function loadSchema() {
       const body = document.getElementById('schema-body');
       body.innerHTML = '<p style="color:var(--muted)"><span class="spinner"></span> Loading...</p>';
@@ -6327,6 +6367,8 @@
 
         body.innerHTML = data.map(t => {
           const included = _focusState[t.table_name] !== false; // default true
+          const colCount = (t.columns || []).length;
+          const tId = esc(t.table_name).replace(/[^a-zA-Z0-9]/g, '_');
           return `
           <div class="meta-card${included ? '' : ' focus-dimmed'}" id="table-card-${esc(t.table_name)}">
             <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -6338,14 +6380,15 @@
                   <span class="focus-slider"></span>
                 </label>
                 <h3 style="margin:0;">${esc(t.table_name)}</h3>
+                <span style="font-size:0.7rem;color:var(--muted);">${colCount} columns</span>
               </div>
               <div style="display:flex;gap:0.4rem;">
+                <button class="btn-sm btn-secondary" onclick="var el=document.getElementById('cols-${tId}');el.style.display=el.style.display==='none'?'flex':'none';this.textContent=el.style.display==='none'?'Show Columns':'Hide Columns'">Show Columns</button>
                 <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(t.table_name)}')">View Data</button>
                 <button class="btn-sm" onclick="deleteTable('${esc(t.table_name)}')" style="background:var(--red);color:#fff;font-size:0.68rem;">Delete</button>
               </div>
             </div>
-            <p>${esc(t.description || 'No description')}</p>
-            <div class="col-list">
+            <div class="col-list" id="cols-${tId}" style="display:none;">
               ${(t.columns || []).map(c =>
                 `<span class="col-chip"><strong>${esc(c.name)}</strong> ${esc(c.type)}</span>`
               ).join('')}
@@ -6928,8 +6971,6 @@
     // -----------------------------------------------------------------------
     // Multi-select investigation queue
     // -----------------------------------------------------------------------
-    let _investigateQueue = [];
-
     function toggleInvestigateDropdown(index, btn) {
       const dd = document.getElementById('inv-dd-' + index);
       const wasOpen = dd && dd.classList.contains('open');
@@ -7048,8 +7089,6 @@
     // -----------------------------------------------------------------------
     // Insight Comparison Mode
     // -----------------------------------------------------------------------
-    let compareSelection = [];
-
     function toggleCompare(index, btn) {
       const existing = compareSelection.indexOf(index);
       if (existing >= 0) {
@@ -7279,9 +7318,6 @@
     // ---------------------------------------------------------------------------
     // Reports
     // ---------------------------------------------------------------------------
-    let _deployInsightId = null;
-    let _deployInsightData = null;
-
     function showDeployModal(insightId, title) {
       _deployInsightId = insightId;
       document.getElementById('deploy-name').value = title || '';
@@ -7370,8 +7406,6 @@
         showDeploySuccess(name, data.report_id);
       }, { loadingText: 'Deploying\u2026', errorPrefix: 'Deploy failed' });
     }
-
-    let _lastDeployedReportId = null;
 
     function showDeploySuccess(name, reportId) {
       _lastDeployedReportId = reportId;
@@ -7673,8 +7707,6 @@
     // -----------------------------------------------------------------------
     // v3: Feed Filters
     // -----------------------------------------------------------------------
-    let currentFeedFilter = 'all';
-    let _currentStatusFilter = null;
     function filterFeed(filter, btn) {
       currentFeedFilter = filter;
       document.querySelectorAll('.feed-filter').forEach(f => f.classList.remove('active'));
@@ -9347,8 +9379,6 @@
     // -----------------------------------------------------------------------
     // Goals Tab
     // -----------------------------------------------------------------------
-    let savedGoals = JSON.parse(localStorage.getItem('bb_goals') || '[]');
-
     function showAddGoalForm() {
       document.getElementById('goal-form').style.display = 'block';
     }
@@ -9620,8 +9650,6 @@
     // -----------------------------------------------------------------------
     // v3: Alerts Tab
     // -----------------------------------------------------------------------
-    let pendingAlertRule = null;
-
     async function loadAlerts() {
       try {
         const rules = await apiFetch(API + '/alerts');
@@ -11124,9 +11152,6 @@
         text: 'Upload your first data file to get started! The AI will automatically discover insights, detect anomalies, and suggest analyses. 🚀',
       },
     ];
-
-    let tutorialStep = 0;
-    let tutorialActive = false;
 
     function startTutorial() {
       // Don't show if already seen (unless explicitly clicked)
