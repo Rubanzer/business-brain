@@ -466,6 +466,25 @@
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    .btn-loading {
+      opacity: 0.7;
+      cursor: wait;
+      pointer-events: none;
+      position: relative;
+    }
+    .btn-loading::after {
+      content: '';
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
     .meta-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -837,15 +856,143 @@
       margin-bottom: 0.2rem;
     }
 
-    .new-chat-btn {
-      font-size: 0.7rem;
-      padding: 0.3rem 0.7rem;
+    /* Analysis session sub-tabs */
+    .analysis-tabs-bar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .analysis-tab {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      border: none;
+      background: none;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .analysis-tab:hover { color: var(--text); }
+    .analysis-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .analysis-tab .tab-close {
+      font-size: 0.65rem;
+      opacity: 0.3;
+      cursor: pointer;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+    .analysis-tab .tab-close:hover { opacity: 1; background: rgba(248,81,73,0.2); color: var(--red); }
+    .analysis-tab-label { overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+    .analysis-tab-new {
+      padding: 0.4rem 0.6rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .analysis-tab-new:hover { color: var(--accent); }
+
+    /* Investigation queue */
+    .investigate-split { display: inline-flex; border-radius: 4px; overflow: visible; position: relative; }
+    .investigate-split .btn-main { border-radius: 4px 0 0 4px; border-right: 1px solid rgba(255,255,255,0.15); }
+    .investigate-split .btn-arrow {
+      padding: 0.2rem 0.35rem;
+      font-size: 0.55rem;
+      border-radius: 0 4px 4px 0;
+      cursor: pointer;
+      position: relative;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+    }
+    .investigate-dropdown {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 4px);
+      right: 0;
       background: var(--surface);
       border: 1px solid var(--border);
-      color: var(--muted);
+      border-radius: 6px;
+      min-width: 140px;
+      padding: 0.3rem 0;
+      z-index: 50;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
+    .investigate-dropdown.open { display: block; }
+    .investigate-dropdown button {
+      display: block;
+      width: 100%;
+      padding: 0.4rem 0.6rem;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 0.72rem;
+      cursor: pointer;
+      text-align: left;
+    }
+    .investigate-dropdown button:hover { background: rgba(68,147,248,0.1); }
+    .investigate-queue-bar {
+      position: sticky;
+      bottom: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--accent);
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      z-index: 20;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
+    }
+    .investigate-queue-bar .queue-items { display: flex; gap: 0.3rem; flex-wrap: wrap; flex: 1; }
+    .investigate-queue-bar .queue-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      padding: 0.2rem 0.5rem;
+      background: rgba(68,147,248,0.1);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      font-size: 0.65rem;
+      color: var(--accent);
+    }
+    .investigate-queue-bar .queue-chip .remove { cursor: pointer; opacity: 0.6; }
+    .investigate-queue-bar .queue-chip .remove:hover { opacity: 1; }
 
-    .new-chat-btn:hover { color: var(--text); border-color: var(--accent); }
+    /* Chart builder panel */
+    .chart-builder-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 0.75rem;
+    }
+    .chart-builder-panel h4 { font-size: 0.8rem; margin-bottom: 0.75rem; color: var(--text); }
+    .cb-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.6rem; align-items: flex-start; }
+    .cb-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 120px; }
+    .cb-field label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .cb-field select, .cb-field input {
+      font-size: 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+    .cb-field select:focus, .cb-field input:focus { border-color: var(--accent); outline: none; }
+    .cb-actions { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.5rem; }
+    .cb-preview { margin-top: 0.75rem; min-height: 100px; }
 
     /* Pagination */
     .pagination {
@@ -962,8 +1109,6 @@
       font-size: 0.75rem;
       color: var(--muted);
     }
-    .discovery-bar .disc-stats { display: flex; gap: 1rem; }
-
     /* Feed insight cards */
     .feed-card {
       background: var(--surface);
@@ -1362,81 +1507,6 @@
     .template-banner-text { flex: 1; }
     .template-banner-icon { font-size: 1.5rem; margin-right: 0.8rem; }
     .template-banner-actions { display: flex; gap: 0.4rem; }
-
-    /* ===== WHAT-IF IMPROVEMENTS ===== */
-    .whatif-help-box {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      font-size: 0.78rem;
-      line-height: 1.6;
-    }
-    .whatif-help-box h4 {
-      font-size: 0.85rem;
-      margin-bottom: 0.5rem;
-      color: var(--accent);
-    }
-    .whatif-help-box ul { padding-left: 1.2rem; color: var(--muted); }
-    .whatif-help-box li { margin-bottom: 0.3rem; }
-    .whatif-templates {
-      display: flex;
-      gap: 0.4rem;
-      flex-wrap: wrap;
-      margin-bottom: 1rem;
-    }
-    .whatif-template-btn {
-      padding: 0.4rem 0.8rem;
-      border-radius: 16px;
-      border: 1px solid var(--border);
-      background: var(--bg);
-      color: var(--muted);
-      font-size: 0.72rem;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .whatif-template-btn:hover { border-color: var(--accent); color: var(--accent); }
-    .whatif-template-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .whatif-var-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 0.6rem;
-    }
-    .whatif-var-table th {
-      font-size: 0.68rem;
-      text-align: left;
-      padding: 0.3rem 0.5rem;
-      background: var(--border);
-      font-weight: 500;
-    }
-    .whatif-var-table td {
-      padding: 0.3rem 0.5rem;
-      border-bottom: 1px solid var(--border);
-      font-size: 0.72rem;
-    }
-    .whatif-var-table input {
-      width: 100%;
-      padding: 4px 6px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: var(--bg);
-      color: var(--text);
-      font-size: 0.72rem;
-    }
-    .whatif-scenario-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.6rem 0.8rem;
-      margin-bottom: 0.4rem;
-      font-size: 0.72rem;
-    }
-    .whatif-scenario-card h5 {
-      font-size: 0.75rem;
-      color: var(--accent);
-      margin-bottom: 0.3rem;
-    }
 
     /* ===== DEPLOY MODAL REDESIGN ===== */
     .deploy-steps { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
@@ -2114,7 +2184,6 @@
         <div class="tab-more-menu" id="tab-more-menu">
           <button class="tab-menu-item" data-panel="relationships">Relationships</button>
           <button class="tab-menu-item" data-panel="goals">Goals</button>
-          <button class="tab-menu-item" data-panel="whatif">What-If</button>
           <button class="tab-menu-item" data-panel="changelog">Audit Log</button>
           <button class="tab-menu-item" data-panel="users">Users</button>
         </div>
@@ -2131,11 +2200,8 @@
     <!-- Feed Panel (Default) -->
     <div id="feed" class="panel active">
       <div class="discovery-bar" id="discovery-bar">
-        <div class="disc-stats" id="disc-stats">
-          <span>No discovery runs yet</span>
-        </div>
-        <button class="btn-export btn-sm" onclick="exportFeed('json')" title="Export insights as JSON">Export JSON</button>
-        <button class="btn-export btn-sm" onclick="exportFeed('csv')" title="Export insights as CSV">Export CSV</button>
+        <button class="btn-export btn-sm" onclick="exportFeed('json', this)" title="Export insights as JSON">Export JSON</button>
+        <button class="btn-export btn-sm" onclick="exportFeed('csv', this)" title="Export insights as CSV">Export CSV</button>
         <button class="btn-sm btn-secondary" onclick="dismissAllInsights()" id="dismiss-all-btn">Dismiss All</button>
         <button class="btn-sm btn-secondary" onclick="loadDailyBriefing()" id="briefing-btn" title="View daily intelligence briefing">Daily Briefing</button>
         <button class="btn-sm" onclick="triggerDiscovery()" id="scan-btn">Scan Now</button>
@@ -2162,9 +2228,8 @@
 
     <!-- Analyze Panel -->
     <div id="analyze" class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-        <span style="font-size:0.7rem;color:var(--muted);" id="session-label"></span>
-        <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+      <div class="analysis-tabs-bar" id="analysis-tabs-bar">
+        <!-- Rendered dynamically by renderSessionTabs() -->
       </div>
       <div id="chat-thread" class="chat-thread" style="display:none;"></div>
       <div class="suggestion-pills" id="suggestion-pills"></div>
@@ -2191,7 +2256,7 @@
         <textarea id="ctx-text" placeholder="Enter business context (e.g., 'Enterprise customers generate 80% of our revenue')"></textarea>
         <div class="context-row">
           <input type="text" id="ctx-source" placeholder="Source (optional)" value="manual" />
-          <button onclick="submitContext()">Submit Context</button>
+          <button onclick="submitContext(this)">Submit Context</button>
         </div>
       </div>
       <div class="ctx-file-zone" id="ctx-file-zone">
@@ -2235,12 +2300,12 @@
     <div id="alerts" class="panel">
       <div class="alert-nl-input">
         <input type="text" id="alert-text" placeholder="Describe an alert condition (e.g., 'Alert me when truck count exceeds 40')..." />
-        <button onclick="deployAlert()">Deploy Alert</button>
+        <button onclick="deployAlert(this)">Deploy Alert</button>
       </div>
       <div id="alert-confirmation" style="display:none;" class="meta-card">
         <p id="alert-confirm-text"></p>
         <div style="display:flex;gap:0.4rem;margin-top:0.5rem;">
-          <button class="btn-sm" onclick="confirmAlertDeploy()">Confirm</button>
+          <button class="btn-sm" onclick="confirmAlertDeploy(this)">Confirm</button>
           <button class="btn-sm btn-secondary" onclick="cancelAlertDeploy()">Cancel</button>
         </div>
       </div>
@@ -2372,9 +2437,23 @@
         <div class="progress-bar" style="flex:1;max-width:200px;margin:0;"><div class="progress-bar-fill" id="setup-progress" style="width:0%"></div></div>
       </div>
 
+      <!-- Getting Started Banner (for new users) -->
+      <div id="setup-getting-started" style="display:none;">
+        <div style="background:rgba(68,147,248,0.08);border:1px solid var(--accent);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.75rem;">
+          <div style="font-weight:600;margin-bottom:0.3rem;color:var(--accent);">Getting Started</div>
+          <ol style="margin:0;padding-left:1.2rem;color:var(--muted);line-height:1.6;">
+            <li><strong>Company Profile</strong> — Tell us about your business so the AI understands your context</li>
+            <li><strong>Upload Data</strong> — Go to the Data tab and upload CSV/Excel files</li>
+            <li><strong>Define Metrics</strong> — Set target ranges so the AI knows what "good" looks like</li>
+            <li><strong>Run a Scan</strong> — Go to Feed and click "Scan Now" to discover insights</li>
+          </ol>
+          <button class="btn-sm btn-secondary" onclick="this.parentElement.parentElement.style.display='none'" style="margin-top:0.5rem;font-size:0.65rem;">Dismiss</button>
+        </div>
+      </div>
+
       <!-- Card-Based Dashboard Grid -->
       <div class="setup-card-grid" id="setup-card-grid">
-        <div class="setup-card" data-card="profile" onclick="toggleSetupCard('profile')">
+        <div class="setup-card" data-card="profile" onclick="toggleSetupCard('profile')" title="Your company name, industry, and production process">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-profile">&#9675;</span>
             <span class="setup-card-title">Company Profile</span>
@@ -2382,7 +2461,7 @@
           <div class="setup-card-summary" id="card-summary-profile">Not configured</div>
           <div class="setup-card-action">Edit</div>
         </div>
-        <div class="setup-card" data-card="process" onclick="toggleSetupCard('process')">
+        <div class="setup-card" data-card="process" onclick="toggleSetupCard('process')" title="Define your production/business process steps and their sequence">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-process">&#9675;</span>
             <span class="setup-card-title">Process Map</span>
@@ -2390,7 +2469,7 @@
           <div class="setup-card-summary" id="card-summary-process">No steps defined</div>
           <div class="setup-card-action">Edit</div>
         </div>
-        <div class="setup-card" data-card="metrics" onclick="toggleSetupCard('metrics')">
+        <div class="setup-card" data-card="metrics" onclick="toggleSetupCard('metrics')" title="Set target ranges for your KPIs so the AI knows what good looks like">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-metrics">&#9675;</span>
             <span class="setup-card-title">Metrics &amp; KPIs</span>
@@ -2401,7 +2480,7 @@
             <span class="setup-card-action setup-card-action-secondary" onclick="event.stopPropagation(); runAutoScan()">Auto-scan</span>
           </div>
         </div>
-        <div class="setup-card" data-card="io" onclick="toggleSetupCard('io')">
+        <div class="setup-card" data-card="io" onclick="toggleSetupCard('io')" title="Raw materials, energy inputs, and finished product outputs">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-io">&#9675;</span>
             <span class="setup-card-title">Inputs &amp; Outputs</span>
@@ -2409,7 +2488,7 @@
           <div class="setup-card-summary" id="card-summary-io">Not configured</div>
           <div class="setup-card-action">Edit</div>
         </div>
-        <div class="setup-card" data-card="context" onclick="toggleSetupCard('context')">
+        <div class="setup-card" data-card="context" onclick="toggleSetupCard('context')" title="Business rules, domain knowledge, and soft insights the AI should know">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-context">&#9675;</span>
             <span class="setup-card-title">Business Context</span>
@@ -2417,7 +2496,7 @@
           <div class="setup-card-summary" id="card-summary-context">No context added</div>
           <div class="setup-card-action">Edit</div>
         </div>
-        <div class="setup-card setup-card-suggestions" data-card="suggestions" onclick="toggleSetupCard('suggestions')">
+        <div class="setup-card setup-card-suggestions" data-card="suggestions" onclick="toggleSetupCard('suggestions')" title="Auto-discovered metric-to-column mappings from your data">
           <div class="setup-card-header">
             <span class="setup-card-icon">&#128161;</span>
             <span class="setup-card-title">Auto-Suggestions</span>
@@ -2473,7 +2552,7 @@
           <textarea id="ob-systems" rows="4" placeholder="Tally - Financial accounting&#10;VEGA - Truck/logistics management&#10;SCADA - Electrical monitoring"></textarea>
         </div>
         <div style="display:flex;gap:0.5rem;">
-          <button onclick="saveOnboarding()">Save Profile</button>
+          <button onclick="saveOnboarding(this)">Save Profile</button>
           <button class="btn-secondary" onclick="loadOnboarding()">Refresh</button>
         </div>
       </div>
@@ -2563,7 +2642,7 @@
           <textarea id="ctx-text" rows="2" placeholder="Enter business context (e.g., 'Enterprise customers generate 80% of our revenue')" style="font-size:0.75rem;"></textarea>
           <div style="display:flex;gap:0.3rem;margin-top:0.3rem;">
             <input type="text" id="ctx-source" placeholder="Source label" value="manual" style="font-size:0.72rem;flex:1;" />
-            <button class="btn-sm" onclick="submitContext()">Add</button>
+            <button class="btn-sm" onclick="submitContext(this)">Add</button>
           </div>
         </div>
         <div id="context-entries-body">
@@ -2616,7 +2695,7 @@
         <input type="hidden" id="ps-edit-id" value="" />
         <input type="hidden" id="ps-table" value="" />
         <div class="form-actions">
-          <button onclick="submitProcessStep()">Save Step</button>
+          <button onclick="submitProcessStep(this)">Save Step</button>
           <button class="btn-secondary" onclick="document.getElementById('process-step-modal').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -2641,7 +2720,7 @@
           <div><label>Critical Above</label><input type="number" id="dm-crit-max" step="any" placeholder="e.g., 750" /></div>
         </div>
         <div class="form-actions">
-          <button onclick="submitDerivedMetric()">Create Metric</button>
+          <button onclick="submitDerivedMetric(this)">Create Metric</button>
           <button class="btn-secondary" onclick="document.getElementById('derived-metric-modal').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -2674,7 +2753,7 @@
         <label>Linked Table</label>
         <input type="text" id="io-table" placeholder="e.g., purchases" />
         <div class="form-actions">
-          <button onclick="submitProcessIO()">Save</button>
+          <button onclick="submitProcessIO(this)">Save</button>
           <button class="btn-secondary" onclick="document.getElementById('process-io-modal').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -2747,85 +2826,6 @@
       <div id="goals-body"><div class="feed-empty">No goals set yet. Click "+ Add Goal" to define metric targets.</div></div>
     </div>
 
-    <!-- What-If Panel (redesigned) -->
-    <div id="whatif" class="panel">
-      <!-- Help Section -->
-      <div style="background:linear-gradient(135deg,rgba(68,147,248,0.08),rgba(0,206,201,0.05));border:1px solid var(--border);border-radius:10px;padding:1rem;margin-bottom:1rem;">
-        <div style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem;">&#128202; What-If Scenario Modeler</div>
-        <div style="font-size:0.78rem;color:var(--muted);line-height:1.5;margin-bottom:0.5rem;">
-          Answer "what would happen if...?" questions about your business.<br>
-          Change one or more variables and see how it affects your results.
-        </div>
-        <div style="font-size:0.72rem;color:var(--muted);line-height:1.6;">
-          <strong>Examples:</strong><br>
-          &bull; What if scrap price goes up by &#8377;2,000/ton?<br>
-          &bull; What if we increase production to 85% utilization?<br>
-          &bull; What if power tariff increases by &#8377;1/kWh?
-        </div>
-      </div>
-
-      <!-- Quick Scenario Templates -->
-      <div style="margin-bottom:0.75rem;">
-        <div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.4rem;font-weight:500;">Quick scenarios:</div>
-        <div id="whatif-templates" style="display:flex;gap:0.3rem;flex-wrap:wrap;">
-          <button class="btn-sm btn-secondary" onclick="loadWhatIfTemplate('custom')" style="font-size:0.68rem;">&#9998; Custom</button>
-          <button class="btn-sm" onclick="tryWhatIfExample()" style="font-size:0.68rem;background:var(--green);color:#000;">&#9654; Try Example</button>
-        </div>
-      </div>
-
-      <!-- Formula Section -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.8rem;margin-bottom:0.75rem;">
-        <div style="display:flex;align-items:center;gap:0.3rem;margin-bottom:0.4rem;">
-          <span style="font-size:0.75rem;font-weight:600;">Formula</span>
-          <span class="help-tip" style="position:relative;">?<div class="help-tip-box">Write a math formula using your variables. Example: revenue = price * quantity. The formula is evaluated for each scenario.</div></span>
-        </div>
-        <input id="whatif-formula" placeholder="e.g. scrap_price * monthly_tonnage" style="width:100%;padding:6px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:0.75rem;margin-bottom:0.6rem;box-sizing:border-box;">
-
-        <!-- Visual Variable Builder -->
-        <div style="display:flex;align-items:center;gap:0.3rem;margin-bottom:0.4rem;">
-          <span style="font-size:0.75rem;font-weight:600;">Variables</span>
-          <span class="help-tip" style="position:relative;">?<div class="help-tip-box">Define the variables used in your formula. Set their current values and units. Scenarios will change these values to see the impact.</div></span>
-        </div>
-        <div id="whatif-vars-table">
-          <table style="width:100%;font-size:0.72rem;border-collapse:collapse;margin-bottom:0.4rem;">
-            <thead><tr style="border-bottom:1px solid var(--border);color:var(--muted);">
-              <th style="padding:4px;text-align:left;">Variable</th>
-              <th style="padding:4px;text-align:left;">Current Value</th>
-              <th style="padding:4px;text-align:left;">Unit</th>
-              <th style="padding:4px;width:30px;"></th>
-            </tr></thead>
-            <tbody id="whatif-vars-body"></tbody>
-          </table>
-          <button class="btn-sm btn-secondary" onclick="addWhatIfVar()" style="font-size:0.65rem;">+ Add Variable</button>
-        </div>
-
-        <!-- Scenarios (visual) -->
-        <div style="display:flex;align-items:center;gap:0.3rem;margin:0.6rem 0 0.4rem;">
-          <span style="font-size:0.75rem;font-weight:600;">Scenarios</span>
-          <span class="help-tip" style="position:relative;">?<div class="help-tip-box">Each scenario changes one or more variables. You'll see side-by-side results showing how each change impacts your formula's output.</div></span>
-        </div>
-        <div id="whatif-scenarios-visual"></div>
-        <button class="btn-sm btn-secondary" onclick="addWhatIfScenario()" style="font-size:0.65rem;margin-top:0.3rem;">+ Add Scenario</button>
-
-        <!-- Hidden fields for backward compatibility with existing runWhatIf -->
-        <input type="hidden" id="whatif-base" />
-        <textarea id="whatif-scenarios" style="display:none;"></textarea>
-
-        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.6rem;">
-          <button class="btn-sm" onclick="syncWhatIfAndRun()">Compare Scenarios</button>
-          <button class="btn-sm btn-secondary" onclick="syncWhatIfAndBreakeven()">
-            Breakeven
-            <span class="help-tip" style="position:relative;font-size:0.6rem;margin-left:2px;">?<div class="help-tip-box">Find the exact point where revenue equals cost (profit = 0)</div></span>
-          </button>
-          <button class="btn-sm btn-secondary" onclick="syncWhatIfAndSensitivity()">
-            Sensitivity
-            <span class="help-tip" style="position:relative;font-size:0.6rem;margin-left:2px;">?<div class="help-tip-box">See which variable has the biggest impact on your result</div></span>
-          </button>
-        </div>
-      </div>
-      <div id="whatif-body"><div class="feed-empty">Choose a quick scenario above or build your own, then click "Compare Scenarios" to model outcomes.</div></div>
-    </div>
-
     <!-- Users / Access Management Panel -->
     <div id="users" class="panel">
       <div class="sub-nav" id="users-sub-nav">
@@ -2851,7 +2851,7 @@
           <select id="invite-role">
             <option value="viewer">Viewer — Read-only access to Feed &amp; Reports</option>
             <option value="operator">Operator — Can also analyze data</option>
-            <option value="manager" selected>Manager — Can create reports, alerts, what-if</option>
+            <option value="manager" selected>Manager — Can create reports, alerts</option>
             <option value="admin">Admin — Full access including user management</option>
           </select>
           <label style="margin-top:0.5rem;">Plan</label>
@@ -2860,7 +2860,7 @@
             <option value="basic">Basic</option>
             <option value="pro" selected>Pro</option>
           </select>
-          <button onclick="sendInvite()" style="margin-top:0.8rem;">Send Invite</button>
+          <button onclick="sendInvite(this)" style="margin-top:0.8rem;">Send Invite</button>
           <div id="invite-result" style="display:none;margin-top:0.7rem;"></div>
         </div>
       </div>
@@ -2969,7 +2969,7 @@
             </div>
             <div style="display:flex;justify-content:space-between;">
               <button class="btn-sm btn-secondary" onclick="goDeployStep(2)">&#8592; Back</button>
-              <button onclick="confirmDeploy()">Deploy Report &#8594;</button>
+              <button onclick="confirmDeploy(this)">Deploy Report &#8594;</button>
             </div>
           </div>
         </div>
@@ -3021,7 +3021,7 @@
             <input type="text" id="src-table-name" placeholder="auto-generated from sheet name" />
             <label>Sync Frequency (minutes, 0 = manual only)</label>
             <input type="number" id="src-freq" value="5" min="0" />
-            <button onclick="submitGoogleSheet()">Connect Sheet</button>
+            <button onclick="submitGoogleSheet(this)">Connect Sheet</button>
           </div>
         </div>
         <div id="source-api-form" style="display:none;">
@@ -3034,7 +3034,7 @@
             <input type="text" id="src-api-table" placeholder="erp_production" />
             <label>Sync Frequency (minutes, 0 = manual only)</label>
             <input type="number" id="src-api-freq" value="0" min="0" />
-            <button onclick="submitApiSource()">Connect API</button>
+            <button onclick="submitApiSource(this)">Connect API</button>
           </div>
         </div>
       </div>
@@ -3073,7 +3073,7 @@
             <input type="number" id="th-critical-min" placeholder="Min" />
             <input type="number" id="th-critical-max" placeholder="Max" />
           </div>
-          <button onclick="submitThreshold()">Save Threshold</button>
+          <button onclick="submitThreshold(this)">Save Threshold</button>
         </div>
       </div>
     </div>
@@ -3094,7 +3094,6 @@
           <ul style="text-align:left;font-size:0.78rem;line-height:2;">
             <li>&#10003; Unlimited data uploads</li>
             <li>&#10003; Reports &amp; Alerts</li>
-            <li>&#10003; What-If scenarios</li>
             <li>&#10003; Full Setup &amp; Context</li>
             <li>&#10003; Deploy reports</li>
             <li>&#10003; Export data</li>
@@ -3175,6 +3174,192 @@
       try { return JSON.parse(text); } catch (_) {
         throw new Error('Invalid response from server');
       }
+    }
+
+    // -----------------------------------------------------------------------
+    // Async button helpers — loading state, double-click prevention, error toast
+    // -----------------------------------------------------------------------
+    async function asyncAction(btn, asyncFn, opts = {}) {
+      if (!btn || btn.disabled || btn.classList.contains('btn-loading')) return;
+      const origHTML = btn.innerHTML;
+      btn.classList.add('btn-loading');
+      btn.disabled = true;
+      if (opts.loadingText) btn.textContent = opts.loadingText;
+      try {
+        const result = await asyncFn();
+        if (opts.successText) toast(opts.successText);
+        return result;
+      } catch (e) {
+        toast((opts.errorPrefix || 'Error') + ': ' + e.message);
+      } finally {
+        btn.classList.remove('btn-loading');
+        btn.disabled = false;
+        if (opts.restoreHTML !== false) btn.innerHTML = origHTML;
+      }
+    }
+
+    const _inflightOps = new Set();
+    async function asyncActionKeyed(key, btn, asyncFn, opts = {}) {
+      if (_inflightOps.has(key)) { toast('Already in progress\u2026'); return; }
+      _inflightOps.add(key);
+      try {
+        return await asyncAction(btn, asyncFn, opts);
+      } finally {
+        _inflightOps.delete(key);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Analysis Session Manager — encapsulates per-session state
+    // -----------------------------------------------------------------------
+    let _analysisSessions = [];
+    let _activeSessionIndex = 0;
+
+    function AnalysisSession(label) {
+      this.id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      this.label = label || 'New Analysis';
+      this.sessionId = this.id;
+      this.chatMessages = [];
+      this.analysisStack = [];
+      this.lastAnalysisData = null;
+      this.activeCharts = [];
+      this.currentFindings = [];
+      this.currentMetrics = [];
+      this.currentComputations = [];
+      this.createdAt = Date.now();
+    }
+
+    function getActiveSession() {
+      if (!_analysisSessions.length) {
+        _analysisSessions.push(new AnalysisSession('Chat 1'));
+      }
+      return _analysisSessions[_activeSessionIndex];
+    }
+
+    function syncGlobalAliases() {
+      const s = getActiveSession();
+      _currentFindings = s.currentFindings;
+      _currentMetrics = s.currentMetrics;
+      _currentComputations = s.currentComputations;
+      lastAnalysisData = s.lastAnalysisData;
+      sessionId = s.sessionId;
+      analysisStack = s.analysisStack;
+      chatMessages = s.chatMessages;
+      activeCharts = s.activeCharts;
+    }
+
+    function createNewSession(label) {
+      const idx = _analysisSessions.length + 1;
+      const session = new AnalysisSession(label || 'Chat ' + idx);
+      _analysisSessions.push(session);
+      _activeSessionIndex = _analysisSessions.length - 1;
+      syncGlobalAliases();
+      renderSessionTabs();
+      renderActiveSession();
+      return session;
+    }
+
+    function switchSession(index) {
+      if (index < 0 || index >= _analysisSessions.length || index === _activeSessionIndex) return;
+      destroyCharts();
+      _activeSessionIndex = index;
+      syncGlobalAliases();
+      renderSessionTabs();
+      renderActiveSession();
+    }
+
+    function closeSession(index) {
+      if (_analysisSessions.length <= 1) {
+        // Reset the only session
+        const s = _analysisSessions[0];
+        s.chatMessages.length = 0;
+        s.analysisStack = [];
+        s.lastAnalysisData = null;
+        s.activeCharts = [];
+        s.currentFindings = [];
+        s.currentMetrics = [];
+        s.currentComputations = [];
+        s.label = 'Chat 1';
+        syncGlobalAliases();
+        renderSessionTabs();
+        renderActiveSession();
+        return;
+      }
+      if (index === _activeSessionIndex) destroyCharts();
+      _analysisSessions.splice(index, 1);
+      if (_activeSessionIndex >= _analysisSessions.length) {
+        _activeSessionIndex = _analysisSessions.length - 1;
+      } else if (_activeSessionIndex > index) {
+        _activeSessionIndex--;
+      }
+      syncGlobalAliases();
+      renderSessionTabs();
+      renderActiveSession();
+    }
+
+    function renderSessionTabs() {
+      const bar = document.getElementById('analysis-tabs-bar');
+      if (!bar) return;
+      let html = '';
+      _analysisSessions.forEach((session, i) => {
+        const activeClass = i === _activeSessionIndex ? 'active' : '';
+        const label = session.label.length > 25 ? session.label.slice(0, 25) + '\u2026' : session.label;
+        html += '<button class="analysis-tab ' + activeClass + '" onclick="switchSession(' + i + ')" title="' + esc(session.label) + '">';
+        html += '<span class="analysis-tab-label">' + esc(label) + '</span>';
+        html += '<span class="tab-close" onclick="event.stopPropagation();closeSession(' + i + ')">&times;</span>';
+        html += '</button>';
+      });
+      html += '<button class="analysis-tab-new" onclick="createNewSession()" title="New analysis session">+</button>';
+      bar.innerHTML = html;
+    }
+
+    function renderActiveSession() {
+      const s = getActiveSession();
+      syncGlobalAliases();
+
+      // Re-render chat thread
+      const thread = document.getElementById('chat-thread');
+      if (thread) {
+        thread.innerHTML = '';
+        if (s.chatMessages.length) {
+          thread.style.display = 'block';
+          s.chatMessages.forEach(function(msg) {
+            const div = document.createElement('div');
+            div.className = 'chat-msg ' + msg.role;
+            div.innerHTML = '<div class="chat-role">' + msg.role + '</div><div>' + esc(msg.content) + '</div>';
+            thread.appendChild(div);
+          });
+          thread.scrollTop = thread.scrollHeight;
+        } else {
+          thread.style.display = 'none';
+        }
+      }
+
+      // Re-render analysis body
+      const body = document.getElementById('analyze-body');
+      const status = document.getElementById('analyze-status');
+      destroyCharts();
+
+      if (s.analysisStack.length) {
+        const lastEntry = s.analysisStack[s.analysisStack.length - 1];
+        s.lastAnalysisData = lastEntry.data;
+        syncGlobalAliases();
+        const pipeStatus = lastEntry.data.pipeline_status || 'ok';
+        if (pipeStatus === 'partial') {
+          status.innerHTML = '<span class="badge badge-yellow">PARTIAL</span>';
+        } else {
+          status.innerHTML = lastEntry.data.approved
+            ? '<span class="badge badge-green">APPROVED</span>'
+            : '<span class="badge badge-red">REJECTED</span>';
+        }
+        body.innerHTML = renderAnalysis(lastEntry.data);
+        autoRenderCharts(lastEntry.data);
+      } else {
+        body.innerHTML = '';
+        status.innerHTML = '';
+      }
+
+      document.getElementById('question').value = '';
     }
 
     // -----------------------------------------------------------------------
@@ -3306,9 +3491,9 @@
 
     // Role-based permissions matrix
     const ROLE_PERMISSIONS = {
-      owner: ['setup', 'upload', 'delete_data', 'analyze', 'feed', 'feed_actions', 'reports', 'deploy', 'alerts', 'whatif', 'users', 'sources'],
-      admin: ['setup', 'upload', 'delete_data', 'analyze', 'feed', 'feed_actions', 'reports', 'deploy', 'alerts', 'whatif', 'users', 'sources'],
-      manager: ['upload', 'analyze', 'feed', 'feed_actions', 'reports', 'deploy', 'alerts', 'whatif'],
+      owner: ['setup', 'upload', 'delete_data', 'analyze', 'feed', 'feed_actions', 'reports', 'deploy', 'alerts', 'users', 'sources'],
+      admin: ['setup', 'upload', 'delete_data', 'analyze', 'feed', 'feed_actions', 'reports', 'deploy', 'alerts', 'users', 'sources'],
+      manager: ['upload', 'analyze', 'feed', 'feed_actions', 'reports', 'deploy', 'alerts'],
       operator: ['analyze', 'feed', 'reports'],
       viewer: ['feed', 'reports'],
     };
@@ -3324,7 +3509,6 @@
         'feed': ['feed'],
         'reports': ['reports'],
         'alerts': ['alerts'],
-        'whatif': ['whatif'],
         'sources': ['data'],
         'users': ['users'],
       };
@@ -3420,7 +3604,7 @@
                   ${isOwner || isSelf ? 'disabled' : ''}>
                   ${roleOptions}
                 </select>
-                ${!isSelf && !isOwner && u.is_active ? `<button class="btn-sm" style="background:var(--red);color:#fff;font-size:0.65rem;" onclick="deactivateUser('${u.id}', '${esc(u.name)}')">Deactivate</button>` : ''}
+                ${!isSelf && !isOwner && u.is_active ? `<button class="btn-sm" style="background:var(--red);color:#fff;font-size:0.65rem;" onclick="deactivateUser('${u.id}', '${esc(u.name)}', this)">Deactivate</button>` : ''}
               </div>
             </div>`;
         }).join('');
@@ -3430,36 +3614,30 @@
     }
 
     async function changeUserRole(userId, newRole, selectEl) {
-      try {
+      await asyncAction(selectEl, async () => {
         await apiFetch(API + `/users/${userId}/role`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ role: newRole }),
         });
-        toast('Role updated to ' + newRole);
-      } catch (e) {
-        toast('Failed: ' + e.message);
-        loadUsersList(); // reload to reset dropdown
-      }
+      }, { successText: 'Role updated to ' + newRole, errorPrefix: 'Failed' });
     }
 
-    async function deactivateUser(userId, userName) {
+    async function deactivateUser(userId, userName, btn) {
       if (!confirm(`Deactivate user "${userName}"? They will lose access immediately.`)) return;
-      try {
+      await asyncAction(btn, async () => {
         await apiFetch(API + `/users/${userId}`, { method: 'DELETE' });
-        toast(userName + ' has been deactivated');
         loadUsersList();
-      } catch (e) {
-        toast('Failed: ' + e.message);
-      }
+      }, { successText: userName + ' has been deactivated', errorPrefix: 'Failed' });
     }
 
-    async function sendInvite() {
+    async function sendInvite(btn) {
       const email = document.getElementById('invite-email').value.trim();
       const role = document.getElementById('invite-role').value;
       const plan = document.getElementById('invite-plan').value;
       if (!email) { toast('Email is required'); return; }
-      try {
+
+      await asyncAction(btn, async () => {
         const result = await apiFetch(API + '/auth/invite', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3475,9 +3653,7 @@
             <span style="font-size:0.62rem;color:var(--muted);">Expires in 7 days. Role: ${esc(role)} &middot; Plan: ${esc(plan)}</span>
           </div>`;
         document.getElementById('invite-email').value = '';
-      } catch (e) {
-        toast('Invite failed: ' + e.message);
-      }
+      }, { loadingText: 'Sending\u2026', errorPrefix: 'Invite failed' });
     }
 
     async function loadPendingInvites() {
@@ -3557,7 +3733,6 @@
       // Lock tabs based on plan
       const lockedFeatures = [];
       if (!limits.setup) lockedFeatures.push('setup');
-      if (!limits.whatif) lockedFeatures.push('whatif');
       if (!limits.alerts) lockedFeatures.push('alerts');
       if (!limits.reports) lockedFeatures.push('reports');
 
@@ -3580,7 +3755,6 @@
     function showUpgradeModal(feature) {
       const featureNames = {
         setup: 'Setup & Configuration',
-        whatif: 'What-If Scenarios',
         alerts: 'Alerts',
         reports: 'Reports',
         deploy: 'Deploy Reports',
@@ -3597,38 +3771,21 @@
     // Load plan limits after auth
     setTimeout(loadPlanLimits, 1000);
 
-    // Session management
-    let sessionId = localStorage.getItem('bb_session_id');
-    if (!sessionId) {
-      sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-      localStorage.setItem('bb_session_id', sessionId);
-    }
-
-    const chatMessages = [];
+    // Session management — globals are aliases into the active AnalysisSession
+    // (synced via syncGlobalAliases() on every session switch)
+    let sessionId = '';
+    let chatMessages = [];
     let lastAnalysisData = null;
     let activeCharts = [];
-
-    // Drill-down navigation stack
-    // Each entry: { question, data, finding (null for root) }
     let analysisStack = [];
 
-    function updateSessionLabel() {
-      document.getElementById('session-label').textContent = `Session: ${sessionId.slice(0, 8)}...`;
-    }
-    updateSessionLabel();
+    // Initialize first session and sync aliases
+    getActiveSession();
+    syncGlobalAliases();
 
     function newChat() {
-      sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-      localStorage.setItem('bb_session_id', sessionId);
-      chatMessages.length = 0;
-      analysisStack = [];
-      destroyCharts();
-      document.getElementById('chat-thread').style.display = 'none';
-      document.getElementById('chat-thread').innerHTML = '';
-      document.getElementById('analyze-body').innerHTML = '';
-      document.getElementById('analyze-status').innerHTML = '';
-      updateSessionLabel();
-      toast('New chat started');
+      createNewSession();
+      toast('New analysis tab opened');
     }
 
     // Tabs — primary bar + "More" dropdown
@@ -3786,6 +3943,10 @@
       if (compEl) compEl.textContent = pct + '%';
       const progEl = document.getElementById('setup-progress');
       if (progEl) progEl.style.width = pct + '%';
+
+      // Show getting started banner for new users
+      const gsBanner = document.getElementById('setup-getting-started');
+      if (gsBanner) gsBanner.style.display = pct < 30 ? '' : 'none';
 
       updateSetupCardSummaries();
     }
@@ -4027,14 +4188,13 @@
       } catch (e) { /* ignore */ }
     }
 
-    async function submitProcessStep() {
+    async function submitProcessStep(btn) {
       const name = document.getElementById('ps-name').value.trim();
       if (!name) return toast('Process name is required');
 
       // Build target_ranges from per-metric range inputs, or fallback to single range
       const singleRange = document.getElementById('ps-range')?.value?.trim() || '';
       const targetRanges = Object.keys(currentMetricRanges).length ? { ...currentMetricRanges } : {};
-      // If single range input was used (no per-metric inputs) and we have metrics, map it
       if (singleRange && !Object.keys(targetRanges).length && currentMetricTags.length) {
         targetRanges[currentMetricTags[0]] = singleRange;
       }
@@ -4053,27 +4213,24 @@
 
       const editId = document.getElementById('ps-edit-id').value;
 
-      try {
+      await asyncAction(btn, async () => {
         if (editId) {
           await apiFetch(`/process-steps/${editId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          toast('Step updated');
         } else {
           await apiFetch('/process-steps', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          toast('Step added');
         }
         document.getElementById('process-step-modal').style.display = 'none';
         loadProcessSteps();
         updateSetupChecklist();
 
-        // Green glow effect on the newly added row
         setTimeout(() => {
           const table = document.getElementById('process-steps-body')?.querySelector('table');
           if (table) {
@@ -4085,9 +4242,7 @@
             }
           }
         }, 300);
-      } catch (e) {
-        toast('Failed to save step: ' + e.message);
-      }
+      }, { successText: editId ? 'Step updated' : 'Step added', errorPrefix: 'Failed to save step' });
     }
 
     // -----------------------------------------------------------------------
@@ -4111,7 +4266,7 @@
       document.getElementById('io-name').focus();
     }
 
-    async function submitProcessIO() {
+    async function submitProcessIO(btn) {
       const name = document.getElementById('io-name').value.trim();
       if (!name) return toast('Name is required');
 
@@ -4125,18 +4280,16 @@
         linked_table: document.getElementById('io-table').value.trim(),
       };
 
-      try {
+      await asyncAction(btn, async () => {
         await apiFetch('/process-io', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        toast(`${ioType.charAt(0).toUpperCase() + ioType.slice(1)} added`);
         document.getElementById('process-io-modal').style.display = 'none';
         loadProcessIO();
         updateSetupChecklist();
 
-        // Green glow on new entry
         setTimeout(() => {
           const body = document.getElementById('process-io-body');
           if (body) {
@@ -4152,9 +4305,7 @@
             }
           }
         }, 300);
-      } catch (e) {
-        toast('Failed to save: ' + e.message);
-      }
+      }, { successText: `${ioType.charAt(0).toUpperCase() + ioType.slice(1)} added`, errorPrefix: 'Failed to save' });
     }
 
     // Load Data tab sub-content (wiring to existing functions where possible)
@@ -4230,7 +4381,7 @@
             html += `<div class="ctx-entry">
               <div class="ctx-actions">
                 ${isEditable ? `<button onclick="editContextEntry(${entry.id})">Edit</button>` : ''}
-                <button onclick="deleteContextEntry(${entry.id})" style="color:#e74c3c;">Delete</button>
+                <button onclick="deleteContextEntry(${entry.id}, this)" style="color:#e74c3c;">Delete</button>
               </div>
               <div style="padding-right:5rem;">${truncated}</div>
             </div>`;
@@ -4269,37 +4420,31 @@
           addBtn.onclick = async () => {
             const newContent = ctxText.value.trim();
             if (!newContent) return toast('Enter content');
-            try {
-              await fetch(`/context/entries/${id}`, {
+            await asyncAction(addBtn, async () => {
+              await apiFetch(`/context/entries/${id}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({content: newContent})
               });
-              toast('Context updated');
               ctxText.value = '';
               ctxText.placeholder = "Enter business context (e.g., 'Enterprise customers generate 80% of our revenue')";
               delete ctxText.dataset.editId;
               addBtn.textContent = 'Add';
-              addBtn.onclick = () => submitContext();
+              addBtn.onclick = () => submitContext(addBtn);
               loadContextEntries();
               updateSetupChecklist();
-            } catch (e) {
-              toast('Failed to update context');
-            }
+            }, { successText: 'Context updated', errorPrefix: 'Failed to update context', restoreHTML: false });
           };
         }
       }
     }
 
-    async function deleteContextEntry(id) {
+    async function deleteContextEntry(id, btn) {
       if (!confirm('Delete this context entry?')) return;
-      try {
-        await fetch(`/context/entries/${id}`, {method: 'DELETE'});
-        toast('Context deleted');
+      await asyncAction(btn, async () => {
+        await apiFetch(`/context/entries/${id}`, {method: 'DELETE'});
         loadContextEntries();
-      } catch (e) {
-        toast('Failed to delete context');
-      }
+      }, { successText: 'Context deleted', errorPrefix: 'Failed to delete context' });
     }
 
     // ---- Process Steps Management ----
@@ -4339,7 +4484,7 @@
             })()}</td>
             <td style="white-space:nowrap;">
               <button class="btn-sm" onclick="editProcessStep(${s.id})" style="font-size:0.6rem;">Edit</button>
-              <button class="btn-sm" onclick="deleteProcessStep(${s.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button>
+              <button class="btn-sm" onclick="deleteProcessStep(${s.id}, this)" style="font-size:0.6rem;color:#e74c3c;">Del</button>
             </td>
           </tr>`;
         }
@@ -4355,9 +4500,12 @@
     function showAddProcessStepModal() { openProcessStepModal(); }
     function editProcessStep(id) { openProcessStepModal(id); }
 
-    async function deleteProcessStep(id) {
+    async function deleteProcessStep(id, btn) {
       if (!confirm('Delete this process step?')) return;
-      fetch(`/process-steps/${id}`, {method: 'DELETE'}).then(() => { toast('Deleted'); loadProcessSteps(); }).catch(() => toast('Failed'));
+      await asyncAction(btn, async () => {
+        await apiFetch(`/process-steps/${id}`, {method: 'DELETE'});
+        loadProcessSteps();
+      }, { successText: 'Deleted', errorPrefix: 'Failed to delete step' });
     }
 
     // ---- Process I/O Management ----
@@ -4379,7 +4527,7 @@
           html += '<table class="process-table"><tr><th>Name</th><th>Source</th><th>Unit</th><th>Range</th><th>Table</th><th></th></tr>';
           for (const io of inputs) {
             html += `<tr><td>${io.name}</td><td>${io.source_or_destination || '-'}</td><td>${io.unit || '-'}</td><td>${io.typical_range || '-'}</td><td>${io.linked_table || '-'}</td>
-              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
+              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id}, this)" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
           }
           html += '</table>';
         }
@@ -4389,7 +4537,7 @@
           html += '<table class="process-table"><tr><th>Name</th><th>Destination</th><th>Unit</th><th>Range</th><th>Table</th><th></th></tr>';
           for (const io of outputs) {
             html += `<tr><td>${io.name}</td><td>${io.source_or_destination || '-'}</td><td>${io.unit || '-'}</td><td>${io.typical_range || '-'}</td><td>${io.linked_table || '-'}</td>
-              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id})" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
+              <td><button class="btn-sm" onclick="deleteProcessIO(${io.id}, this)" style="font-size:0.6rem;color:#e74c3c;">Del</button></td></tr>`;
           }
           html += '</table>';
         }
@@ -4403,9 +4551,12 @@
     // showAddIOModal replaced by openIOModal/submitProcessIO above
     function showAddIOModal(ioType) { openIOModal(ioType); }
 
-    async function deleteProcessIO(id) {
+    async function deleteProcessIO(id, btn) {
       if (!confirm('Delete this entry?')) return;
-      fetch(`/process-io/${id}`, {method: 'DELETE'}).then(() => { toast('Deleted'); loadProcessIO(); }).catch(() => toast('Failed'));
+      await asyncAction(btn, async () => {
+        await apiFetch(`/process-io/${id}`, {method: 'DELETE'});
+        loadProcessIO();
+      }, { successText: 'Deleted', errorPrefix: 'Failed to delete' });
     }
 
     function showAddContextModal() {
@@ -4502,7 +4653,7 @@
             html += `<div class="auto-link-item">
               <span><strong>${s.metric_name}</strong> &rarr; ${s.table_name}.${s.column_name}?</span>
               <span class="confidence-badge">${Math.round((s.confidence||0)*100)}%</span>
-              <button class="btn-sm" onclick="acceptAutoLink('${s.metric_name}','${s.table_name}','${s.column_name}')" style="font-size:0.6rem;">Accept</button>
+              <button class="btn-sm" onclick="acceptAutoLink('${s.metric_name}','${s.table_name}','${s.column_name}', this)" style="font-size:0.6rem;">Accept</button>
             </div>`;
           }
         }
@@ -4520,18 +4671,15 @@
       }
     }
 
-    async function acceptAutoLink(metricName, tableName, columnName) {
-      try {
+    async function acceptAutoLink(metricName, tableName, columnName, btn) {
+      await asyncAction(btn, async () => {
         await apiFetch('/setup/auto-link-metrics', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accept: { metric_name: metricName, table_name: tableName, column_name: columnName } }),
         });
-        toast(`Linked ${metricName} to ${tableName}.${columnName}`);
         runAutoLink();
-      } catch (e) {
-        toast('Failed to accept link');
-      }
+      }, { successText: `Linked ${metricName} to ${tableName}.${columnName}`, errorPrefix: 'Failed to accept link' });
     }
 
     function openDerivedMetricModal() {
@@ -4546,39 +4694,57 @@
       document.getElementById('dm-name').focus();
     }
 
-    async function submitDerivedMetric() {
+    async function submitDerivedMetric(btn) {
       const name = document.getElementById('dm-name').value.trim();
       const formula = document.getElementById('dm-formula').value.trim();
       if (!name) return toast('Metric name is required');
       if (!formula) return toast('Formula is required');
 
+      // Parse threshold values (fix: parseFloat(v) || null treats 0 as null)
+      const parseNum = id => {
+        const v = document.getElementById(id).value.trim();
+        if (v === '') return null;
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+      };
+      const warnMin = parseNum('dm-warn-min');
+      const warnMax = parseNum('dm-warn-max');
+      const critMin = parseNum('dm-crit-min');
+      const critMax = parseNum('dm-crit-max');
+
+      // Validate range ordering
+      if (warnMin !== null && warnMax !== null && warnMin >= warnMax)
+        return toast('Warning min must be less than warning max');
+      if (critMin !== null && critMax !== null && critMin >= critMax)
+        return toast('Critical min must be less than critical max');
+
+      // Validate hierarchy: warning range should be inside critical range
+      if (critMin !== null && warnMin !== null && warnMin < critMin)
+        return toast('Warning min must be ≥ critical min (warning is tighter)');
+      if (critMax !== null && warnMax !== null && warnMax > critMax)
+        return toast('Warning max must be ≤ critical max (warning is tighter)');
+
       const payload = {
         metric_name: name,
         unit: document.getElementById('dm-unit').value.trim(),
         formula: formula,
-        warning_min: parseFloat(document.getElementById('dm-warn-min').value) || null,
-        warning_max: parseFloat(document.getElementById('dm-warn-max').value) || null,
-        critical_min: parseFloat(document.getElementById('dm-crit-min').value) || null,
-        critical_max: parseFloat(document.getElementById('dm-crit-max').value) || null,
+        warning_min: warnMin,
+        warning_max: warnMax,
+        critical_min: critMin,
+        critical_max: critMax,
       };
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch('/metrics/derived', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        if (data.error) {
-          toast('Error: ' + data.error);
-          return;
-        }
-        toast(`Derived metric "${name}" created`);
+        if (data.error) throw new Error(data.error);
         document.getElementById('derived-metric-modal').style.display = 'none';
         loadThresholds();
         loadDerivedMetrics();
-      } catch (e) {
-        toast('Failed: ' + (e.message || 'unknown error'));
-      }
+      }, { successText: `Derived metric "${name}" created`, errorPrefix: 'Failed' });
     }
 
     async function loadDerivedMetrics() {
@@ -4677,19 +4843,19 @@
       const btn = document.getElementById('ask-btn');
       const status = document.getElementById('analyze-status');
       const body = document.getElementById('analyze-body');
+      const s = getActiveSession();
 
-      btn.disabled = true;
-      status.innerHTML = '<span class="spinner"></span> Running...';
-      body.innerHTML = '';
-      destroyCharts();
+      await asyncAction(btn, async () => {
+        status.innerHTML = '<span class="spinner"></span> Running...';
+        body.innerHTML = '';
+        destroyCharts();
 
-      addChatMessage('user', q);
+        addChatMessage('user', q);
 
-      // Fresh query → reset drill-down stack
-      if (!parentFinding) analysisStack = [];
+        // Fresh query → reset drill-down stack
+        if (!parentFinding) { s.analysisStack = []; syncGlobalAliases(); }
 
-      try {
-        const payload = { question: q, session_id: sessionId };
+        const payload = { question: q, session_id: s.sessionId };
         if (parentFinding) payload.parent_finding = parentFinding;
 
         const data = await apiFetch(`${API}/analyze`, {
@@ -4700,12 +4866,12 @@
 
         // Update session_id if server returns one
         if (data.session_id) {
-          sessionId = data.session_id;
-          localStorage.setItem('bb_session_id', sessionId);
-          updateSessionLabel();
+          s.sessionId = data.session_id;
+          syncGlobalAliases();
         }
 
-        lastAnalysisData = data;
+        s.lastAnalysisData = data;
+        syncGlobalAliases();
 
         // Check if the analysis pipeline returned an error
         if (data.error || data.status === 'failed') {
@@ -4716,12 +4882,17 @@
             <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem;">Try rephrasing your question or check if the relevant data has been uploaded.</p>
           </div>`;
           addChatMessage('assistant', 'Analysis failed: ' + (data.error || 'Unknown error'));
-          btn.disabled = false;
           return;
         }
 
         // Push to drill-down stack
-        analysisStack.push({ question: q, data, finding: parentFinding || null });
+        s.analysisStack.push({ question: q, data, finding: parentFinding || null });
+
+        // Auto-label session tab on first analysis
+        if (s.analysisStack.length === 1) {
+          s.label = q.substring(0, 40);
+          renderSessionTabs();
+        }
 
         // Status badge: approved, partial, or rejected
         const pipeStatus = data.pipeline_status || 'ok';
@@ -4742,11 +4913,7 @@
         autoRenderCharts(data);
 
         document.getElementById('question').value = '';
-      } catch (e) {
-        status.innerHTML = '<span class="badge badge-red">ERROR</span>';
-        body.textContent = e.message;
-      }
-      btn.disabled = false;
+      }, { restoreHTML: false });
     }
 
     document.getElementById('question').addEventListener('keydown', e => {
@@ -4759,10 +4926,14 @@
     function renderAnalysis(d) {
       let html = '';
 
-      // Store data for drill-down onclick references
-      _currentFindings = d.analysis?.findings || [];
-      _currentMetrics = d.cfo_key_metrics || [];
-      _currentComputations = d.python_analysis?.computations || [];
+      // Store data for drill-down onclick references (into active session + global aliases)
+      const _s = getActiveSession();
+      _s.currentFindings = d.analysis?.findings || [];
+      _s.currentMetrics = d.cfo_key_metrics || [];
+      _s.currentComputations = d.python_analysis?.computations || [];
+      _currentFindings = _s.currentFindings;
+      _currentMetrics = _s.currentMetrics;
+      _currentComputations = _s.currentComputations;
 
       // Breadcrumb navigation (only show when drilled down)
       if (analysisStack.length > 1) {
@@ -4800,13 +4971,13 @@
         html += `<div style="background:rgba(254,202,87,0.15);border:1px solid var(--yellow);border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.75rem;color:var(--yellow);display:flex;align-items:center;gap:0.5rem;">`;
         html += `<span style="font-size:1rem;">&#9888;</span>`;
         html += `<span><strong>Low Confidence (${(confidence*100).toFixed(0)}%)</strong> — The available data may not fully answer this question.</span>`;
-        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;margin-left:auto;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
+        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;background:var(--accent);color:#fff;border:none;margin-left:auto;" onclick="investigateDeeper(this)">&#9889; Investigate Deeper</button>`;
         html += `</div>`;
       } else if (confidence < 0.6) {
         html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">`;
         html += `<span style="font-size:0.65rem;color:var(--muted);background:rgba(68,147,248,0.1);padding:2px 8px;border-radius:10px;">`;
         html += `${queryType} &middot; ${(confidence*100).toFixed(0)}% confidence</span>`;
-        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
+        html += `<button class="btn-sm" style="font-size:0.65rem;padding:2px 8px;" onclick="investigateDeeper(this)">&#9889; Investigate Deeper</button>`;
         html += `</div>`;
       } else {
         html += `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">`;
@@ -4843,9 +5014,9 @@
 
       // Analysis Actions Bar (Feed-parity)
       html += `<div style="display:flex;gap:0.4rem;margin-bottom:0.75rem;flex-wrap:wrap;">`;
-      html += `<button class="btn-sm" style="background:var(--accent);color:#fff;border:none;font-weight:600;" onclick="investigateDeeper()">&#9889; Investigate Deeper</button>`;
-      html += `<button class="btn-sm" onclick="deployFullAnalysis()">Deploy Full Analysis</button>`;
-      html += `<button class="btn-sm btn-secondary" onclick="saveFullAnalysisToFeed()">Save to Feed</button>`;
+      html += `<button class="btn-sm" style="background:var(--accent);color:#fff;border:none;font-weight:600;" onclick="investigateDeeper(this)">&#9889; Investigate Deeper</button>`;
+      html += `<button class="btn-sm" onclick="deployFullAnalysis(this)">Deploy Full Analysis</button>`;
+      html += `<button class="btn-sm btn-secondary" onclick="saveFullAnalysisToFeed(this)">Save to Feed</button>`;
       html += `<button class="btn-sm btn-secondary" onclick="exportCSV()">Export CSV</button>`;
       html += `<button class="btn-sm btn-secondary" onclick="exportPDF()">Export PDF</button>`;
       html += `</div>`;
@@ -4909,7 +5080,7 @@
             html += `<div class="finding-actions">`;
             html += `<button class="btn-sm" onclick="event.stopPropagation();deployFromAnalysis(${i})">Deploy as Report</button>`;
             html += `<button class="btn-sm btn-secondary" onclick="event.stopPropagation();drillDown(_currentFindings[${i}])">Go Deeper</button>`;
-            html += `<button class="btn-sm btn-secondary" onclick="event.stopPropagation();saveToFeed(${i})">Save to Feed</button>`;
+            html += `<button class="btn-sm btn-secondary" onclick="event.stopPropagation();saveToFeed(${i}, this)">Save to Feed</button>`;
             html += `</div>`;
             html += `</div>`;
           });
@@ -5013,18 +5184,63 @@
 
       html += `</div></details></div>`;
 
-      // Manual chart builder
+      // Categorical breakdown (dealer depth)
+      if (sqlResults.length && sqlResults.some(sr => sr.rows?.length)) {
+        const allRows = sqlResults.flatMap(sr => sr.rows || []);
+        if (allRows.length > 1) {
+          const cols = Object.keys(allRows[0]);
+          const categoricalCols = [];
+          const numericCols = [];
+          cols.forEach(col => {
+            const values = allRows.map(r => r[col]).filter(v => v != null);
+            const isNumeric = values.every(v => !isNaN(parseFloat(v)));
+            if (isNumeric) {
+              numericCols.push(col);
+            } else {
+              const uniq = new Set(values.map(String));
+              if (uniq.size >= 2 && uniq.size <= 100 && uniq.size < values.length * 0.8) {
+                categoricalCols.push({ col: col, cardinality: uniq.size });
+              }
+            }
+          });
+
+          if (categoricalCols.length && numericCols.length) {
+            html += `<div class="step"><div class="step-label">Breakdown by Category <span style="font-size:0.6rem;color:var(--accent);font-style:italic;">see numbers per dealer, region, etc.</span></div>`;
+            html += `<div style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem;">`;
+            categoricalCols.forEach(cc => {
+              html += `<button class="btn-sm btn-secondary" onclick="showBreakdown('${esc(cc.col)}')" title="${cc.cardinality} unique values">Break down by ${esc(cc.col)}</button>`;
+            });
+            html += `</div>`;
+            html += `<div id="breakdown-results"></div>`;
+            html += `</div>`;
+          }
+        }
+      }
+
+      // Enhanced Chart Builder
       if (sqlResults.length && sqlResults.some(sr => sr.rows?.length)) {
         const allRows = sqlResults.flatMap(sr => sr.rows || []);
         if (allRows.length) {
           const cols = Object.keys(allRows[0]);
-          html += `<div class="step"><div class="step-label">Chart Builder</div>`;
-          html += `<div class="chart-builder">`;
-          html += `<label>Type:</label><select id="cb-type"><option>bar</option><option>line</option><option>pie</option><option>scatter</option></select>`;
-          html += `<label>X:</label><select id="cb-x">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select>`;
-          html += `<label>Y:</label><select id="cb-y" multiple size="3">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select>`;
-          html += `<button class="btn-sm" onclick="buildCustomChart()">Build Chart</button>`;
-          html += `</div><div id="custom-chart-area"></div></div>`;
+          html += `<div class="chart-builder-panel">`;
+          html += `<h4>Chart Builder</h4>`;
+          html += `<div class="cb-row">`;
+          html += `<div class="cb-field"><label>Data Source</label><select id="cb-source" onchange="onChartSourceChange()"><option value="current">Current Analysis Results</option></select></div>`;
+          html += `<div class="cb-field"><label>Chart Type</label><select id="cb-type" onchange="onChartSettingChange()"><option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option><option value="scatter">Scatter</option></select></div>`;
+          html += `<div class="cb-field" style="flex:1;"><label>Title</label><input type="text" id="cb-title" placeholder="Auto-generated if empty" /></div>`;
+          html += `</div>`;
+          html += `<div class="cb-row">`;
+          html += `<div class="cb-field"><label>X-Axis</label><select id="cb-x">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+          html += `<div class="cb-field"><label>Y-Axis (multi-select)</label><select id="cb-y" multiple size="3">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+          html += `<div class="cb-field"><label>Group By</label><select id="cb-group"><option value="">None</option>${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+          html += `<div class="cb-field"><label>Aggregation</label><select id="cb-agg"><option value="">Raw</option><option value="sum">Sum</option><option value="avg">Average</option><option value="count">Count</option><option value="min">Min</option><option value="max">Max</option></select></div>`;
+          html += `</div>`;
+          html += `<div class="cb-actions">`;
+          html += `<button class="btn-sm" onclick="buildEnhancedChart()" style="background:var(--accent);color:#fff;border:none;">Build Chart</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="saveChartToFeed(this)">Save to Feed</button>`;
+          html += `</div>`;
+          html += `<div id="cb-preview" class="cb-preview"></div>`;
+          html += `</div>`;
         }
       }
 
@@ -5202,24 +5418,37 @@
     }
 
     function autoRenderCharts(data) {
+      const sqlResults = data.sql_results || [data.sql_result];
+      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+      if (!allRows.length) return;
+
+      // Dedup key: type + x-axis + sorted y-axes — prevents identical charts in analyst vs CFO areas
+      const rendered = new Set();
+      function dedupKey(cs) {
+        const yAxes = Array.isArray(cs.y) ? cs.y.slice().sort() : [cs.y || ''];
+        return `${cs.type || ''}|${cs.x || ''}|${yAxes.join(',')}`;
+      }
+
       // Auto-render top 2 analyst chart suggestions
       const analystCharts = data.analysis?.chart_suggestions || [];
-      analystCharts.slice(0, 2).forEach((cs, i) => {
+      analystCharts.slice(0, 2).forEach(cs => {
         const area = document.getElementById('chart-area');
         if (!area) return;
-        const sqlResults = data.sql_results || [data.sql_result];
-        const allRows = sqlResults.flatMap(sr => sr.rows || []);
-        if (allRows.length) _renderChart(area, cs, allRows);
+        const key = dedupKey(cs);
+        if (rendered.has(key)) return;
+        rendered.add(key);
+        _renderChart(area, cs, allRows);
       });
 
-      // Auto-render all CFO chart suggestions
+      // Auto-render all CFO chart suggestions (skip duplicates)
       const cfoCharts = data.cfo_chart_suggestions || [];
-      cfoCharts.forEach((cs, i) => {
+      cfoCharts.forEach(cs => {
         const area = document.getElementById('cfo-chart-area');
         if (!area) return;
-        const sqlResults = data.sql_results || [data.sql_result];
-        const allRows = sqlResults.flatMap(sr => sr.rows || []);
-        if (allRows.length) _renderChart(area, cs, allRows);
+        const key = dedupKey(cs);
+        if (rendered.has(key)) return;
+        rendered.add(key);
+        _renderChart(area, cs, allRows);
       });
     }
 
@@ -5230,6 +5459,7 @@
       const btn = document.getElementById('ask-btn');
       const status = document.getElementById('analyze-status');
       const body = document.getElementById('analyze-body');
+      const s = getActiveSession();
 
       btn.disabled = true;
       status.innerHTML = '<span class="spinner"></span> Drilling deeper...';
@@ -5244,7 +5474,7 @@
       try {
         const payload = {
           question: drillQuestion,
-          session_id: sessionId,
+          session_id: s.sessionId,
           parent_finding: finding,
         };
         const data = await apiFetch(`${API}/analyze`, {
@@ -5254,15 +5484,15 @@
         });
 
         if (data.session_id) {
-          sessionId = data.session_id;
-          localStorage.setItem('bb_session_id', sessionId);
-          updateSessionLabel();
+          s.sessionId = data.session_id;
+          syncGlobalAliases();
         }
 
-        lastAnalysisData = data;
+        s.lastAnalysisData = data;
+        syncGlobalAliases();
 
         // Push to stack
-        analysisStack.push({ question: drillQuestion, data, finding });
+        s.analysisStack.push({ question: drillQuestion, data, finding });
 
         status.innerHTML = data.approved
           ? '<span class="badge badge-green">APPROVED</span>'
@@ -5281,13 +5511,15 @@
     }
 
     function drillBack(targetIndex) {
-      if (targetIndex < 0 || targetIndex >= analysisStack.length) return;
+      const s = getActiveSession();
+      if (targetIndex < 0 || targetIndex >= s.analysisStack.length) return;
 
       // Trim stack to target
-      analysisStack = analysisStack.slice(0, targetIndex + 1);
-      const entry = analysisStack[targetIndex];
+      s.analysisStack = s.analysisStack.slice(0, targetIndex + 1);
+      const entry = s.analysisStack[targetIndex];
 
-      lastAnalysisData = entry.data;
+      s.lastAnalysisData = entry.data;
+      syncGlobalAliases();
 
       const status = document.getElementById('analyze-status');
       const body = document.getElementById('analyze-body');
@@ -5300,39 +5532,38 @@
       autoRenderCharts(entry.data);
     }
 
-    async function investigateDeeper() {
-      // v4: Call Deep Tier API with context from last analysis
-      const lastEntry = analysisStack.length > 0
-        ? analysisStack[analysisStack.length - 1]
+    async function investigateDeeper(btn) {
+      const s = getActiveSession();
+      const lastEntry = s.analysisStack.length > 0
+        ? s.analysisStack[s.analysisStack.length - 1]
         : null;
       if (!lastEntry) return;
 
-      const body = document.getElementById('analyze-body');
-      const question = lastEntry.question;
-      const data = lastEntry.data;
+      await asyncActionKeyed('deep-tier', btn, async () => {
+        const body = document.getElementById('analyze-body');
+        const question = lastEntry.question;
+        const data = lastEntry.data;
 
-      // Build context payload
-      const payload = {
-        question: question,
-        session_id: sessionId,
-        fast_findings: data.analysis?.findings || [],
-        sql_query: data.sql_results?.[0]?.query || data.sql_result?.query || '',
-        tables_used: data.tables_used || [],
-        fast_confidence: data.query_confidence || 0.5,
-      };
+        const payload = {
+          question: question,
+          session_id: s.sessionId,
+          fast_findings: data.analysis?.findings || [],
+          sql_query: data.sql_results?.[0]?.query || data.sql_result?.query || '',
+          tables_used: data.tables_used || [],
+          fast_confidence: data.query_confidence || 0.5,
+        };
 
-      // Show "queued" banner
-      const deepBanner = document.createElement('div');
-      deepBanner.id = 'deep-tier-banner';
-      deepBanner.innerHTML = `
-        <div style="background:rgba(68,147,248,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-top:0.75rem;font-size:0.75rem;">
-          <span class="spinner" style="margin-right:0.4rem;"></span>
-          <strong style="color:var(--accent);">Deep Tier Analysis</strong> — Queuing deeper investigation with Claude...
-          <div id="deep-tier-status" style="color:var(--muted);margin-top:0.3rem;font-size:0.7rem;"></div>
-        </div>`;
-      body.appendChild(deepBanner);
+        // Show "queued" banner
+        const deepBanner = document.createElement('div');
+        deepBanner.id = 'deep-tier-banner';
+        deepBanner.innerHTML = `
+          <div style="background:rgba(68,147,248,0.15);border:1px solid var(--accent);border-radius:6px;padding:0.6rem 0.8rem;margin-top:0.75rem;font-size:0.75rem;">
+            <span class="spinner" style="margin-right:0.4rem;"></span>
+            <strong style="color:var(--accent);">Deep Tier Analysis</strong> — Queuing deeper investigation with Claude...
+            <div id="deep-tier-status" style="color:var(--muted);margin-top:0.3rem;font-size:0.7rem;"></div>
+          </div>`;
+        body.appendChild(deepBanner);
 
-      try {
         const res = await apiFetch(API + '/deep-tier/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5352,10 +5583,7 @@
           document.getElementById('deep-tier-status').innerHTML =
             '<span style="color:var(--yellow);">Deep Tier not available. Configure ANTHROPIC_API_KEY to enable.</span>';
         }
-      } catch (e) {
-        document.getElementById('deep-tier-status').innerHTML =
-          `<span style="color:var(--red);">Error: ${esc(e.message)}</span>`;
-      }
+      }, { loadingText: 'Queuing\u2026', errorPrefix: 'Deep Tier error' });
     }
 
     async function pollDeepTierTask(taskId, retries = 0) {
@@ -5538,11 +5766,11 @@
       }
     }
 
-    async function saveToFeed(findingIndex) {
+    async function saveToFeed(findingIndex, btn) {
       const finding = _currentFindings[findingIndex];
       if (!finding || !lastAnalysisData) return;
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/feed/from-analysis', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5556,20 +5784,16 @@
             source_tables: lastAnalysisData.sql_results?.map(sr => sr.task) || [],
           }),
         });
-
-        if (data.error) return toast('Error: ' + data.error);
-        toast('Saved to Feed');
+        if (data.error) throw new Error(data.error);
         markFeedDirty();
-      } catch (e) {
-        toast('Failed: ' + e.message);
-      }
+      }, { successText: 'Saved to Feed', errorPrefix: 'Failed' });
     }
 
-    async function deployFullAnalysis() {
+    async function deployFullAnalysis(btn) {
       if (!lastAnalysisData) return toast('No analysis to deploy');
 
-      const summary = lastAnalysisData.analysis?.summary || 'Full Analysis';
-      try {
+      await asyncAction(btn, async () => {
+        const summary = lastAnalysisData.analysis?.summary || 'Full Analysis';
         const data = await apiFetch(API + '/feed/from-analysis', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5586,19 +5810,17 @@
             source_tables: lastAnalysisData.sql_results?.map(sr => sr.task) || [],
           }),
         });
-
-        if (data.error) return toast('Error: ' + data.error);
+        if (data.error) throw new Error(data.error);
+        markFeedDirty();
         showDeployModal(data.insight_id, summary.substring(0, 100));
-      } catch (e) {
-        toast('Failed: ' + e.message);
-      }
+      }, { loadingText: 'Deploying\u2026', errorPrefix: 'Deploy failed' });
     }
 
-    async function saveFullAnalysisToFeed() {
+    async function saveFullAnalysisToFeed(btn) {
       if (!lastAnalysisData) return toast('No analysis to save');
 
-      const summary = lastAnalysisData.analysis?.summary || 'Full Analysis';
-      try {
+      await asyncAction(btn, async () => {
+        const summary = lastAnalysisData.analysis?.summary || 'Full Analysis';
         const data = await apiFetch(API + '/feed/from-analysis', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5612,36 +5834,253 @@
             source_tables: lastAnalysisData.sql_results?.map(sr => sr.task) || [],
           }),
         });
-
-        if (data.error) return toast('Error: ' + data.error);
-        toast('Full analysis saved to Feed');
+        if (data.error) throw new Error(data.error);
         markFeedDirty();
-      } catch (e) {
-        toast('Failed: ' + e.message);
+      }, { successText: 'Full analysis saved to Feed', errorPrefix: 'Failed to save' });
+    }
+
+    // -----------------------------------------------------------------------
+    // Categorical Breakdown (Dealer Depth)
+    // -----------------------------------------------------------------------
+    function showBreakdown(groupCol) {
+      const s = getActiveSession();
+      if (!s.lastAnalysisData) return;
+      const container = document.getElementById('breakdown-results');
+      if (!container) return;
+
+      container.innerHTML = '<div style="font-size:0.75rem;color:var(--muted);"><span class="spinner"></span> Loading breakdown\u2026</div>';
+
+      const sqlResults = s.lastAnalysisData.sql_results || [s.lastAnalysisData.sql_result];
+      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+      if (!allRows.length) { container.innerHTML = ''; return; }
+
+      // Client-side grouping (fast, uses already-loaded data)
+      const cols = Object.keys(allRows[0]);
+      const numericCols = cols.filter(c => {
+        const vals = allRows.map(r => r[c]).filter(v => v != null);
+        return vals.length && vals.every(v => !isNaN(parseFloat(v))) && c !== groupCol;
+      });
+
+      // Read aggregation from dropdown if it exists
+      const aggSelect = document.getElementById('breakdown-agg');
+      const aggFunc = aggSelect ? aggSelect.value : 'sum';
+
+      const groups = {};
+      allRows.forEach(row => {
+        const key = String(row[groupCol] != null ? row[groupCol] : 'Unknown');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(row);
+      });
+
+      const aggRows = Object.entries(groups).map(function(entry) {
+        const key = entry[0], groupRows = entry[1];
+        const agg = {};
+        agg[groupCol] = key;
+        numericCols.forEach(col => {
+          const vals = groupRows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
+          switch (aggFunc) {
+            case 'sum': agg[col] = vals.reduce((a, b) => a + b, 0); break;
+            case 'avg': agg[col] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0; break;
+            case 'count': agg[col] = vals.length; break;
+            case 'min': agg[col] = vals.length ? Math.min.apply(null, vals) : 0; break;
+            case 'max': agg[col] = vals.length ? Math.max.apply(null, vals) : 0; break;
+            default: agg[col] = vals.reduce((a, b) => a + b, 0);
+          }
+        });
+        agg['_count'] = groupRows.length;
+        return agg;
+      });
+
+      // Sort by first numeric column desc
+      const sortCol = numericCols.length ? numericCols[0] : '_count';
+      aggRows.sort((a, b) => (b[sortCol] || 0) - (a[sortCol] || 0));
+
+      // Render
+      let html = '<div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem;">' + aggRows.length + ' unique values for "' + esc(groupCol) + '"</div>';
+      html += '<div style="display:flex;gap:0.3rem;align-items:center;margin-bottom:0.5rem;">';
+      html += '<label style="font-size:0.7rem;color:var(--muted);">Aggregate:</label>';
+      html += '<select id="breakdown-agg" onchange="showBreakdown(\'' + esc(groupCol) + '\')" style="font-size:0.7rem;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:4px;">';
+      ['sum', 'avg', 'count', 'min', 'max'].forEach(f => {
+        html += '<option value="' + f + '"' + (f === aggFunc ? ' selected' : '') + '>' + f.toUpperCase() + '</option>';
+      });
+      html += '</select></div>';
+      html += renderTable(aggRows, 30);
+
+      // Auto-chart
+      if (aggRows.length >= 2 && numericCols.length) {
+        const chartId = 'breakdown-chart-' + Date.now();
+        html += '<div id="' + chartId + '" style="margin-top:0.5rem;"></div>';
+        container.innerHTML = html;
+        setTimeout(function() {
+          const chartArea = document.getElementById(chartId);
+          if (!chartArea) return;
+          _renderChart(chartArea, {
+            type: 'bar',
+            x: groupCol,
+            y: [numericCols[0]],
+            title: numericCols[0] + ' by ' + groupCol + ' (' + aggFunc + ')',
+          }, aggRows.slice(0, 20));
+        }, 100);
+      } else {
+        container.innerHTML = html;
       }
     }
 
-    function buildCustomChart() {
+    // -----------------------------------------------------------------------
+    // Enhanced Chart Builder
+    // -----------------------------------------------------------------------
+    function aggregateRows(rows, groupCol, valueCols, aggFunc) {
+      const groups = {};
+      rows.forEach(row => {
+        const key = String(row[groupCol] != null ? row[groupCol] : 'Unknown');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(row);
+      });
+      return Object.entries(groups).map(function(entry) {
+        const key = entry[0], gRows = entry[1];
+        const result = {};
+        result[groupCol] = key;
+        valueCols.forEach(col => {
+          const vals = gRows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
+          switch (aggFunc) {
+            case 'sum': result[col + '_sum'] = vals.reduce((a, b) => a + b, 0); break;
+            case 'avg': result[col + '_avg'] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0; break;
+            case 'count': result[col + '_count'] = vals.length; break;
+            case 'min': result[col + '_min'] = vals.length ? Math.min.apply(null, vals) : 0; break;
+            case 'max': result[col + '_max'] = vals.length ? Math.max.apply(null, vals) : 0; break;
+          }
+        });
+        return result;
+      });
+    }
+
+    async function onChartSourceChange() {
+      const source = document.getElementById('cb-source').value;
+      const xSelect = document.getElementById('cb-x');
+      const ySelect = document.getElementById('cb-y');
+      const groupSelect = document.getElementById('cb-group');
+
+      if (source === 'current') {
+        const s = getActiveSession();
+        const sqlResults = s.lastAnalysisData?.sql_results || [s.lastAnalysisData?.sql_result];
+        const allRows = sqlResults.flatMap(sr => sr?.rows || []);
+        const cols = allRows.length ? Object.keys(allRows[0]) : [];
+        populateChartSelects(cols, xSelect, ySelect, groupSelect);
+      } else {
+        try {
+          const meta = await apiFetch(API + '/metadata');
+          const table = meta.find(t => t.table_name === source);
+          const cols = table ? (table.columns || []).map(c => c.name || c) : [];
+          populateChartSelects(cols, xSelect, ySelect, groupSelect);
+        } catch (e) { toast('Failed to load columns: ' + e.message); }
+      }
+    }
+
+    function populateChartSelects(cols, xSelect, ySelect, groupSelect) {
+      xSelect.innerHTML = cols.map(c => '<option>' + esc(c) + '</option>').join('');
+      ySelect.innerHTML = cols.map(c => '<option>' + esc(c) + '</option>').join('');
+      groupSelect.innerHTML = '<option value="">None</option>' + cols.map(c => '<option>' + esc(c) + '</option>').join('');
+    }
+
+    function onChartSettingChange() { /* placeholder for future live preview */ }
+
+    async function loadChartSources() {
+      const select = document.getElementById('cb-source');
+      if (!select) return;
+      try {
+        const tables = await apiFetch(API + '/metadata');
+        (tables || []).forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.table_name;
+          opt.textContent = 'Table: ' + t.table_name;
+          select.appendChild(opt);
+        });
+      } catch (e) { /* silent */ }
+    }
+
+    async function buildEnhancedChart() {
+      const source = document.getElementById('cb-source').value;
       const type = document.getElementById('cb-type').value;
       const xCol = document.getElementById('cb-x').value;
       const ySelect = document.getElementById('cb-y');
       const yCols = Array.from(ySelect.selectedOptions).map(o => o.value);
+      const groupCol = document.getElementById('cb-group').value;
+      const aggFunc = document.getElementById('cb-agg').value;
+      const title = document.getElementById('cb-title').value;
 
       if (!yCols.length) { toast('Select at least one Y column'); return; }
 
-      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
-      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+      const area = document.getElementById('cb-preview');
+      area.innerHTML = '<div style="font-size:0.75rem;color:var(--muted);"><span class="spinner"></span> Building chart\u2026</div>';
 
-      const area = document.getElementById('custom-chart-area');
+      let rows;
+      if (source === 'current') {
+        const s = getActiveSession();
+        const sqlResults = s.lastAnalysisData?.sql_results || [s.lastAnalysisData?.sql_result];
+        rows = sqlResults.flatMap(sr => sr?.rows || []);
+      } else {
+        try {
+          const data = await apiFetch(API + '/data/' + encodeURIComponent(source) + '?page=1&page_size=2000');
+          rows = data.rows || [];
+        } catch (e) {
+          area.innerHTML = '<div style="color:var(--red);font-size:0.75rem;">Failed to load data: ' + e.message + '</div>';
+          return;
+        }
+      }
+
+      if (!rows.length) { area.innerHTML = '<div style="color:var(--muted);font-size:0.75rem;">No data available</div>'; return; }
+
       area.innerHTML = '';
+      if (groupCol && aggFunc) {
+        const aggd = aggregateRows(rows, groupCol, yCols, aggFunc);
+        _renderChart(area, {
+          type: type,
+          x: groupCol,
+          y: yCols.map(c => c + '_' + aggFunc),
+          title: title || yCols.join(', ') + ' by ' + groupCol + ' (' + aggFunc + ')',
+        }, aggd);
+      } else if (aggFunc && !groupCol) {
+        const aggd = aggregateRows(rows, xCol, yCols, aggFunc);
+        _renderChart(area, {
+          type: type,
+          x: xCol,
+          y: yCols.map(c => c + '_' + aggFunc),
+          title: title || yCols.join(', ') + ' by ' + xCol + ' (' + aggFunc + ')',
+        }, aggd);
+      } else {
+        _renderChart(area, {
+          type: type,
+          x: xCol,
+          y: yCols,
+          title: title || yCols.join(', ') + ' by ' + xCol,
+        }, rows);
+      }
 
-      _renderChart(area, {
-        type,
-        x: xCol,
-        y: yCols,
-        title: `${yCols.join(', ')} by ${xCol}`,
-        number_format: 'decimal',
-      }, allRows);
+      // Load table sources if not yet loaded
+      loadChartSources();
+    }
+
+    async function saveChartToFeed(btn) {
+      const title = document.getElementById('cb-title')?.value || 'Custom Chart';
+      const s = getActiveSession();
+
+      await asyncAction(btn, async () => {
+        const data = await apiFetch(API + '/feed/from-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Chart: ' + title.substring(0, 150),
+            description: 'Custom chart. Type: ' + (document.getElementById('cb-type')?.value || 'bar'),
+            insight_type: 'composite',
+            severity: 'info',
+            evidence: { chart_title: title },
+            suggested_actions: [],
+            source_tables: s.lastAnalysisData?.tables_used || [],
+          }),
+        });
+        if (data.error) throw new Error(data.error);
+        markFeedDirty();
+      }, { successText: 'Chart saved to Feed', errorPrefix: 'Save failed' });
     }
 
     // ---------------------------------------------------------------------------
@@ -5825,12 +6264,12 @@
     // ---------------------------------------------------------------------------
     // Context
     // ---------------------------------------------------------------------------
-    async function submitContext() {
+    async function submitContext(btn) {
       const text = document.getElementById('ctx-text').value.trim();
       const source = document.getElementById('ctx-source').value.trim() || 'manual';
       if (!text) return;
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(`${API}/context`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5839,10 +6278,7 @@
         const body = document.getElementById('context-body');
         body.innerHTML = `<p>Stored context <strong>${data.chunks} chunk${data.chunks !== 1 ? 's' : ''}</strong> (ids: ${data.ids.join(', ')}) from source <span class="badge badge-accent">${esc(data.source)}</span></p>` + body.innerHTML;
         document.getElementById('ctx-text').value = '';
-        toast('Context ingested successfully');
-      } catch (e) {
-        toast('Error: ' + e.message);
-      }
+      }, { successText: 'Context ingested successfully', errorPrefix: 'Error' });
     }
 
     // Context file upload
@@ -6369,185 +6805,246 @@
     // ---------------------------------------------------------------------------
     var feedInsights = [];
 
+    function renderFeedCards(insights, emptyMessage) {
+      const body = document.getElementById('feed-body');
+      feedInsights = insights;
+
+      if (!insights.length) {
+        body.innerHTML = `<div class="feed-empty">${emptyMessage || 'No insights found.'}</div>`;
+        return;
+      }
+
+      body.innerHTML = insights.map((ins, i) => {
+        const sevClass = ins.insight_type === 'story' ? 'type-story' : `severity-${ins.severity}`;
+        const sevBadge = ins.severity === 'critical' ? 'badge-red'
+          : ins.severity === 'warning' ? 'badge-yellow'
+          : ins.insight_type === 'story' ? 'badge-accent'
+          : 'badge-green';
+
+        // Determine card type for feed filtering
+        const cardType = ins.insight_type === 'anomaly' ? 'sanctity'
+          : ins.severity === 'critical' ? 'alert'
+          : ins.insight_type === 'story' ? 'insight'
+          : ins.insight_type === 'correlation' ? 'insight'
+          : ins.insight_type === 'composite' ? 'insight'
+          : ins.insight_type === 'cross_event' ? 'insight'
+          : ins.insight_type === 'trend' ? 'alert'
+          : 'insight';
+        let html = `<div class="feed-card ${sevClass}" data-type="${cardType}" data-status="${ins.status || 'new'}">`;
+        html += `<div class="feed-card-title">${esc(ins.title)}</div>`;
+        html += `<div class="feed-card-desc">${esc(ins.description)}</div>`;
+        html += `<div class="feed-card-meta">`;
+        html += `<span class="badge ${sevBadge}">${esc(ins.insight_type)}</span>`;
+        html += `<span class="badge badge-accent">Score: ${ins.impact_score}</span>`;
+        if (ins.source_tables?.length) {
+          ins.source_tables.forEach(t => {
+            html += `<span class="table-chip">${esc(t)}</span>`;
+          });
+        }
+        if (ins.discovered_at) {
+          html += `<span style="font-size:0.65rem;color:var(--muted);">${_timeAgo(new Date(ins.discovered_at))}</span>`;
+        }
+        html += `</div>`;
+
+        // Narrative for stories
+        if (ins.narrative && ins.insight_type === 'story') {
+          html += `<div style="font-size:0.78rem;color:var(--text);line-height:1.5;margin:0.3rem 0;padding:0.5rem;background:rgba(68,147,248,0.05);border-radius:4px;">${esc(ins.narrative)}</div>`;
+        }
+
+        // Suggested actions
+        if (ins.suggested_actions?.length) {
+          html += `<div style="font-size:0.7rem;color:var(--muted);margin-top:0.3rem;">`;
+          ins.suggested_actions.forEach(a => {
+            html += `<div style="margin-bottom:0.15rem;">&#8226; ${esc(a)}</div>`;
+          });
+          html += `</div>`;
+        }
+
+        html += `<div class="feed-card-actions">`;
+        html += `<span class="investigate-split">`;
+        html += `<button class="btn-sm btn-main" onclick="investigateInsight(${i}, this)">Investigate</button>`;
+        html += `<button class="btn-sm btn-arrow" onclick="event.stopPropagation();toggleInvestigateDropdown(${i}, this)">&#9662;`;
+        html += `<div class="investigate-dropdown" id="inv-dd-${i}">`;
+        html += `<button onclick="event.stopPropagation();investigateInsight(${i}, this.closest('.investigate-split').querySelector('.btn-main'))">Investigate now</button>`;
+        html += `<button onclick="event.stopPropagation();addToInvestigateQueue(${i});closeInvestigateDropdowns()">Add to queue</button>`;
+        html += `</div></button></span>`;
+        html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
+        html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
+        html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
+        html += `</div>`;
+        html += `</div>`;
+        return html;
+      }).join('');
+
+      // Apply current type filter after rendering
+      if (currentFeedFilter !== 'all') filterFeed(currentFeedFilter);
+    }
+
     async function loadFeed() {
       const body = document.getElementById('feed-body');
 
       // Show loading state immediately
       body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading insights...</div>';
 
-      // Fire all requests in parallel — feed renders as soon as it resolves
-      const [insightsResult, statusResult, historyResult] = await Promise.allSettled([
-        apiFetch(`${API}/feed`),
-        apiFetch(`${API}/discovery/status`),
-        apiFetch(`${API}/discovery/history?limit=5`),
-      ]);
-
-      // Render feed IMMEDIATELY (what users care about)
-      const insights = insightsResult.status === 'fulfilled' ? insightsResult.value : [];
-      feedInsights = insights;
-
-      if (!insights.length) {
-        body.innerHTML = insightsResult.status === 'rejected'
-          ? `<div class="feed-empty" style="color:var(--red);">Failed to load feed: ${esc(insightsResult.reason?.message || 'Unknown error')}</div>`
-          : '<div class="feed-empty">No insights discovered yet. Upload data and click "Scan Now" to discover insights.</div>';
-      } else {
-        body.innerHTML = insights.map((ins, i) => {
-          const sevClass = ins.insight_type === 'story' ? 'type-story' : `severity-${ins.severity}`;
-          const sevBadge = ins.severity === 'critical' ? 'badge-red'
-            : ins.severity === 'warning' ? 'badge-yellow'
-            : ins.insight_type === 'story' ? 'badge-accent'
-            : 'badge-green';
-
-          // Determine card type for feed filtering
-          const cardType = ins.insight_type === 'anomaly' ? 'sanctity'
-            : ins.severity === 'critical' ? 'alert'
-            : ins.insight_type === 'story' ? 'insight'
-            : ins.insight_type === 'correlation' ? 'insight'
-            : ins.insight_type === 'composite' ? 'insight'
-            : ins.insight_type === 'cross_event' ? 'insight'
-            : ins.insight_type === 'trend' ? 'alert'
-            : 'insight';
-          let html = `<div class="feed-card ${sevClass}" data-type="${cardType}" data-status="${ins.status || 'new'}">`;
-          html += `<div class="feed-card-title">${esc(ins.title)}</div>`;
-          html += `<div class="feed-card-desc">${esc(ins.description)}</div>`;
-          html += `<div class="feed-card-meta">`;
-          html += `<span class="badge ${sevBadge}">${esc(ins.insight_type)}</span>`;
-          html += `<span class="badge badge-accent">Score: ${ins.impact_score}</span>`;
-          if (ins.source_tables?.length) {
-            ins.source_tables.forEach(t => {
-              html += `<span class="table-chip">${esc(t)}</span>`;
-            });
-          }
-          if (ins.discovered_at) {
-            html += `<span style="font-size:0.65rem;color:var(--muted);">${_timeAgo(new Date(ins.discovered_at))}</span>`;
-          }
-          html += `</div>`;
-
-          // Narrative for stories
-          if (ins.narrative && ins.insight_type === 'story') {
-            html += `<div style="font-size:0.78rem;color:var(--text);line-height:1.5;margin:0.3rem 0;padding:0.5rem;background:rgba(68,147,248,0.05);border-radius:4px;">${esc(ins.narrative)}</div>`;
-          }
-
-          // Suggested actions
-          if (ins.suggested_actions?.length) {
-            html += `<div style="font-size:0.7rem;color:var(--muted);margin-top:0.3rem;">`;
-            ins.suggested_actions.forEach(a => {
-              html += `<div style="margin-bottom:0.15rem;">&#8226; ${esc(a)}</div>`;
-            });
-            html += `</div>`;
-          }
-
-          html += `<div class="feed-card-actions">`;
-          html += `<button class="btn-sm" onclick="investigateInsight(${i})">Investigate</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
-          html += `</div>`;
-          html += `</div>`;
-          return html;
-        }).join('');
+      try {
+        const insights = await apiFetch(`${API}/feed`);
+        renderFeedCards(insights, 'No insights discovered yet. Upload data and click "Scan Now" to discover insights.');
+      } catch (e) {
+        renderFeedCards([], `<span style="color:var(--red);">Failed to load feed: ${esc(e.message || 'Unknown error')}</span>`);
       }
-
-      // Decorate discovery status bar (already resolved, no wait)
-      try {
-        if (statusResult.status === 'fulfilled') {
-          const statusData = statusResult.value;
-          const statsEl = document.getElementById('disc-stats');
-          if (statusData.status !== 'no_runs') {
-            const ago = statusData.completed_at
-              ? _timeAgo(new Date(statusData.completed_at))
-              : 'running...';
-            statsEl.innerHTML = `
-              <span>${statusData.tables_scanned || 0} tables scanned</span>
-              <span>${statusData.insights_found || 0} insights</span>
-              <span>Last run: ${ago}</span>
-            `;
-          }
-        }
-      } catch (e) { /* status decoration optional */ }
-
-      // Decorate history (already resolved, no wait)
-      try {
-        if (historyResult.status === 'fulfilled') {
-          const history = historyResult.value;
-          if (history.length > 1) {
-            const statsEl = document.getElementById('disc-stats');
-            let histHtml = '<div style="font-size:0.65rem;color:var(--muted);margin-top:4px;display:flex;gap:0.5rem;flex-wrap:wrap;">';
-            for (const run of history.slice(1)) {
-              const t = run.completed_at ? _timeAgo(new Date(run.completed_at)) : '...';
-              const icon = run.status === 'completed' ? '' : run.status === 'failed' ? ' !' : ' ~';
-              histHtml += `<span>${t}: ${run.insights_found || 0} insights${icon}</span>`;
-            }
-            histHtml += '</div>';
-            statsEl.insertAdjacentHTML('afterend', histHtml);
-          }
-        }
-      } catch (e) { /* history decoration optional */ }
 
       // KPIs and recommendations fire AFTER feed renders (non-blocking)
       loadDashboardKPIs().catch(() => {});
       loadRecommendations().catch(() => {});
     }
 
-    async function investigateInsight(index) {
+    async function investigateInsight(index, btn) {
       const ins = feedInsights[index];
       if (!ins) return;
 
-      // Mark as seen
-      try {
-        await fetch(`${API}/feed/${ins.id}/status`, {
+      await asyncActionKeyed('investigate-' + index, btn, async () => {
+        // Mark as seen (fire-and-forget via apiFetch)
+        apiFetch(`${API}/feed/${ins.id}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'seen' }),
+        }).catch(() => {});
+
+        // Open in a new analysis session tab
+        createNewSession(ins.title.substring(0, 40));
+
+        // Switch to analyze tab
+        switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
+
+        // Set question and run analysis with insight as parent finding
+        const q = `Investigate: ${ins.title} — ${ins.description}`;
+        document.getElementById('question').value = q;
+        await runAnalysis({
+          type: ins.insight_type,
+          description: ins.description,
+          business_impact: ins.suggested_actions?.[0] || '',
         });
-      } catch(e) {}
+      }, { loadingText: 'Investigating\u2026', errorPrefix: 'Investigation failed' });
+    }
 
-      // Switch to analyze tab
-      switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
+    // -----------------------------------------------------------------------
+    // Multi-select investigation queue
+    // -----------------------------------------------------------------------
+    let _investigateQueue = [];
 
-      // Set question and run analysis with insight as parent finding
-      const q = `Investigate: ${ins.title} — ${ins.description}`;
-      document.getElementById('question').value = q;
-      runAnalysis({
-        type: ins.insight_type,
-        description: ins.description,
-        business_impact: ins.suggested_actions?.[0] || '',
+    function toggleInvestigateDropdown(index, btn) {
+      const dd = document.getElementById('inv-dd-' + index);
+      const wasOpen = dd && dd.classList.contains('open');
+      closeInvestigateDropdowns();
+      if (!wasOpen && dd) dd.classList.add('open');
+    }
+
+    function closeInvestigateDropdowns() {
+      document.querySelectorAll('.investigate-dropdown').forEach(function(d) { d.classList.remove('open'); });
+    }
+
+    document.addEventListener('click', closeInvestigateDropdowns);
+
+    function addToInvestigateQueue(index) {
+      const ins = feedInsights[index];
+      if (!ins) return;
+      if (_investigateQueue.some(function(q) { return q.id === ins.id; })) { toast('Already in queue'); return; }
+      _investigateQueue.push({ id: ins.id, index: index, title: ins.title, insight: ins });
+      renderInvestigateQueueBar();
+      toast('Added to investigation queue');
+    }
+
+    function removeFromInvestigateQueue(insightId) {
+      _investigateQueue = _investigateQueue.filter(function(q) { return q.id !== insightId; });
+      renderInvestigateQueueBar();
+    }
+
+    function clearInvestigateQueue() {
+      _investigateQueue = [];
+      renderInvestigateQueueBar();
+    }
+
+    function renderInvestigateQueueBar() {
+      let bar = document.getElementById('investigate-queue-bar');
+      if (!_investigateQueue.length) {
+        if (bar) bar.remove();
+        return;
+      }
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'investigate-queue-bar';
+        bar.className = 'investigate-queue-bar';
+        document.getElementById('feed').appendChild(bar);
+      }
+      let html = '<div class="queue-items">';
+      _investigateQueue.forEach(function(q) {
+        const label = q.title.length > 30 ? q.title.slice(0, 30) + '\u2026' : q.title;
+        html += '<span class="queue-chip">' + esc(label) + ' <span class="remove" onclick="removeFromInvestigateQueue(\'' + q.id + '\')">&times;</span></span>';
       });
+      html += '</div>';
+      html += '<div style="display:flex;gap:0.3rem;">';
+      html += '<button class="btn-sm btn-secondary" onclick="clearInvestigateQueue()">Clear</button>';
+      html += '<button class="btn-sm" style="background:var(--accent);color:#fff;border:none;" onclick="investigateQueueAll(this)">Investigate All (' + _investigateQueue.length + ')</button>';
+      html += '</div>';
+      bar.innerHTML = html;
+    }
+
+    async function investigateQueueAll(btn) {
+      if (!_investigateQueue.length) return;
+
+      await asyncAction(btn, async () => {
+        // Build combined investigation question
+        const titles = _investigateQueue.map(function(q) { return q.title; });
+        const descriptions = _investigateQueue.map(function(q) { return q.insight.description; });
+        const question = 'Combined investigation of ' + titles.length + ' insights:\n' +
+          descriptions.map(function(d, i) { return (i + 1) + '. ' + d; }).join('\n');
+
+        // Mark all as seen (fire-and-forget)
+        _investigateQueue.forEach(function(q) {
+          apiFetch(API + '/feed/' + q.id + '/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'seen' }),
+          }).catch(function() {});
+        });
+
+        // Create new session with combined label
+        createNewSession('Combined: ' + titles.slice(0, 2).join(', ').substring(0, 35));
+        switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
+
+        document.getElementById('question').value = question;
+        await runAnalysis({
+          type: 'composite',
+          description: question,
+          business_impact: 'Combined investigation of multiple feed insights',
+        });
+
+        clearInvestigateQueue();
+      }, { loadingText: 'Investigating all\u2026', errorPrefix: 'Combined investigation failed' });
     }
 
     async function dismissInsight(insightId, btn) {
-      try {
-        await fetch(`${API}/feed/${insightId}/status`, {
+      await asyncAction(btn, async () => {
+        await apiFetch(`${API}/feed/${insightId}/status`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'dismissed' }),
         });
-        // Remove card from DOM
         const card = btn.closest('.feed-card');
         if (card) card.remove();
-        toast('Insight dismissed');
-      } catch (e) {
-        toast('Failed to dismiss: ' + e.message);
-      }
+      }, { successText: 'Insight dismissed', errorPrefix: 'Failed to dismiss', restoreHTML: false });
     }
 
     async function dismissAllInsights() {
       const cards = document.querySelectorAll('.feed-card');
       if (!cards.length) { toast('No insights to dismiss'); return; }
       const btn = document.getElementById('dismiss-all-btn');
-      btn.disabled = true;
-      btn.textContent = 'Dismissing...';
-      try {
+      await asyncAction(btn, async () => {
         await apiFetch(`${API}/feed/dismiss-all`, { method: 'POST' });
         feedInsights = [];
         document.getElementById('feed-body').innerHTML =
           '<div class="feed-empty">All insights dismissed. Run a new scan to discover fresh insights.</div>';
-        toast('All insights dismissed');
-      } catch (e) {
-        toast('Failed to dismiss all: ' + e.message);
-      }
-      btn.disabled = false;
-      btn.textContent = 'Dismiss All';
+      }, { loadingText: 'Dismissing\u2026', successText: 'All insights dismissed', errorPrefix: 'Failed to dismiss all' });
     }
 
     // -----------------------------------------------------------------------
@@ -6578,56 +7075,61 @@
     }
 
     function showComparisonView(idxA, idxB) {
-      const a = feedInsights[idxA];
-      const b = feedInsights[idxB];
-      if (!a || !b) return;
+      try {
+        const a = feedInsights[idxA];
+        const b = feedInsights[idxB];
+        if (!a || !b) return;
 
-      const overlay = document.getElementById('time-analysis-overlay');
-      const title = document.getElementById('time-analysis-title');
-      const body = document.getElementById('time-analysis-body');
-      title.textContent = 'Insight Comparison';
+        const overlay = document.getElementById('time-analysis-overlay');
+        const title = document.getElementById('time-analysis-title');
+        const body = document.getElementById('time-analysis-body');
+        title.textContent = 'Insight Comparison';
 
-      let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">';
+        let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">';
 
-      for (const ins of [a, b]) {
-        const borderColor = ins.severity === 'critical' ? 'var(--red)' :
-                            ins.severity === 'warning' ? 'var(--yellow)' : 'var(--green)';
-        html += `<div class="feed-card" style="border-left:3px solid ${borderColor};">`;
-        html += `<div style="font-size:0.65rem;text-transform:uppercase;color:${borderColor};font-weight:600;">${esc(ins.severity)} / ${esc(ins.insight_type)}</div>`;
-        html += `<div style="font-weight:600;margin:0.3rem 0;">${esc(ins.title)}</div>`;
-        html += `<div style="font-size:0.75rem;color:var(--muted);">${esc(ins.description)}</div>`;
-        html += `<div style="margin-top:0.4rem;font-size:0.7rem;">`;
-        html += `<strong>Impact:</strong> ${ins.impact_score}/100<br>`;
-        html += `<strong>Tables:</strong> ${(ins.source_tables||[]).join(', ')}<br>`;
-        html += `<strong>Columns:</strong> ${(ins.source_columns||[]).join(', ')}<br>`;
-        if (ins.composite_template) html += `<strong>Template:</strong> ${esc(ins.composite_template)}<br>`;
-        if (ins.suggested_actions?.length) {
-          html += `<strong>Actions:</strong><br>`;
-          ins.suggested_actions.forEach(a => { html += `&nbsp;&nbsp;- ${esc(a)}<br>`; });
+        for (const ins of [a, b]) {
+          const borderColor = ins.severity === 'critical' ? 'var(--red)' :
+                              ins.severity === 'warning' ? 'var(--yellow)' : 'var(--green)';
+          html += `<div class="feed-card" style="border-left:3px solid ${borderColor};">`;
+          html += `<div style="font-size:0.65rem;text-transform:uppercase;color:${borderColor};font-weight:600;">${esc(ins.severity)} / ${esc(ins.insight_type)}</div>`;
+          html += `<div style="font-weight:600;margin:0.3rem 0;">${esc(ins.title)}</div>`;
+          html += `<div style="font-size:0.75rem;color:var(--muted);">${esc(ins.description)}</div>`;
+          html += `<div style="margin-top:0.4rem;font-size:0.7rem;">`;
+          html += `<strong>Impact:</strong> ${ins.impact_score}/100<br>`;
+          html += `<strong>Tables:</strong> ${(ins.source_tables||[]).join(', ')}<br>`;
+          html += `<strong>Columns:</strong> ${(ins.source_columns||[]).join(', ')}<br>`;
+          if (ins.composite_template) html += `<strong>Template:</strong> ${esc(ins.composite_template)}<br>`;
+          if (ins.suggested_actions?.length) {
+            html += `<strong>Actions:</strong><br>`;
+            ins.suggested_actions.forEach(a => { html += `&nbsp;&nbsp;- ${esc(a)}<br>`; });
+          }
+          html += `</div></div>`;
         }
-        html += `</div></div>`;
+        html += '</div>';
+
+        // Differences summary
+        html += '<div style="margin-top:1rem;padding:0.8rem;background:var(--surface);border-radius:8px;font-size:0.75rem;">';
+        html += '<strong>Key Differences:</strong><br>';
+        if (a.severity !== b.severity) html += `Severity: ${a.severity} vs ${b.severity}<br>`;
+        if (a.impact_score !== b.impact_score) html += `Impact: ${a.impact_score} vs ${b.impact_score} (delta: ${Math.abs(a.impact_score - b.impact_score)})<br>`;
+        if (a.insight_type !== b.insight_type) html += `Type: ${a.insight_type} vs ${b.insight_type}<br>`;
+        const tablesA = new Set(a.source_tables || []);
+        const tablesB = new Set(b.source_tables || []);
+        const shared = [...tablesA].filter(t => tablesB.has(t));
+        if (shared.length > 0) html += `Shared tables: ${shared.join(', ')}<br>`;
+        else html += `No shared tables<br>`;
+        html += '</div>';
+
+        html += '<div style="margin-top:0.8rem;text-align:center;">';
+        html += '<button onclick="clearComparison()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;">Close</button>';
+        html += '</div>';
+
+        body.innerHTML = html;
+        overlay.style.display = 'block';
+      } catch (e) {
+        toast('Comparison failed: ' + e.message);
+        clearComparison();
       }
-      html += '</div>';
-
-      // Differences summary
-      html += '<div style="margin-top:1rem;padding:0.8rem;background:var(--surface);border-radius:8px;font-size:0.75rem;">';
-      html += '<strong>Key Differences:</strong><br>';
-      if (a.severity !== b.severity) html += `Severity: ${a.severity} vs ${b.severity}<br>`;
-      if (a.impact_score !== b.impact_score) html += `Impact: ${a.impact_score} vs ${b.impact_score} (delta: ${Math.abs(a.impact_score - b.impact_score)})<br>`;
-      if (a.insight_type !== b.insight_type) html += `Type: ${a.insight_type} vs ${b.insight_type}<br>`;
-      const tablesA = new Set(a.source_tables || []);
-      const tablesB = new Set(b.source_tables || []);
-      const shared = [...tablesA].filter(t => tablesB.has(t));
-      if (shared.length > 0) html += `Shared tables: ${shared.join(', ')}<br>`;
-      else html += `No shared tables<br>`;
-      html += '</div>';
-
-      html += '<div style="margin-top:0.8rem;text-align:center;">';
-      html += '<button onclick="clearComparison()" style="padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;">Close</button>';
-      html += '</div>';
-
-      body.innerHTML = html;
-      overlay.style.display = 'block';
     }
 
     function clearComparison() {
@@ -6687,6 +7189,13 @@
       }
     }
 
+    function useRecommendation(description) {
+      createNewSession(description.substring(0, 40));
+      switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
+      document.getElementById('question').value = description;
+      runAnalysis();
+    }
+
     async function loadRecommendations() {
       const container = document.getElementById('recommendations-bar');
       try {
@@ -6703,7 +7212,8 @@
           const typeColor = r.analysis_type === 'anomaly' ? 'var(--red)' :
                            r.analysis_type === 'correlation' ? 'var(--accent)' :
                            r.analysis_type === 'benchmark' ? 'var(--green)' : 'var(--yellow)';
-          html += `<div style="flex:0 0 auto;background:var(--surface);border:1px solid var(--border);border-top:3px solid ${typeColor};border-radius:6px;padding:6px 10px;min-width:160px;font-size:0.65rem;cursor:default;">`;
+          const safeDesc = esc(r.description).replace(/'/g, "\\'");
+          html += `<div onclick="useRecommendation('${safeDesc}')" style="flex:0 0 auto;background:var(--surface);border:1px solid var(--border);border-top:3px solid ${typeColor};border-radius:6px;padding:6px 10px;min-width:160px;font-size:0.65rem;cursor:pointer;" title="Click to run this analysis">`;
           html += `<div style="font-weight:600;margin-bottom:2px;">${esc(r.title)}</div>`;
           html += `<div style="color:var(--muted);">${esc(r.reason)}</div>`;
           html += `</div>`;
@@ -6717,41 +7227,34 @@
 
     async function triggerDiscovery() {
       const btn = document.getElementById('scan-btn');
-      btn.disabled = true;
-      btn.textContent = 'Scanning...';
-
-      try {
-        await fetch(`${API}/discovery/trigger`, { method: 'POST' });
+      await asyncAction(btn, async () => {
+        await apiFetch(`${API}/discovery/trigger`, { method: 'POST' });
         toast('Discovery scan started');
 
-        // Poll for completion
-        let attempts = 0;
-        const poll = setInterval(async () => {
-          attempts++;
-          try {
-            const data = await apiFetch(`${API}/discovery/status`);
-            if (data.status === 'completed' || data.status === 'failed' || attempts > 60) {
-              clearInterval(poll);
-              btn.disabled = false;
-              btn.textContent = 'Scan Now';
-              if (data.status === 'completed') {
-                toast(`Discovery complete: ${data.insights_found} insights found`);
-              } else if (data.status === 'failed') {
-                toast('Discovery failed: ' + (data.error || 'Unknown error'));
+        // Poll for completion — await a promise that resolves when done
+        await new Promise((resolve) => {
+          let attempts = 0;
+          const poll = setInterval(async () => {
+            attempts++;
+            try {
+              const data = await apiFetch(`${API}/discovery/status`);
+              if (data.status === 'completed' || data.status === 'failed' || attempts > 60) {
+                clearInterval(poll);
+                if (data.status === 'completed') {
+                  toast(`Discovery complete: ${data.insights_found} insights found`);
+                } else if (data.status === 'failed') {
+                  toast('Discovery failed: ' + (data.error || 'Unknown error'));
+                }
+                await loadFeed();
+                resolve();
               }
-              await loadFeed();
+            } catch(e) {
+              clearInterval(poll);
+              resolve();
             }
-          } catch(e) {
-            clearInterval(poll);
-            btn.disabled = false;
-            btn.textContent = 'Scan Now';
-          }
-        }, 2000);
-      } catch (e) {
-        btn.disabled = false;
-        btn.textContent = 'Scan Now';
-        toast('Failed to trigger discovery: ' + e.message);
-      }
+          }, 2000);
+        });
+      }, { loadingText: 'Scanning\u2026', errorPrefix: 'Failed to trigger discovery' });
     }
 
     function _timeAgo(date) {
@@ -6851,28 +7354,23 @@
       if (e.target === document.getElementById('deploy-modal')) closeDeployModal();
     });
 
-    async function confirmDeploy() {
+    async function confirmDeploy(btn) {
       if (!_deployInsightId) return;
       const name = document.getElementById('deploy-name').value.trim();
       if (!name) { toast('Enter a report name'); return; }
 
       const freq = document.querySelector('input[name="deploy-freq"]:checked')?.value || 'manual';
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(`${API}/feed/${_deployInsightId}/deploy`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, refresh_frequency: freq }),
         });
-        if (data.error) {
-          toast('Deploy failed: ' + data.error);
-        } else {
-          closeDeployModal();
-          showDeploySuccess(name, data.report_id);
-        }
-      } catch (e) {
-        toast('Deploy failed: ' + e.message);
-      }
+        if (data.error) throw new Error(data.error);
+        closeDeployModal();
+        showDeploySuccess(name, data.report_id);
+      }, { loadingText: 'Deploying\u2026', errorPrefix: 'Deploy failed' });
     }
 
     let _lastDeployedReportId = null;
@@ -6926,8 +7424,8 @@
           html += `<div class="report-card-actions">`;
           html += `<button class="btn-sm" onclick="viewReport('${r.id}')">View Full Report</button>`;
           html += `<button class="btn-sm btn-secondary" onclick="refreshReport('${r.id}', this)">Refresh Now</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="exportReport('${r.id}', 'json')">Export JSON</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="exportReport('${r.id}', 'csv')">Export CSV</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="exportReport('${r.id}', 'json', this)">Export JSON</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="exportReport('${r.id}', 'csv', this)">Export CSV</button>`;
           html += `<button class="btn-sm btn-secondary" style="color:var(--red);" onclick="removeReport('${r.id}', this)">Remove</button>`;
           html += `</div>`;
           html += `</div>`;
@@ -7011,19 +7509,19 @@
     }
 
     async function removeReport(reportId, btn) {
-      try {
-        await fetch(`${API}/reports/${reportId}`, { method: 'DELETE' });
+      await asyncAction(btn, async () => {
+        await apiFetch(`${API}/reports/${reportId}`, { method: 'DELETE' });
         const card = btn.closest('.report-card');
         if (card) card.remove();
-        toast('Report removed');
-      } catch (e) {
-        toast('Remove failed: ' + e.message);
-      }
+      }, { successText: 'Report removed', errorPrefix: 'Remove failed', restoreHTML: false });
     }
 
-    async function exportReport(reportId, format) {
-      try {
-        const resp = await fetch(`${API}/reports/${reportId}/export?format=${format}`);
+    async function exportReport(reportId, format, btn) {
+      await asyncAction(btn, async () => {
+        const resp = await fetch(`${API}/reports/${reportId}/export?format=${format}`, {
+          headers: getAuthHeaders(),
+        });
+        if (!resp.ok) throw new Error('Export failed (' + resp.status + ')');
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -7031,10 +7529,7 @@
         a.download = `report_${reportId.substring(0, 8)}.${format === 'csv' ? 'csv' : 'json'}`;
         a.click();
         URL.revokeObjectURL(url);
-        toast(`Report exported as ${format.toUpperCase()}`);
-      } catch (e) {
-        toast('Export failed: ' + e.message);
-      }
+      }, { successText: `Report exported as ${format.toUpperCase()}`, errorPrefix: 'Export failed' });
     }
 
     // Auto-load reports on tab click
@@ -7143,15 +7638,11 @@
       });
     }
 
-    async function exportFeed(format) {
+    async function exportFeed(format, btn) {
       format = format || 'json';
-      try {
+      await asyncAction(btn, async () => {
         if (format === 'csv') {
-          // Client-side CSV generation from feedInsights
-          if (!feedInsights || feedInsights.length === 0) {
-            toast('No insights to export');
-            return;
-          }
+          if (!feedInsights || feedInsights.length === 0) throw new Error('No insights to export');
           const headers = ['id','insight_type','severity','impact_score','title','description','source_tables','source_columns','status','discovered_at'];
           const rows = feedInsights.map(ins => headers.map(h => {
             let val = ins[h];
@@ -7167,9 +7658,8 @@
           a.download = 'insights_feed.csv';
           a.click();
           URL.revokeObjectURL(url);
-          toast('Feed exported as CSV');
         } else {
-          const resp = await fetch(API + '/feed/export');
+          const resp = await fetch(API + '/feed/export', { headers: getAuthHeaders() });
           if (!resp.ok) throw new Error('Failed to fetch');
           const blob = await resp.blob();
           const url = URL.createObjectURL(blob);
@@ -7178,22 +7668,29 @@
           a.download = 'insights_feed.json';
           a.click();
           URL.revokeObjectURL(url);
-          toast('Feed exported as JSON');
         }
-      } catch (e) {
-        toast('Feed export failed: ' + e.message);
-      }
+      }, { successText: `Feed exported as ${format.toUpperCase()}`, errorPrefix: 'Feed export failed' });
     }
 
     // -----------------------------------------------------------------------
     // v3: Feed Filters
     // -----------------------------------------------------------------------
     let currentFeedFilter = 'all';
+    let _currentStatusFilter = null;
     function filterFeed(filter, btn) {
       currentFeedFilter = filter;
       document.querySelectorAll('.feed-filter').forEach(f => f.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      // Re-render feed with filter
+
+      // If "All" type filter is clicked and we were in a status filter, re-fetch default feed
+      if (filter === 'all' && _currentStatusFilter) {
+        _currentStatusFilter = null;
+        loadFeed();
+        return;
+      }
+      _currentStatusFilter = null;
+
+      // Client-side type filter on already-loaded cards
       const cards = document.querySelectorAll('.feed-card');
       cards.forEach(card => {
         const type = card.dataset.type || '';
@@ -7204,14 +7701,20 @@
       });
     }
 
-    function filterFeedByStatus(status, btn) {
+    async function filterFeedByStatus(status, btn) {
       document.querySelectorAll('.feed-filter').forEach(f => f.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      const cards = document.querySelectorAll('.feed-card');
-      cards.forEach(card => {
-        const cardStatus = card.dataset.status || 'new';
-        card.style.display = cardStatus === status ? '' : 'none';
-      });
+      _currentStatusFilter = status;
+
+      const body = document.getElementById('feed-body');
+      body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading...</div>';
+
+      try {
+        const insights = await apiFetch(`${API}/feed?status=${encodeURIComponent(status)}`);
+        renderFeedCards(insights, `No ${status} insights found.`);
+      } catch (e) {
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">Failed to load: ${esc(e.message)}</div>`;
+      }
     }
 
     // -----------------------------------------------------------------------
@@ -8290,350 +8793,6 @@
     }
 
     // -----------------------------------------------------------------------
-    // What-If Visual Builder
-    // -----------------------------------------------------------------------
-    let whatIfVars = [];
-    let whatIfScenarios = [];
-
-    function addWhatIfVar(name, value, unit) {
-      whatIfVars.push({ name: name || '', value: value || '', unit: unit || '' });
-      renderWhatIfVars();
-    }
-
-    function removeWhatIfVar(index) {
-      whatIfVars.splice(index, 1);
-      renderWhatIfVars();
-      renderWhatIfScenarios();
-    }
-
-    function renderWhatIfVars() {
-      const tbody = document.getElementById('whatif-vars-body');
-      if (!tbody) return;
-      if (whatIfVars.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="padding:6px;color:var(--muted);font-size:0.7rem;">No variables yet. Click "+ Add Variable" to start.</td></tr>';
-        return;
-      }
-      tbody.innerHTML = whatIfVars.map((v, i) => `
-        <tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:3px;"><input type="text" value="${esc(v.name)}" onchange="whatIfVars[${i}].name=this.value" placeholder="variable_name" style="width:100%;padding:3px;font-size:0.72rem;background:var(--card);border:1px solid var(--border);border-radius:3px;color:var(--text);"></td>
-          <td style="padding:3px;"><input type="text" value="${esc(String(v.value))}" onchange="whatIfVars[${i}].value=this.value" placeholder="0" style="width:100%;padding:3px;font-size:0.72rem;background:var(--card);border:1px solid var(--border);border-radius:3px;color:var(--text);"></td>
-          <td style="padding:3px;"><input type="text" value="${esc(v.unit)}" onchange="whatIfVars[${i}].unit=this.value" placeholder="unit" style="width:60px;padding:3px;font-size:0.72rem;background:var(--card);border:1px solid var(--border);border-radius:3px;color:var(--text);"></td>
-          <td style="padding:3px;"><button onclick="removeWhatIfVar(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.8rem;">&times;</button></td>
-        </tr>
-      `).join('');
-    }
-
-    function addWhatIfScenario(name) {
-      const overrides = {};
-      whatIfVars.forEach(v => { overrides[v.name] = ''; });
-      whatIfScenarios.push({ name: name || `Scenario ${whatIfScenarios.length + 1}`, overrides });
-      renderWhatIfScenarios();
-    }
-
-    function removeWhatIfScenario(index) {
-      whatIfScenarios.splice(index, 1);
-      renderWhatIfScenarios();
-    }
-
-    function renderWhatIfScenarios() {
-      const container = document.getElementById('whatif-scenarios-visual');
-      if (!container) return;
-      if (whatIfScenarios.length === 0) {
-        container.innerHTML = '<div style="font-size:0.7rem;color:var(--muted);padding:0.3rem 0;">No scenarios yet. Click "+ Add Scenario" to create one.</div>';
-        return;
-      }
-      container.innerHTML = whatIfScenarios.map((s, si) => {
-        let html = `<div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:0.5rem;margin-bottom:0.4rem;">`;
-        html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">`;
-        html += `<input type="text" value="${esc(s.name)}" onchange="whatIfScenarios[${si}].name=this.value" style="font-size:0.72rem;font-weight:500;background:transparent;border:none;color:var(--text);outline:none;flex:1;">`;
-        html += `<button onclick="removeWhatIfScenario(${si})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.8rem;">&times;</button>`;
-        html += `</div>`;
-        whatIfVars.forEach((v, vi) => {
-          const overrideVal = s.overrides[v.name] || '';
-          const baseVal = v.value;
-          let pctChange = '';
-          if (overrideVal && baseVal && parseFloat(baseVal) !== 0) {
-            const pct = ((parseFloat(overrideVal) - parseFloat(baseVal)) / parseFloat(baseVal) * 100).toFixed(1);
-            if (!isNaN(pct)) pctChange = `<span style="font-size:0.6rem;color:${parseFloat(pct) >= 0 ? 'var(--green)' : 'var(--red)'};">(${parseFloat(pct) >= 0 ? '+' : ''}${pct}%)</span>`;
-          }
-          html += `<div style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;padding:2px 0;">`;
-          html += `<span style="color:var(--muted);min-width:100px;">${esc(v.name)}:</span>`;
-          html += `<span style="color:var(--muted);font-size:0.65rem;">${esc(String(baseVal))} →</span>`;
-          html += `<input type="text" value="${esc(overrideVal)}" placeholder="unchanged"
-            onchange="whatIfScenarios[${si}].overrides['${esc(v.name)}']=this.value;renderWhatIfScenarios();"
-            style="width:80px;padding:2px 4px;font-size:0.7rem;background:var(--surface);border:1px solid var(--border);border-radius:3px;color:var(--text);">`;
-          html += pctChange;
-          if (v.unit) html += `<span style="font-size:0.6rem;color:var(--muted);">${esc(v.unit)}</span>`;
-          html += `</div>`;
-        });
-        html += `</div>`;
-        return html;
-      }).join('');
-    }
-
-    function syncVisualToHidden() {
-      // Sync visual builder to hidden fields for backward compat
-      const base = {};
-      whatIfVars.forEach(v => {
-        if (v.name) base[v.name] = parseFloat(v.value) || 0;
-      });
-      document.getElementById('whatif-base').value = JSON.stringify(base);
-
-      const scenarioLines = whatIfScenarios.map(s => {
-        const overrides = {};
-        for (const [k, v] of Object.entries(s.overrides)) {
-          if (v !== '' && v !== undefined) overrides[k] = parseFloat(v) || 0;
-        }
-        return s.name + '=' + JSON.stringify(overrides);
-      });
-      document.getElementById('whatif-scenarios').value = scenarioLines.join('\n');
-    }
-
-    function syncWhatIfAndRun() { syncVisualToHidden(); runWhatIf(); }
-    function syncWhatIfAndBreakeven() { syncVisualToHidden(); runBreakeven(); }
-    function syncWhatIfAndSensitivity() { syncVisualToHidden(); runSensitivity(); }
-
-    async function loadWhatIfTemplate(templateName) {
-      if (templateName === 'custom') {
-        whatIfVars = [];
-        whatIfScenarios = [];
-        document.getElementById('whatif-formula').value = '';
-        addWhatIfVar();
-        renderWhatIfVars();
-        renderWhatIfScenarios();
-        return;
-      }
-
-      // Template is an object with name, formula, base_values, scenarios
-      const tpl = templateName;
-      document.getElementById('whatif-formula').value = tpl.formula || '';
-      whatIfVars = Object.entries(tpl.base_values || {}).map(([k, v]) => ({
-        name: k,
-        value: String(v),
-        unit: tpl.units?.[k] || '',
-      }));
-      whatIfScenarios = (tpl.scenarios || []).map(s => ({
-        name: s.name || 'Scenario',
-        overrides: Object.fromEntries(
-          Object.entries(s.parameters || {}).map(([k, v]) => [k, String(v)])
-        ),
-      }));
-      renderWhatIfVars();
-      renderWhatIfScenarios();
-    }
-
-    async function loadWhatIfTemplatesFromAPI() {
-      try {
-        const templates = await apiFetch(API + '/whatif/templates');
-        const container = document.getElementById('whatif-templates');
-        if (!container || !templates.length) return;
-
-        // Keep existing buttons (Custom, Try Example)
-        const existing = container.innerHTML;
-        let html = '';
-        templates.forEach(tpl => {
-          html += `<button class="btn-sm btn-secondary" onclick='loadWhatIfTemplate(${JSON.stringify(tpl).replace(/'/g, "&#39;")})' style="font-size:0.68rem;">${esc(tpl.name)}</button>`;
-        });
-        // Insert template buttons before the existing Custom and Try Example
-        container.innerHTML = html + existing;
-      } catch (e) { /* templates are optional */ }
-    }
-
-    function tryWhatIfExample() {
-      document.getElementById('whatif-formula').value = 'scrap_price * monthly_tonnage';
-      whatIfVars = [
-        { name: 'scrap_price', value: '38000', unit: '₹/ton' },
-        { name: 'monthly_tonnage', value: '500', unit: 'tons' },
-      ];
-      whatIfScenarios = [
-        { name: 'Price +5%', overrides: { scrap_price: '39900', monthly_tonnage: '' } },
-        { name: 'Price +10%', overrides: { scrap_price: '41800', monthly_tonnage: '' } },
-        { name: 'Price -5%', overrides: { scrap_price: '36100', monthly_tonnage: '' } },
-      ];
-      renderWhatIfVars();
-      renderWhatIfScenarios();
-      // Auto-run
-      syncWhatIfAndRun();
-    }
-
-    // Load templates on whatif tab click
-    document.querySelector('[data-panel="whatif"]')?.addEventListener('click', () => {
-      loadWhatIfTemplatesFromAPI();
-      if (whatIfVars.length === 0) renderWhatIfVars();
-      if (whatIfScenarios.length === 0) renderWhatIfScenarios();
-    });
-
-    // -----------------------------------------------------------------------
-    // What-If Scenario Engine
-    // -----------------------------------------------------------------------
-    function _parseWhatIfInputs() {
-      const formula = document.getElementById('whatif-formula').value.trim();
-      let base = {};
-      try { base = JSON.parse(document.getElementById('whatif-base').value.trim() || '{}'); } catch { }
-      const scenarioLines = document.getElementById('whatif-scenarios').value.trim().split('\n').filter(l => l.trim());
-      const scenarios = [];
-      for (const line of scenarioLines) {
-        const eq = line.indexOf('=');
-        if (eq < 1) continue;
-        const name = line.slice(0, eq).trim();
-        try {
-          const params = JSON.parse(line.slice(eq + 1).trim());
-          scenarios.push({name, parameters: params});
-        } catch { continue; }
-      }
-      return {formula, base, scenarios};
-    }
-
-    async function runWhatIf() {
-      const body = document.getElementById('whatif-body');
-      const {formula, base, scenarios} = _parseWhatIfInputs();
-      if (!formula) { body.innerHTML = '<div class="feed-empty">Enter a formula first.</div>'; return; }
-      if (scenarios.length === 0) { body.innerHTML = '<div class="feed-empty">Add at least one scenario (name={"param": value}).</div>'; return; }
-
-      body.innerHTML = '<div class="feed-empty">Evaluating scenarios...</div>';
-
-      try {
-        const data = await apiFetch(API + '/scenarios/evaluate', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({scenarios, formula, base_values: Object.keys(base).length > 0 ? base : null}),
-        });
-
-        if (data.error) { body.innerHTML = `<div class="feed-empty">${esc(data.error)}</div>`; return; }
-
-        let html = '';
-
-        // Single scenario result
-        if (data.scenario_name) {
-          html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;">`;
-          html += `<div style="font-weight:700;font-size:0.9rem;">${esc(data.scenario_name)}: <span style="color:var(--accent)">${Number(data.result).toLocaleString('en-IN')}</span></div>`;
-          html += `<div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem;">${esc(data.interpretation)}</div>`;
-          html += `</div>`;
-        }
-
-        // Multi-scenario comparison
-        if (data.outcomes) {
-          html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
-          html += `<div style="font-size:0.75rem;margin-bottom:0.3rem;">${esc(data.summary)}</div>`;
-          html += `<div style="display:flex;gap:1rem;font-size:0.7rem;">`;
-          html += `<span style="color:var(--green)">Best: <b>${esc(data.best_scenario)}</b> (${Number(data.range_max).toLocaleString('en-IN')})</span>`;
-          html += `<span style="color:var(--red)">Worst: <b>${esc(data.worst_scenario)}</b> (${Number(data.range_min).toLocaleString('en-IN')})</span>`;
-          html += `</div></div>`;
-
-          // Outcomes table
-          html += `<table class="result-table" style="width:100%;font-size:0.72rem;">`;
-          html += `<thead><tr><th>Scenario</th><th>Result</th><th>Parameters</th></tr></thead><tbody>`;
-          const maxResult = Math.max(...data.outcomes.map(o => Math.abs(o.result)));
-          for (const o of data.outcomes) {
-            const barWidth = maxResult > 0 ? Math.abs(o.result) / maxResult * 100 : 0;
-            const color = o.scenario_name === data.best_scenario ? 'var(--green)' : o.scenario_name === data.worst_scenario ? 'var(--red)' : 'var(--accent)';
-            html += `<tr>`;
-            html += `<td style="font-weight:600;">${esc(o.scenario_name)}</td>`;
-            html += `<td><div style="display:flex;align-items:center;gap:4px;"><div style="height:8px;width:${barWidth}%;background:${color};border-radius:3px;min-width:2px;"></div> ${Number(o.result).toLocaleString('en-IN')}</div></td>`;
-            html += `<td style="font-size:0.65rem;color:var(--muted);">${esc(JSON.stringify(o.parameters))}</td>`;
-            html += `</tr>`;
-          }
-          html += `</tbody></table>`;
-
-          // Sensitivity
-          if (data.sensitivity && Object.keys(data.sensitivity).length > 0) {
-            html += `<div style="margin-top:0.5rem;font-size:0.7rem;"><b>Sensitivity (impact of 10% change):</b></div>`;
-            html += `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.2rem;">`;
-            for (const [param, impact] of Object.entries(data.sensitivity)) {
-              html += `<span style="background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:0.65rem;">${esc(param)}: <b>${impact}%</b></span>`;
-            }
-            html += `</div>`;
-          }
-        }
-
-        body.innerHTML = html || '<div class="feed-empty">No results.</div>';
-      } catch (err) {
-        body.innerHTML = `<div class="feed-empty">Error: ${esc(err.message)}</div>`;
-      }
-    }
-
-    async function runBreakeven() {
-      const body = document.getElementById('whatif-body');
-      const {formula, base} = _parseWhatIfInputs();
-      if (!formula || Object.keys(base).length === 0) {
-        body.innerHTML = '<div class="feed-empty">Enter a formula and base values first. Breakeven finds what value of a variable makes the formula equal a target.</div>';
-        return;
-      }
-
-      // Use first variable as the breakeven variable
-      const variable = Object.keys(base)[0];
-      body.innerHTML = `<div class="feed-empty">Finding breakeven for ${variable}...</div>`;
-
-      try {
-        const data = await apiFetch(API + '/scenarios/breakeven', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({formula, variable, base_values: base, target: 0, search_range: [-10000, 10000]}),
-        });
-
-        let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;">`;
-        html += `<div style="font-weight:700;font-size:0.85rem;margin-bottom:0.3rem;">Breakeven Analysis</div>`;
-        html += `<div style="font-size:0.75rem;">Variable: <b>${esc(data.variable)}</b></div>`;
-        html += `<div style="font-size:0.75rem;">Breakeven value: <b style="color:var(--accent)">${Number(data.breakeven_value).toLocaleString('en-IN')}</b></div>`;
-        html += `<div style="font-size:0.75rem;">Target: ${data.target} &rarr; Achieved: ${Number(data.achieved_result).toLocaleString('en-IN')}</div>`;
-        html += `<div style="font-size:0.65rem;color:var(--muted);margin-top:0.2rem;">Precision: &plusmn;${data.precision}</div>`;
-        html += `</div>`;
-
-        body.innerHTML = html;
-      } catch (err) {
-        body.innerHTML = `<div class="feed-empty">Error: ${esc(err.message)}</div>`;
-      }
-    }
-
-    async function runSensitivity() {
-      const body = document.getElementById('whatif-body');
-      const {formula, base} = _parseWhatIfInputs();
-      if (!formula || Object.keys(base).length === 0) {
-        body.innerHTML = '<div class="feed-empty">Enter a formula and base values to run sensitivity analysis.</div>';
-        return;
-      }
-
-      const variable = Object.keys(base)[0];
-      body.innerHTML = `<div class="feed-empty">Computing sensitivity for ${variable}...</div>`;
-
-      try {
-        const data = await apiFetch(API + '/scenarios/sensitivity', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({formula, variable, base_values: base}),
-        });
-
-        let html = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
-        html += `<div style="font-weight:700;font-size:0.85rem;margin-bottom:0.3rem;">Sensitivity: ${esc(data.variable)}</div>`;
-        html += `<div style="font-size:0.7rem;color:var(--muted);">Base value: ${Number(data.base_value).toLocaleString('en-IN')}</div>`;
-        html += `</div>`;
-
-        html += `<table class="result-table" style="width:100%;font-size:0.72rem;">`;
-        html += `<thead><tr><th>Multiplier</th><th>${esc(data.variable)} Value</th><th>Result</th><th>Change %</th><th>Bar</th></tr></thead><tbody>`;
-        const maxChange = Math.max(...(data.rows || []).map(r => Math.abs(r.change_pct || 0)), 1);
-        for (const r of data.rows || []) {
-          const isBase = r.multiplier === 1.0;
-          const color = r.change_pct > 0 ? 'var(--green)' : r.change_pct < 0 ? 'var(--red)' : 'var(--muted)';
-          const barW = Math.abs(r.change_pct) / maxChange * 100;
-          html += `<tr style="${isBase ? 'font-weight:700;background:var(--surface);' : ''}">`;
-          html += `<td>${r.multiplier}x</td>`;
-          html += `<td>${Number(r.variable_value).toLocaleString('en-IN')}</td>`;
-          html += `<td>${Number(r.result).toLocaleString('en-IN')}</td>`;
-          html += `<td style="color:${color}">${r.change_pct > 0 ? '+' : ''}${r.change_pct}%</td>`;
-          html += `<td><div style="height:8px;width:${barW}%;background:${color};border-radius:3px;"></div></td>`;
-          html += `</tr>`;
-        }
-        html += `</tbody></table>`;
-
-        body.innerHTML = html;
-      } catch (err) {
-        body.innerHTML = `<div class="feed-empty">Error: ${esc(err.message)}</div>`;
-      }
-    }
-
-    document.querySelector('[data-panel="whatif"]').addEventListener('click', () => {});
-
-    // -----------------------------------------------------------------------
     // Segmentation Engine
     // -----------------------------------------------------------------------
     async function loadSegmentation(tableName) {
@@ -9492,58 +9651,55 @@
           html += `</div>`;
           html += `<div class="alert-card-actions">`;
           if (r.active) {
-            html += `<button class="btn-sm btn-secondary" onclick="pauseAlert('${r.id}')">Pause</button>`;
+            html += `<button class="btn-sm btn-secondary" onclick="pauseAlert('${r.id}', this)">Pause</button>`;
           } else {
-            html += `<button class="btn-sm" onclick="resumeAlert('${r.id}')">Resume</button>`;
+            html += `<button class="btn-sm" onclick="resumeAlert('${r.id}', this)">Resume</button>`;
           }
           html += `<button class="btn-sm" onclick="previewAlert('${r.id}')">Preview</button>`;
-          html += `<button class="btn-sm btn-secondary" onclick="deleteAlert('${r.id}')">Delete</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="deleteAlert('${r.id}', this)">Delete</button>`;
           html += `</div></div>`;
         }
         body.innerHTML = html;
       } catch (e) { console.error('loadAlerts:', e); }
     }
 
-    async function deployAlert() {
+    async function deployAlert(btn) {
       const text = document.getElementById('alert-text').value.trim();
       if (!text) return toast('Enter an alert description');
 
-      // Step 1: Parse the alert (don't deploy yet)
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/alerts/parse', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ text }),
         });
-        if (data.error) return toast('Error: ' + data.error);
+        if (data.error) throw new Error(data.error);
 
-        // Store parsed rule for confirmation step
         pendingAlertRule = { text, parsed_rule: data.parsed_rule };
 
-        // Show confirmation message
         const confirmEl = document.getElementById('alert-confirmation');
         document.getElementById('alert-confirm-text').textContent = data.confirmation || 'Deploy this alert rule?';
         confirmEl.style.display = 'block';
-      } catch (e) { toast('Failed to parse alert'); }
+      }, { loadingText: 'Parsing\u2026', errorPrefix: 'Failed to parse alert' });
     }
 
-    async function confirmAlertDeploy() {
+    async function confirmAlertDeploy(btn) {
       if (!pendingAlertRule) return;
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/alerts/deploy', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(pendingAlertRule),
         });
-        if (data.error) return toast('Error: ' + data.error);
+        if (data.error) throw new Error(data.error);
 
         toast('Alert deployed: ' + (data.parsed_rule?.name || ''));
         document.getElementById('alert-text').value = '';
         pendingAlertRule = null;
         document.getElementById('alert-confirmation').style.display = 'none';
         loadAlerts();
-      } catch (e) { toast('Failed to deploy alert'); }
+      }, { loadingText: 'Deploying\u2026', errorPrefix: 'Failed to deploy alert' });
     }
 
     function cancelAlertDeploy() {
@@ -9551,22 +9707,25 @@
       document.getElementById('alert-confirmation').style.display = 'none';
     }
 
-    async function pauseAlert(id) {
-      await fetch(API + '/alerts/' + id + '/pause', { method: 'POST' });
-      toast('Alert paused');
-      loadAlerts();
+    async function pauseAlert(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/alerts/' + id + '/pause', { method: 'POST' });
+        loadAlerts();
+      }, { successText: 'Alert paused', errorPrefix: 'Failed to pause alert' });
     }
 
-    async function resumeAlert(id) {
-      await fetch(API + '/alerts/' + id + '/resume', { method: 'POST' });
-      toast('Alert resumed');
-      loadAlerts();
+    async function resumeAlert(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/alerts/' + id + '/resume', { method: 'POST' });
+        loadAlerts();
+      }, { successText: 'Alert resumed', errorPrefix: 'Failed to resume alert' });
     }
 
-    async function deleteAlert(id) {
-      await fetch(API + '/alerts/' + id, { method: 'DELETE' });
-      toast('Alert deleted');
-      loadAlerts();
+    async function deleteAlert(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/alerts/' + id, { method: 'DELETE' });
+        loadAlerts();
+      }, { successText: 'Alert deleted', errorPrefix: 'Failed to delete alert' });
     }
 
     async function previewAlert(id) {
@@ -9633,13 +9792,13 @@
           if (s.last_sync_at) html += ` · Last: ${_timeAgo(s.last_sync_at)}`;
           html += `</div></div>`;
           html += `<div class="source-card-actions">`;
-          html += `<button class="btn-sm" onclick="syncSource('${s.id}')">Sync</button>`;
+          html += `<button class="btn-sm" onclick="syncSource('${s.id}', this)">Sync</button>`;
           if (s.active) {
-            html += `<button class="btn-sm btn-secondary" onclick="pauseSource('${s.id}')">Pause</button>`;
+            html += `<button class="btn-sm btn-secondary" onclick="pauseSource('${s.id}', this)">Pause</button>`;
           } else {
-            html += `<button class="btn-sm" onclick="resumeSource('${s.id}')">Resume</button>`;
+            html += `<button class="btn-sm" onclick="resumeSource('${s.id}', this)">Resume</button>`;
           }
-          html += `<button class="btn-sm btn-secondary" onclick="deleteSource('${s.id}')">Remove</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="deleteSource('${s.id}', this)">Remove</button>`;
           html += `</div></div>`;
         }
         body.innerHTML = html;
@@ -9668,11 +9827,11 @@
       if (e.target === document.getElementById('source-modal')) closeSourceModal();
     });
 
-    async function submitGoogleSheet() {
+    async function submitGoogleSheet(btn) {
       const url = document.getElementById('src-sheet-url').value.trim();
       if (!url) return toast('Enter a Google Sheets URL');
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/sources/google-sheet', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -9684,20 +9843,19 @@
             sync_frequency_minutes: parseInt(document.getElementById('src-freq').value) || 5,
           }),
         });
-        if (data.error) return toast('Error: ' + data.error);
-        toast('Sheet connected: ' + (data.table_name || ''));
+        if (data.error) throw new Error(data.error);
         closeSourceModal();
         loadSources();
-      } catch (e) { toast('Failed to connect sheet: ' + e.message); }
+      }, { loadingText: 'Connecting\u2026', successText: 'Sheet connected', errorPrefix: 'Failed to connect sheet' });
     }
 
-    async function submitApiSource() {
+    async function submitApiSource(btn) {
       const url = document.getElementById('src-api-url').value.trim();
       const name = document.getElementById('src-api-name').value.trim();
       const table = document.getElementById('src-api-table').value.trim();
       if (!url || !name || !table) return toast('Fill in all fields');
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/sources/api', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -9706,36 +9864,39 @@
             sync_frequency_minutes: parseInt(document.getElementById('src-api-freq').value) || 0,
           }),
         });
-        if (data.error) return toast('Error: ' + data.error);
-        toast('API source connected');
+        if (data.error) throw new Error(data.error);
         closeSourceModal();
         loadSources();
-      } catch (e) { toast('Failed to connect API'); }
+      }, { loadingText: 'Connecting\u2026', successText: 'API source connected', errorPrefix: 'Failed to connect API' });
     }
 
-    async function syncSource(id) {
-      toast('Syncing...');
-      const data = await apiFetch(API + '/sources/' + id + '/sync', { method: 'POST' });
-      toast(data.error ? 'Sync error: ' + data.error : 'Synced successfully');
-      loadSources();
+    async function syncSource(id, btn) {
+      await asyncAction(btn, async () => {
+        const data = await apiFetch(API + '/sources/' + id + '/sync', { method: 'POST' });
+        if (data.error) throw new Error(data.error);
+        loadSources();
+      }, { loadingText: 'Syncing\u2026', successText: 'Synced successfully', errorPrefix: 'Sync error' });
     }
 
-    async function pauseSource(id) {
-      await fetch(API + '/sources/' + id + '/pause', { method: 'POST' });
-      toast('Source paused');
-      loadSources();
+    async function pauseSource(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/sources/' + id + '/pause', { method: 'POST' });
+        loadSources();
+      }, { successText: 'Source paused', errorPrefix: 'Failed to pause source' });
     }
 
-    async function resumeSource(id) {
-      await fetch(API + '/sources/' + id + '/resume', { method: 'POST' });
-      toast('Source resumed');
-      loadSources();
+    async function resumeSource(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/sources/' + id + '/resume', { method: 'POST' });
+        loadSources();
+      }, { successText: 'Source resumed', errorPrefix: 'Failed to resume source' });
     }
 
-    async function deleteSource(id) {
-      await fetch(API + '/sources/' + id, { method: 'DELETE' });
-      toast('Source removed');
-      loadSources();
+    async function deleteSource(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/sources/' + id, { method: 'DELETE' });
+        loadSources();
+      }, { successText: 'Source removed', errorPrefix: 'Failed to remove source' });
     }
 
     // -----------------------------------------------------------------------
@@ -9768,7 +9929,7 @@
       setTimeout(updateSetupChecklist, 500);
     }
 
-    async function saveOnboarding() {
+    async function saveOnboarding(btn) {
       const systems = document.getElementById('ob-systems').value.trim().split('\n')
         .filter(l => l.trim())
         .map(l => {
@@ -9779,7 +9940,7 @@
       const products = document.getElementById('ob-products').value.trim()
         .split(',').map(p => p.trim()).filter(Boolean);
 
-      try {
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/company/onboard', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -9791,13 +9952,12 @@
             systems,
           }),
         });
-        if (data.error) return toast('Error: ' + data.error);
+        if (data.error) throw new Error(data.error);
         const pct = data.completeness || 0;
         document.getElementById('setup-completeness').textContent = pct + '% complete';
         document.getElementById('setup-progress').style.width = pct + '%';
-        toast('Company profile saved');
         markFeedDirty();
-      } catch (e) { toast('Failed to save profile'); }
+      }, { loadingText: 'Saving\u2026', successText: 'Company profile saved', errorPrefix: 'Failed to save profile' });
     }
 
     async function loadThresholds() {
@@ -9820,7 +9980,7 @@
           html += `Normal: ${t.normal_min ?? '—'}–${t.normal_max ?? '—'}`;
           if (t.unit) html += ` ${esc(t.unit)}`;
           html += `</div>`;
-          html += `<button class="btn-sm btn-secondary" onclick="deleteThreshold(${t.id})">Remove</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="deleteThreshold(${t.id}, this)">Remove</button>`;
           html += `</div>`;
         }
         body.innerHTML = html;
@@ -9837,13 +9997,47 @@
         document.getElementById('threshold-modal').classList.remove('active');
     });
 
-    async function submitThreshold() {
+    async function submitThreshold(btn) {
       const metric = document.getElementById('th-metric').value.trim();
       if (!metric) return toast('Enter a metric name');
 
-      const getNum = id => { const v = document.getElementById(id).value; return v ? parseFloat(v) : null; };
+      // Parse all threshold values upfront (fix: handles 0 correctly, rejects non-numeric)
+      const parseNum = id => {
+        const v = document.getElementById(id).value.trim();
+        if (v === '') return null;
+        const n = parseFloat(v);
+        return isNaN(n) ? null : n;
+      };
+      const normalMin = parseNum('th-normal-min');
+      const normalMax = parseNum('th-normal-max');
+      const warnMin = parseNum('th-warning-min');
+      const warnMax = parseNum('th-warning-max');
+      const critMin = parseNum('th-critical-min');
+      const critMax = parseNum('th-critical-max');
 
-      try {
+      // At least one threshold range required
+      const hasAny = [normalMin, normalMax, warnMin, warnMax, critMin, critMax].some(v => v !== null);
+      if (!hasAny) return toast('Set at least one threshold value');
+
+      // Validate range ordering: min < max for each level
+      if (normalMin !== null && normalMax !== null && normalMin >= normalMax)
+        return toast('Normal min must be less than normal max');
+      if (warnMin !== null && warnMax !== null && warnMin >= warnMax)
+        return toast('Warning min must be less than warning max');
+      if (critMin !== null && critMax !== null && critMin >= critMax)
+        return toast('Critical min must be less than critical max');
+
+      // Validate hierarchy: normal ⊂ warning ⊂ critical (normal is tightest)
+      if (normalMin !== null && warnMin !== null && normalMin < warnMin)
+        return toast('Normal min must be ≥ warning min (normal is tightest)');
+      if (normalMax !== null && warnMax !== null && normalMax > warnMax)
+        return toast('Normal max must be ≤ warning max (normal is tightest)');
+      if (warnMin !== null && critMin !== null && warnMin < critMin)
+        return toast('Warning min must be ≥ critical min (warning is tighter than critical)');
+      if (warnMax !== null && critMax !== null && warnMax > critMax)
+        return toast('Warning max must be ≤ critical max (warning is tighter than critical)');
+
+      await asyncAction(btn, async () => {
         const data = await apiFetch(API + '/thresholds', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
@@ -9852,27 +10046,27 @@
             table_name: document.getElementById('th-table').value.trim() || null,
             column_name: document.getElementById('th-column').value.trim() || null,
             unit: document.getElementById('th-unit').value.trim() || null,
-            normal_min: getNum('th-normal-min'),
-            normal_max: getNum('th-normal-max'),
-            warning_min: getNum('th-warning-min'),
-            warning_max: getNum('th-warning-max'),
-            critical_min: getNum('th-critical-min'),
-            critical_max: getNum('th-critical-max'),
+            normal_min: normalMin,
+            normal_max: normalMax,
+            warning_min: warnMin,
+            warning_max: warnMax,
+            critical_min: critMin,
+            critical_max: critMax,
           }),
         });
-        if (data.error) return toast('Error: ' + data.error);
-        toast('Threshold saved');
+        if (data.error) throw new Error(data.error);
         markFeedDirty();
         document.getElementById('threshold-modal').classList.remove('active');
         loadThresholds();
-      } catch (e) { toast('Failed to save threshold'); }
+      }, { successText: 'Threshold saved', errorPrefix: 'Failed to save threshold' });
     }
 
-    async function deleteThreshold(id) {
-      await fetch(API + '/thresholds/' + id, { method: 'DELETE' });
-      toast('Threshold removed');
-      markFeedDirty();
-      loadThresholds();
+    async function deleteThreshold(id, btn) {
+      await asyncAction(btn, async () => {
+        await apiFetch(API + '/thresholds/' + id, { method: 'DELETE' });
+        markFeedDirty();
+        loadThresholds();
+      }, { successText: 'Threshold removed', errorPrefix: 'Failed to remove threshold' });
     }
 
     // -----------------------------------------------------------------------

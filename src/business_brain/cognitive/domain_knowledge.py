@@ -342,67 +342,7 @@ INDUSTRY_TEMPLATES: dict[str, dict] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# What-If Scenario Templates — pre-built scenarios by industry
-# ---------------------------------------------------------------------------
-
-WHATIF_TEMPLATES: dict[str, list[dict]] = {
-    "steel": [
-        {
-            "name": "Scrap Price Change",
-            "description": "What happens to your monthly costs if scrap prices change?",
-            "formula": "scrap_price * monthly_tonnage",
-            "base_values": {"scrap_price": 38000, "monthly_tonnage": 500},
-            "scenarios": [
-                {"name": "Price +5%", "values": {"scrap_price": 39900}},
-                {"name": "Price +10%", "values": {"scrap_price": 41800}},
-                {"name": "Price -5%", "values": {"scrap_price": 36100}},
-            ],
-        },
-        {
-            "name": "Power Cost Impact",
-            "description": "How does power tariff change affect cost per ton?",
-            "formula": "sec * tariff_rate",
-            "base_values": {"sec": 580, "tariff_rate": 8.5},
-            "scenarios": [
-                {"name": "Tariff +\u20b91/kWh", "values": {"tariff_rate": 9.5}},
-                {"name": "SEC improves to 500", "values": {"sec": 500}},
-                {"name": "Both worsen", "values": {"sec": 650, "tariff_rate": 9.5}},
-            ],
-        },
-        {
-            "name": "Yield Improvement",
-            "description": "Revenue impact of improving overall yield",
-            "formula": "monthly_input * (yield_pct / 100) * selling_price",
-            "base_values": {"monthly_input": 600, "yield_pct": 88, "selling_price": 48000},
-            "scenarios": [
-                {"name": "Yield to 90%", "values": {"yield_pct": 90}},
-                {"name": "Yield to 92%", "values": {"yield_pct": 92}},
-                {"name": "Yield drops to 85%", "values": {"yield_pct": 85}},
-            ],
-        },
-        {
-            "name": "Utilization Change",
-            "description": "What if you increase or decrease furnace utilization?",
-            "formula": "rated_capacity * (utilization / 100) * 30 * margin_per_ton",
-            "base_values": {"rated_capacity": 20, "utilization": 76, "margin_per_ton": 3000},
-            "scenarios": [
-                {"name": "85% utilization", "values": {"utilization": 85}},
-                {"name": "90% utilization", "values": {"utilization": 90}},
-                {"name": "60% utilization", "values": {"utilization": 60}},
-            ],
-        },
-    ],
-}
-
-
 def get_industry_template(industry: str) -> dict | None:
     """Get setup template for a given industry."""
     return INDUSTRY_TEMPLATES.get(industry.lower().strip())
 
-
-def get_whatif_templates(industry: str | None = None) -> list[dict]:
-    """Get What-If scenario templates for a given industry."""
-    if not industry:
-        industry = "steel"
-    return WHATIF_TEMPLATES.get(industry.lower().strip(), [])
