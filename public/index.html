@@ -3778,6 +3778,9 @@
     let lastAnalysisData = null;
     let activeCharts = [];
     let analysisStack = [];
+    let _currentFindings = [];
+    let _currentMetrics = [];
+    let _currentComputations = [];
 
     // Initialize first session and sync aliases
     getActiveSession();
@@ -5729,11 +5732,6 @@
         business_impact: 'Investigate the underlying data and breakdown behind this metric.',
       });
     }
-
-    // Store findings and metrics globally for onclick references
-    let _currentFindings = [];
-    let _currentMetrics = [];
-    let _currentComputations = [];
 
     // -----------------------------------------------------------------------
     // Analyze → Feed Parity Actions
