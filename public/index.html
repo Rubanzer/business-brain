@@ -3356,7 +3356,7 @@
             ? '<span class="badge badge-green">APPROVED</span>'
             : '<span class="badge badge-red">REJECTED</span>';
         }
-        body.innerHTML = renderAnalysis(lastEntry.data);
+        body.innerHTML = renderAnalysis(lastEntry.data, s);
         autoRenderCharts(lastEntry.data);
       } else {
         body.innerHTML = '';
@@ -3800,9 +3800,10 @@
     let tutorialStep = 0;
     let tutorialActive = false;
 
-    // Initialize first session and sync aliases
+    // Initialize first session, sync aliases, and render session tabs
     getActiveSession();
     syncGlobalAliases();
+    renderSessionTabs();
 
     function newChat() {
       createNewSession();
@@ -4826,15 +4827,19 @@
     }
 
     // Chat thread rendering
-    function addChatMessage(role, content) {
-      chatMessages.push({ role, content });
-      const thread = document.getElementById('chat-thread');
-      thread.style.display = 'block';
-      const div = document.createElement('div');
-      div.className = `chat-msg ${role}`;
-      div.innerHTML = `<div class="chat-role">${role}</div><div>${esc(content)}</div>`;
-      thread.appendChild(div);
-      thread.scrollTop = thread.scrollHeight;
+    function addChatMessage(role, content, targetSession) {
+      const arr = targetSession ? targetSession.chatMessages : chatMessages;
+      arr.push({ role, content });
+      // Only update DOM if the target session is the active one (or no target specified)
+      if (!targetSession || _analysisSessions[_activeSessionIndex] === targetSession) {
+        const thread = document.getElementById('chat-thread');
+        thread.style.display = 'block';
+        const div = document.createElement('div');
+        div.className = `chat-msg ${role}`;
+        div.innerHTML = `<div class="chat-role">${role}</div><div>${esc(content)}</div>`;
+        thread.appendChild(div);
+        thread.scrollTop = thread.scrollHeight;
+      }
     }
 
     // ---------------------------------------------------------------------------
@@ -4895,7 +4900,7 @@
         body.innerHTML = '';
         destroyCharts();
 
-        addChatMessage('user', q);
+        addChatMessage('user', q, s);
 
         // Fresh query → reset drill-down stack
         if (!parentFinding) { s.analysisStack = []; syncGlobalAliases(); }
@@ -4910,52 +4915,54 @@
         });
 
         // Update session_id if server returns one
-        if (data.session_id) {
-          s.sessionId = data.session_id;
-          syncGlobalAliases();
-        }
+        if (data.session_id) { s.sessionId = data.session_id; }
 
         s.lastAnalysisData = data;
-        syncGlobalAliases();
 
-        // Check if the analysis pipeline returned an error
-        if (data.error || data.status === 'failed') {
-          status.innerHTML = '<span class="badge badge-red">ERROR</span>';
-          body.innerHTML = `<div class="report-section" style="color:var(--red);">
-            <h4>Analysis Failed</h4>
-            <p>${esc(data.error || 'Unknown error occurred during analysis.')}</p>
-            <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem;">Try rephrasing your question or check if the relevant data has been uploaded.</p>
-          </div>`;
-          addChatMessage('assistant', 'Analysis failed: ' + (data.error || 'Unknown error'));
-          return;
-        }
-
-        // Push to drill-down stack
+        // Store in session regardless of whether it's still active
         s.analysisStack.push({ question: q, data, finding: parentFinding || null });
-
-        // Auto-label session tab on first analysis
         if (s.analysisStack.length === 1) {
           s.label = q.substring(0, 40);
           renderSessionTabs();
         }
 
-        // Status badge: approved, partial, or rejected
-        const pipeStatus = data.pipeline_status || 'ok';
-        if (pipeStatus === 'partial') {
-          status.innerHTML = '<span class="badge badge-yellow">PARTIAL</span>';
-        } else {
-          status.innerHTML = data.approved
-            ? '<span class="badge badge-green">APPROVED</span>'
-            : '<span class="badge badge-red">REJECTED</span>';
-        }
-        body.innerHTML = renderAnalysis(data);
-
-        // Add assistant message to chat
         const summary = data.analysis?.summary || 'Analysis completed.';
-        addChatMessage('assistant', summary);
+        s.currentFindings = data.analysis?.findings || [];
+        s.currentMetrics = data.cfo_key_metrics || [];
+        s.currentComputations = data.python_analysis?.computations || [];
 
-        // Auto-render charts
-        autoRenderCharts(data);
+        // Check if the analysis pipeline returned an error
+        if (data.error || data.status === 'failed') {
+          addChatMessage('assistant', 'Analysis failed: ' + (data.error || 'Unknown error'), s);
+          if (_analysisSessions[_activeSessionIndex] === s) {
+            syncGlobalAliases();
+            status.innerHTML = '<span class="badge badge-red">ERROR</span>';
+            body.innerHTML = `<div class="report-section" style="color:var(--red);">
+              <h4>Analysis Failed</h4>
+              <p>${esc(data.error || 'Unknown error occurred during analysis.')}</p>
+              <p style="color:var(--muted);font-size:0.75rem;margin-top:0.5rem;">Try rephrasing your question or check if the relevant data has been uploaded.</p>
+            </div>`;
+          }
+          return;
+        }
+
+        addChatMessage('assistant', summary, s);
+
+        // Only update DOM if this session is still the active one
+        if (_analysisSessions[_activeSessionIndex] === s) {
+          syncGlobalAliases();
+
+          const pipeStatus = data.pipeline_status || 'ok';
+          if (pipeStatus === 'partial') {
+            status.innerHTML = '<span class="badge badge-yellow">PARTIAL</span>';
+          } else {
+            status.innerHTML = data.approved
+              ? '<span class="badge badge-green">APPROVED</span>'
+              : '<span class="badge badge-red">REJECTED</span>';
+          }
+          body.innerHTML = renderAnalysis(data, s);
+          autoRenderCharts(data);
+        }
 
         document.getElementById('question').value = '';
       }, { restoreHTML: false });
@@ -4968,11 +4975,12 @@
     // ---------------------------------------------------------------------------
     // Insight-first layout
     // ---------------------------------------------------------------------------
-    function renderAnalysis(d) {
+    function renderAnalysis(d, targetSession) {
       let html = '';
 
-      // Store data for drill-down onclick references (into active session + global aliases)
-      const _s = getActiveSession();
+      // Store data for drill-down onclick references
+      // Use explicit target session (from caller) to avoid cross-session leaks
+      const _s = targetSession || getActiveSession();
       _s.currentFindings = d.analysis?.findings || [];
       _s.currentMetrics = d.cfo_key_metrics || [];
       _s.currentComputations = d.python_analysis?.computations || [];
@@ -5514,7 +5522,7 @@
       const drillQuestion = `Investigate deeper: ${finding.description}` +
         (finding.business_impact ? ` — ${finding.business_impact}` : '');
 
-      addChatMessage('user', drillQuestion);
+      addChatMessage('user', drillQuestion, s);
 
       try {
         const payload = {
@@ -5528,26 +5536,23 @@
           body: JSON.stringify(payload),
         });
 
-        if (data.session_id) {
-          s.sessionId = data.session_id;
-          syncGlobalAliases();
-        }
+        if (data.session_id) { s.sessionId = data.session_id; }
 
         s.lastAnalysisData = data;
-        syncGlobalAliases();
-
-        // Push to stack
         s.analysisStack.push({ question: drillQuestion, data, finding });
 
-        status.innerHTML = data.approved
-          ? '<span class="badge badge-green">APPROVED</span>'
-          : '<span class="badge badge-red">REJECTED</span>';
-        body.innerHTML = renderAnalysis(data);
-
         const summary = data.analysis?.summary || 'Analysis completed.';
-        addChatMessage('assistant', summary);
+        addChatMessage('assistant', summary, s);
 
-        autoRenderCharts(data);
+        // Only update DOM if this session is still active
+        if (_analysisSessions[_activeSessionIndex] === s) {
+          syncGlobalAliases();
+          status.innerHTML = data.approved
+            ? '<span class="badge badge-green">APPROVED</span>'
+            : '<span class="badge badge-red">REJECTED</span>';
+          body.innerHTML = renderAnalysis(data, s);
+          autoRenderCharts(data);
+        }
       } catch (e) {
         status.innerHTML = '<span class="badge badge-red">ERROR</span>';
         body.textContent = e.message;
