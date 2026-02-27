@@ -1,7 +1,7 @@
 """Process & setup router — process steps, metrics, templates, setup.
 
 Extracted from api.py: process step CRUD, I/O mapping, metric linking,
-industry templates, auto-link metrics, and what-if scenario templates.
+industry templates and auto-link metrics.
 """
 
 from typing import Optional
@@ -674,10 +674,7 @@ async def _regenerate_io_context(session: AsyncSession) -> None:
 @router.get("/setup/template/{industry}")
 async def get_industry_setup_template(industry: str) -> dict:
     """Get pre-built setup template for a given industry."""
-    from business_brain.cognitive.domain_knowledge import (
-        get_industry_template,
-        get_whatif_templates,
-    )
+    from business_brain.cognitive.domain_knowledge import get_industry_template
 
     template = get_industry_template(industry)
     if not template:
@@ -689,7 +686,6 @@ async def get_industry_setup_template(industry: str) -> dict:
         "metrics": template.get("metrics", []),
         "inputs": template.get("inputs", []),
         "outputs": template.get("outputs", []),
-        "whatif_templates": get_whatif_templates(industry),
     }
 
 
@@ -729,15 +725,4 @@ async def apply_industry_template(
     return {"status": "applied", "industry": industry, "counts": counts}
 
 
-# ---------------------------------------------------------------------------
-# What-If Templates
-# ---------------------------------------------------------------------------
-
-
-@router.get("/whatif/templates")
-async def get_whatif_scenario_templates(industry: str = "steel") -> list[dict]:
-    """Get pre-built What-If scenario templates for the given industry."""
-    from business_brain.cognitive.domain_knowledge import get_whatif_templates
-
-    return get_whatif_templates(industry)
 
