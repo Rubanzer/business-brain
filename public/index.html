@@ -856,15 +856,143 @@
       margin-bottom: 0.2rem;
     }
 
-    .new-chat-btn {
-      font-size: 0.7rem;
-      padding: 0.3rem 0.7rem;
+    /* Analysis session sub-tabs */
+    .analysis-tabs-bar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .analysis-tab {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      border: none;
+      background: none;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .analysis-tab:hover { color: var(--text); }
+    .analysis-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .analysis-tab .tab-close {
+      font-size: 0.65rem;
+      opacity: 0.3;
+      cursor: pointer;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+    .analysis-tab .tab-close:hover { opacity: 1; background: rgba(248,81,73,0.2); color: var(--red); }
+    .analysis-tab-label { overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+    .analysis-tab-new {
+      padding: 0.4rem 0.6rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    .analysis-tab-new:hover { color: var(--accent); }
+
+    /* Investigation queue */
+    .investigate-split { display: inline-flex; border-radius: 4px; overflow: visible; position: relative; }
+    .investigate-split .btn-main { border-radius: 4px 0 0 4px; border-right: 1px solid rgba(255,255,255,0.15); }
+    .investigate-split .btn-arrow {
+      padding: 0.2rem 0.35rem;
+      font-size: 0.55rem;
+      border-radius: 0 4px 4px 0;
+      cursor: pointer;
+      position: relative;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+    }
+    .investigate-dropdown {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 4px);
+      right: 0;
       background: var(--surface);
       border: 1px solid var(--border);
-      color: var(--muted);
+      border-radius: 6px;
+      min-width: 140px;
+      padding: 0.3rem 0;
+      z-index: 50;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
+    .investigate-dropdown.open { display: block; }
+    .investigate-dropdown button {
+      display: block;
+      width: 100%;
+      padding: 0.4rem 0.6rem;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 0.72rem;
+      cursor: pointer;
+      text-align: left;
+    }
+    .investigate-dropdown button:hover { background: rgba(68,147,248,0.1); }
+    .investigate-queue-bar {
+      position: sticky;
+      bottom: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--accent);
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      z-index: 20;
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
+    }
+    .investigate-queue-bar .queue-items { display: flex; gap: 0.3rem; flex-wrap: wrap; flex: 1; }
+    .investigate-queue-bar .queue-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      padding: 0.2rem 0.5rem;
+      background: rgba(68,147,248,0.1);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      font-size: 0.65rem;
+      color: var(--accent);
+    }
+    .investigate-queue-bar .queue-chip .remove { cursor: pointer; opacity: 0.6; }
+    .investigate-queue-bar .queue-chip .remove:hover { opacity: 1; }
 
-    .new-chat-btn:hover { color: var(--text); border-color: var(--accent); }
+    /* Chart builder panel */
+    .chart-builder-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 0.75rem;
+    }
+    .chart-builder-panel h4 { font-size: 0.8rem; margin-bottom: 0.75rem; color: var(--text); }
+    .cb-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.6rem; align-items: flex-start; }
+    .cb-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 120px; }
+    .cb-field label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .cb-field select, .cb-field input {
+      font-size: 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+    .cb-field select:focus, .cb-field input:focus { border-color: var(--accent); outline: none; }
+    .cb-actions { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.5rem; }
+    .cb-preview { margin-top: 0.75rem; min-height: 100px; }
 
     /* Pagination */
     .pagination {
@@ -2100,9 +2228,8 @@
 
     <!-- Analyze Panel -->
     <div id="analyze" class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-        <span style="font-size:0.7rem;color:var(--muted);" id="session-label"></span>
-        <button class="new-chat-btn" onclick="newChat()">New Chat</button>
+      <div class="analysis-tabs-bar" id="analysis-tabs-bar">
+        <!-- Rendered dynamically by renderSessionTabs() -->
       </div>
       <div id="chat-thread" class="chat-thread" style="display:none;"></div>
       <div class="suggestion-pills" id="suggestion-pills"></div>
@@ -2310,9 +2437,23 @@
         <div class="progress-bar" style="flex:1;max-width:200px;margin:0;"><div class="progress-bar-fill" id="setup-progress" style="width:0%"></div></div>
       </div>
 
+      <!-- Getting Started Banner (for new users) -->
+      <div id="setup-getting-started" style="display:none;">
+        <div style="background:rgba(68,147,248,0.08);border:1px solid var(--accent);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.75rem;">
+          <div style="font-weight:600;margin-bottom:0.3rem;color:var(--accent);">Getting Started</div>
+          <ol style="margin:0;padding-left:1.2rem;color:var(--muted);line-height:1.6;">
+            <li><strong>Company Profile</strong> — Tell us about your business so the AI understands your context</li>
+            <li><strong>Upload Data</strong> — Go to the Data tab and upload CSV/Excel files</li>
+            <li><strong>Define Metrics</strong> — Set target ranges so the AI knows what "good" looks like</li>
+            <li><strong>Run a Scan</strong> — Go to Feed and click "Scan Now" to discover insights</li>
+          </ol>
+          <button class="btn-sm btn-secondary" onclick="this.parentElement.parentElement.style.display='none'" style="margin-top:0.5rem;font-size:0.65rem;">Dismiss</button>
+        </div>
+      </div>
+
       <!-- Card-Based Dashboard Grid -->
       <div class="setup-card-grid" id="setup-card-grid">
-        <div class="setup-card" data-card="profile" onclick="toggleSetupCard('profile')">
+        <div class="setup-card" data-card="profile" onclick="toggleSetupCard('profile')" title="Your company name, industry, and production process">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-profile">&#9675;</span>
             <span class="setup-card-title">Company Profile</span>
@@ -2320,7 +2461,7 @@
           <div class="setup-card-summary" id="card-summary-profile">Not configured</div>
           <div class="setup-card-action">Edit</div>
         </div>
-        <div class="setup-card" data-card="process" onclick="toggleSetupCard('process')">
+        <div class="setup-card" data-card="process" onclick="toggleSetupCard('process')" title="Define your production/business process steps and their sequence">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-process">&#9675;</span>
             <span class="setup-card-title">Process Map</span>
@@ -2328,7 +2469,7 @@
           <div class="setup-card-summary" id="card-summary-process">No steps defined</div>
           <div class="setup-card-action">Edit</div>
         </div>
-        <div class="setup-card" data-card="metrics" onclick="toggleSetupCard('metrics')">
+        <div class="setup-card" data-card="metrics" onclick="toggleSetupCard('metrics')" title="Set target ranges for your KPIs so the AI knows what good looks like">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-metrics">&#9675;</span>
             <span class="setup-card-title">Metrics &amp; KPIs</span>
@@ -2339,7 +2480,7 @@
             <span class="setup-card-action setup-card-action-secondary" onclick="event.stopPropagation(); runAutoScan()">Auto-scan</span>
           </div>
         </div>
-        <div class="setup-card" data-card="io" onclick="toggleSetupCard('io')">
+        <div class="setup-card" data-card="io" onclick="toggleSetupCard('io')" title="Raw materials, energy inputs, and finished product outputs">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-io">&#9675;</span>
             <span class="setup-card-title">Inputs &amp; Outputs</span>
@@ -2347,7 +2488,7 @@
           <div class="setup-card-summary" id="card-summary-io">Not configured</div>
           <div class="setup-card-action">Edit</div>
         </div>
-        <div class="setup-card" data-card="context" onclick="toggleSetupCard('context')">
+        <div class="setup-card" data-card="context" onclick="toggleSetupCard('context')" title="Business rules, domain knowledge, and soft insights the AI should know">
           <div class="setup-card-header">
             <span class="setup-card-icon" id="card-icon-context">&#9675;</span>
             <span class="setup-card-title">Business Context</span>
@@ -2355,7 +2496,7 @@
           <div class="setup-card-summary" id="card-summary-context">No context added</div>
           <div class="setup-card-action">Edit</div>
         </div>
-        <div class="setup-card setup-card-suggestions" data-card="suggestions" onclick="toggleSetupCard('suggestions')">
+        <div class="setup-card setup-card-suggestions" data-card="suggestions" onclick="toggleSetupCard('suggestions')" title="Auto-discovered metric-to-column mappings from your data">
           <div class="setup-card-header">
             <span class="setup-card-icon">&#128161;</span>
             <span class="setup-card-title">Auto-Suggestions</span>
@@ -3069,6 +3210,159 @@
     }
 
     // -----------------------------------------------------------------------
+    // Analysis Session Manager — encapsulates per-session state
+    // -----------------------------------------------------------------------
+    let _analysisSessions = [];
+    let _activeSessionIndex = 0;
+
+    function AnalysisSession(label) {
+      this.id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+      this.label = label || 'New Analysis';
+      this.sessionId = this.id;
+      this.chatMessages = [];
+      this.analysisStack = [];
+      this.lastAnalysisData = null;
+      this.activeCharts = [];
+      this.currentFindings = [];
+      this.currentMetrics = [];
+      this.currentComputations = [];
+      this.createdAt = Date.now();
+    }
+
+    function getActiveSession() {
+      if (!_analysisSessions.length) {
+        _analysisSessions.push(new AnalysisSession('Chat 1'));
+      }
+      return _analysisSessions[_activeSessionIndex];
+    }
+
+    function syncGlobalAliases() {
+      const s = getActiveSession();
+      _currentFindings = s.currentFindings;
+      _currentMetrics = s.currentMetrics;
+      _currentComputations = s.currentComputations;
+      lastAnalysisData = s.lastAnalysisData;
+      sessionId = s.sessionId;
+      analysisStack = s.analysisStack;
+      chatMessages = s.chatMessages;
+      activeCharts = s.activeCharts;
+    }
+
+    function createNewSession(label) {
+      const idx = _analysisSessions.length + 1;
+      const session = new AnalysisSession(label || 'Chat ' + idx);
+      _analysisSessions.push(session);
+      _activeSessionIndex = _analysisSessions.length - 1;
+      syncGlobalAliases();
+      renderSessionTabs();
+      renderActiveSession();
+      return session;
+    }
+
+    function switchSession(index) {
+      if (index < 0 || index >= _analysisSessions.length || index === _activeSessionIndex) return;
+      destroyCharts();
+      _activeSessionIndex = index;
+      syncGlobalAliases();
+      renderSessionTabs();
+      renderActiveSession();
+    }
+
+    function closeSession(index) {
+      if (_analysisSessions.length <= 1) {
+        // Reset the only session
+        const s = _analysisSessions[0];
+        s.chatMessages.length = 0;
+        s.analysisStack = [];
+        s.lastAnalysisData = null;
+        s.activeCharts = [];
+        s.currentFindings = [];
+        s.currentMetrics = [];
+        s.currentComputations = [];
+        s.label = 'Chat 1';
+        syncGlobalAliases();
+        renderSessionTabs();
+        renderActiveSession();
+        return;
+      }
+      if (index === _activeSessionIndex) destroyCharts();
+      _analysisSessions.splice(index, 1);
+      if (_activeSessionIndex >= _analysisSessions.length) {
+        _activeSessionIndex = _analysisSessions.length - 1;
+      } else if (_activeSessionIndex > index) {
+        _activeSessionIndex--;
+      }
+      syncGlobalAliases();
+      renderSessionTabs();
+      renderActiveSession();
+    }
+
+    function renderSessionTabs() {
+      const bar = document.getElementById('analysis-tabs-bar');
+      if (!bar) return;
+      let html = '';
+      _analysisSessions.forEach((session, i) => {
+        const activeClass = i === _activeSessionIndex ? 'active' : '';
+        const label = session.label.length > 25 ? session.label.slice(0, 25) + '\u2026' : session.label;
+        html += '<button class="analysis-tab ' + activeClass + '" onclick="switchSession(' + i + ')" title="' + esc(session.label) + '">';
+        html += '<span class="analysis-tab-label">' + esc(label) + '</span>';
+        html += '<span class="tab-close" onclick="event.stopPropagation();closeSession(' + i + ')">&times;</span>';
+        html += '</button>';
+      });
+      html += '<button class="analysis-tab-new" onclick="createNewSession()" title="New analysis session">+</button>';
+      bar.innerHTML = html;
+    }
+
+    function renderActiveSession() {
+      const s = getActiveSession();
+      syncGlobalAliases();
+
+      // Re-render chat thread
+      const thread = document.getElementById('chat-thread');
+      if (thread) {
+        thread.innerHTML = '';
+        if (s.chatMessages.length) {
+          thread.style.display = 'block';
+          s.chatMessages.forEach(function(msg) {
+            const div = document.createElement('div');
+            div.className = 'chat-msg ' + msg.role;
+            div.innerHTML = '<div class="chat-role">' + msg.role + '</div><div>' + esc(msg.content) + '</div>';
+            thread.appendChild(div);
+          });
+          thread.scrollTop = thread.scrollHeight;
+        } else {
+          thread.style.display = 'none';
+        }
+      }
+
+      // Re-render analysis body
+      const body = document.getElementById('analyze-body');
+      const status = document.getElementById('analyze-status');
+      destroyCharts();
+
+      if (s.analysisStack.length) {
+        const lastEntry = s.analysisStack[s.analysisStack.length - 1];
+        s.lastAnalysisData = lastEntry.data;
+        syncGlobalAliases();
+        const pipeStatus = lastEntry.data.pipeline_status || 'ok';
+        if (pipeStatus === 'partial') {
+          status.innerHTML = '<span class="badge badge-yellow">PARTIAL</span>';
+        } else {
+          status.innerHTML = lastEntry.data.approved
+            ? '<span class="badge badge-green">APPROVED</span>'
+            : '<span class="badge badge-red">REJECTED</span>';
+        }
+        body.innerHTML = renderAnalysis(lastEntry.data);
+        autoRenderCharts(lastEntry.data);
+      } else {
+        body.innerHTML = '';
+        status.innerHTML = '';
+      }
+
+      document.getElementById('question').value = '';
+    }
+
+    // -----------------------------------------------------------------------
     // Auth UI
     // -----------------------------------------------------------------------
     function showAuthPage() {
@@ -3477,38 +3771,21 @@
     // Load plan limits after auth
     setTimeout(loadPlanLimits, 1000);
 
-    // Session management — use sessionStorage so each tab gets its own session
-    let sessionId = sessionStorage.getItem('bb_session_id');
-    if (!sessionId) {
-      sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-      sessionStorage.setItem('bb_session_id', sessionId);
-    }
-
-    const chatMessages = [];
+    // Session management — globals are aliases into the active AnalysisSession
+    // (synced via syncGlobalAliases() on every session switch)
+    let sessionId = '';
+    let chatMessages = [];
     let lastAnalysisData = null;
     let activeCharts = [];
-
-    // Drill-down navigation stack
-    // Each entry: { question, data, finding (null for root) }
     let analysisStack = [];
 
-    function updateSessionLabel() {
-      document.getElementById('session-label').textContent = `Session: ${sessionId.slice(0, 8)}...`;
-    }
-    updateSessionLabel();
+    // Initialize first session and sync aliases
+    getActiveSession();
+    syncGlobalAliases();
 
     function newChat() {
-      sessionId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-      sessionStorage.setItem('bb_session_id', sessionId);
-      chatMessages.length = 0;
-      analysisStack = [];
-      destroyCharts();
-      document.getElementById('chat-thread').style.display = 'none';
-      document.getElementById('chat-thread').innerHTML = '';
-      document.getElementById('analyze-body').innerHTML = '';
-      document.getElementById('analyze-status').innerHTML = '';
-      updateSessionLabel();
-      toast('New chat started');
+      createNewSession();
+      toast('New analysis tab opened');
     }
 
     // Tabs — primary bar + "More" dropdown
@@ -3666,6 +3943,10 @@
       if (compEl) compEl.textContent = pct + '%';
       const progEl = document.getElementById('setup-progress');
       if (progEl) progEl.style.width = pct + '%';
+
+      // Show getting started banner for new users
+      const gsBanner = document.getElementById('setup-getting-started');
+      if (gsBanner) gsBanner.style.display = pct < 30 ? '' : 'none';
 
       updateSetupCardSummaries();
     }
@@ -4562,6 +4843,7 @@
       const btn = document.getElementById('ask-btn');
       const status = document.getElementById('analyze-status');
       const body = document.getElementById('analyze-body');
+      const s = getActiveSession();
 
       await asyncAction(btn, async () => {
         status.innerHTML = '<span class="spinner"></span> Running...';
@@ -4571,9 +4853,9 @@
         addChatMessage('user', q);
 
         // Fresh query → reset drill-down stack
-        if (!parentFinding) analysisStack = [];
+        if (!parentFinding) { s.analysisStack = []; syncGlobalAliases(); }
 
-        const payload = { question: q, session_id: sessionId };
+        const payload = { question: q, session_id: s.sessionId };
         if (parentFinding) payload.parent_finding = parentFinding;
 
         const data = await apiFetch(`${API}/analyze`, {
@@ -4584,12 +4866,12 @@
 
         // Update session_id if server returns one
         if (data.session_id) {
-          sessionId = data.session_id;
-          sessionStorage.setItem('bb_session_id', sessionId);
-          updateSessionLabel();
+          s.sessionId = data.session_id;
+          syncGlobalAliases();
         }
 
-        lastAnalysisData = data;
+        s.lastAnalysisData = data;
+        syncGlobalAliases();
 
         // Check if the analysis pipeline returned an error
         if (data.error || data.status === 'failed') {
@@ -4604,7 +4886,13 @@
         }
 
         // Push to drill-down stack
-        analysisStack.push({ question: q, data, finding: parentFinding || null });
+        s.analysisStack.push({ question: q, data, finding: parentFinding || null });
+
+        // Auto-label session tab on first analysis
+        if (s.analysisStack.length === 1) {
+          s.label = q.substring(0, 40);
+          renderSessionTabs();
+        }
 
         // Status badge: approved, partial, or rejected
         const pipeStatus = data.pipeline_status || 'ok';
@@ -4638,10 +4926,14 @@
     function renderAnalysis(d) {
       let html = '';
 
-      // Store data for drill-down onclick references
-      _currentFindings = d.analysis?.findings || [];
-      _currentMetrics = d.cfo_key_metrics || [];
-      _currentComputations = d.python_analysis?.computations || [];
+      // Store data for drill-down onclick references (into active session + global aliases)
+      const _s = getActiveSession();
+      _s.currentFindings = d.analysis?.findings || [];
+      _s.currentMetrics = d.cfo_key_metrics || [];
+      _s.currentComputations = d.python_analysis?.computations || [];
+      _currentFindings = _s.currentFindings;
+      _currentMetrics = _s.currentMetrics;
+      _currentComputations = _s.currentComputations;
 
       // Breadcrumb navigation (only show when drilled down)
       if (analysisStack.length > 1) {
@@ -4892,18 +5184,63 @@
 
       html += `</div></details></div>`;
 
-      // Manual chart builder
+      // Categorical breakdown (dealer depth)
+      if (sqlResults.length && sqlResults.some(sr => sr.rows?.length)) {
+        const allRows = sqlResults.flatMap(sr => sr.rows || []);
+        if (allRows.length > 1) {
+          const cols = Object.keys(allRows[0]);
+          const categoricalCols = [];
+          const numericCols = [];
+          cols.forEach(col => {
+            const values = allRows.map(r => r[col]).filter(v => v != null);
+            const isNumeric = values.every(v => !isNaN(parseFloat(v)));
+            if (isNumeric) {
+              numericCols.push(col);
+            } else {
+              const uniq = new Set(values.map(String));
+              if (uniq.size >= 2 && uniq.size <= 100 && uniq.size < values.length * 0.8) {
+                categoricalCols.push({ col: col, cardinality: uniq.size });
+              }
+            }
+          });
+
+          if (categoricalCols.length && numericCols.length) {
+            html += `<div class="step"><div class="step-label">Breakdown by Category <span style="font-size:0.6rem;color:var(--accent);font-style:italic;">see numbers per dealer, region, etc.</span></div>`;
+            html += `<div style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-bottom:0.5rem;">`;
+            categoricalCols.forEach(cc => {
+              html += `<button class="btn-sm btn-secondary" onclick="showBreakdown('${esc(cc.col)}')" title="${cc.cardinality} unique values">Break down by ${esc(cc.col)}</button>`;
+            });
+            html += `</div>`;
+            html += `<div id="breakdown-results"></div>`;
+            html += `</div>`;
+          }
+        }
+      }
+
+      // Enhanced Chart Builder
       if (sqlResults.length && sqlResults.some(sr => sr.rows?.length)) {
         const allRows = sqlResults.flatMap(sr => sr.rows || []);
         if (allRows.length) {
           const cols = Object.keys(allRows[0]);
-          html += `<div class="step"><div class="step-label">Chart Builder</div>`;
-          html += `<div class="chart-builder">`;
-          html += `<label>Type:</label><select id="cb-type"><option>bar</option><option>line</option><option>pie</option><option>scatter</option></select>`;
-          html += `<label>X:</label><select id="cb-x">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select>`;
-          html += `<label>Y:</label><select id="cb-y" multiple size="3">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select>`;
-          html += `<button class="btn-sm" onclick="buildCustomChart()">Build Chart</button>`;
-          html += `</div><div id="custom-chart-area"></div></div>`;
+          html += `<div class="chart-builder-panel">`;
+          html += `<h4>Chart Builder</h4>`;
+          html += `<div class="cb-row">`;
+          html += `<div class="cb-field"><label>Data Source</label><select id="cb-source" onchange="onChartSourceChange()"><option value="current">Current Analysis Results</option></select></div>`;
+          html += `<div class="cb-field"><label>Chart Type</label><select id="cb-type" onchange="onChartSettingChange()"><option value="bar">Bar</option><option value="line">Line</option><option value="pie">Pie</option><option value="scatter">Scatter</option></select></div>`;
+          html += `<div class="cb-field" style="flex:1;"><label>Title</label><input type="text" id="cb-title" placeholder="Auto-generated if empty" /></div>`;
+          html += `</div>`;
+          html += `<div class="cb-row">`;
+          html += `<div class="cb-field"><label>X-Axis</label><select id="cb-x">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+          html += `<div class="cb-field"><label>Y-Axis (multi-select)</label><select id="cb-y" multiple size="3">${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+          html += `<div class="cb-field"><label>Group By</label><select id="cb-group"><option value="">None</option>${cols.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+          html += `<div class="cb-field"><label>Aggregation</label><select id="cb-agg"><option value="">Raw</option><option value="sum">Sum</option><option value="avg">Average</option><option value="count">Count</option><option value="min">Min</option><option value="max">Max</option></select></div>`;
+          html += `</div>`;
+          html += `<div class="cb-actions">`;
+          html += `<button class="btn-sm" onclick="buildEnhancedChart()" style="background:var(--accent);color:#fff;border:none;">Build Chart</button>`;
+          html += `<button class="btn-sm btn-secondary" onclick="saveChartToFeed(this)">Save to Feed</button>`;
+          html += `</div>`;
+          html += `<div id="cb-preview" class="cb-preview"></div>`;
+          html += `</div>`;
         }
       }
 
@@ -5122,6 +5459,7 @@
       const btn = document.getElementById('ask-btn');
       const status = document.getElementById('analyze-status');
       const body = document.getElementById('analyze-body');
+      const s = getActiveSession();
 
       btn.disabled = true;
       status.innerHTML = '<span class="spinner"></span> Drilling deeper...';
@@ -5136,7 +5474,7 @@
       try {
         const payload = {
           question: drillQuestion,
-          session_id: sessionId,
+          session_id: s.sessionId,
           parent_finding: finding,
         };
         const data = await apiFetch(`${API}/analyze`, {
@@ -5146,15 +5484,15 @@
         });
 
         if (data.session_id) {
-          sessionId = data.session_id;
-          sessionStorage.setItem('bb_session_id', sessionId);
-          updateSessionLabel();
+          s.sessionId = data.session_id;
+          syncGlobalAliases();
         }
 
-        lastAnalysisData = data;
+        s.lastAnalysisData = data;
+        syncGlobalAliases();
 
         // Push to stack
-        analysisStack.push({ question: drillQuestion, data, finding });
+        s.analysisStack.push({ question: drillQuestion, data, finding });
 
         status.innerHTML = data.approved
           ? '<span class="badge badge-green">APPROVED</span>'
@@ -5173,13 +5511,15 @@
     }
 
     function drillBack(targetIndex) {
-      if (targetIndex < 0 || targetIndex >= analysisStack.length) return;
+      const s = getActiveSession();
+      if (targetIndex < 0 || targetIndex >= s.analysisStack.length) return;
 
       // Trim stack to target
-      analysisStack = analysisStack.slice(0, targetIndex + 1);
-      const entry = analysisStack[targetIndex];
+      s.analysisStack = s.analysisStack.slice(0, targetIndex + 1);
+      const entry = s.analysisStack[targetIndex];
 
-      lastAnalysisData = entry.data;
+      s.lastAnalysisData = entry.data;
+      syncGlobalAliases();
 
       const status = document.getElementById('analyze-status');
       const body = document.getElementById('analyze-body');
@@ -5193,8 +5533,9 @@
     }
 
     async function investigateDeeper(btn) {
-      const lastEntry = analysisStack.length > 0
-        ? analysisStack[analysisStack.length - 1]
+      const s = getActiveSession();
+      const lastEntry = s.analysisStack.length > 0
+        ? s.analysisStack[s.analysisStack.length - 1]
         : null;
       if (!lastEntry) return;
 
@@ -5205,7 +5546,7 @@
 
         const payload = {
           question: question,
-          session_id: sessionId,
+          session_id: s.sessionId,
           fast_findings: data.analysis?.findings || [],
           sql_query: data.sql_results?.[0]?.query || data.sql_result?.query || '',
           tables_used: data.tables_used || [],
@@ -5498,27 +5839,248 @@
       }, { successText: 'Full analysis saved to Feed', errorPrefix: 'Failed to save' });
     }
 
-    function buildCustomChart() {
+    // -----------------------------------------------------------------------
+    // Categorical Breakdown (Dealer Depth)
+    // -----------------------------------------------------------------------
+    function showBreakdown(groupCol) {
+      const s = getActiveSession();
+      if (!s.lastAnalysisData) return;
+      const container = document.getElementById('breakdown-results');
+      if (!container) return;
+
+      container.innerHTML = '<div style="font-size:0.75rem;color:var(--muted);"><span class="spinner"></span> Loading breakdown\u2026</div>';
+
+      const sqlResults = s.lastAnalysisData.sql_results || [s.lastAnalysisData.sql_result];
+      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+      if (!allRows.length) { container.innerHTML = ''; return; }
+
+      // Client-side grouping (fast, uses already-loaded data)
+      const cols = Object.keys(allRows[0]);
+      const numericCols = cols.filter(c => {
+        const vals = allRows.map(r => r[c]).filter(v => v != null);
+        return vals.length && vals.every(v => !isNaN(parseFloat(v))) && c !== groupCol;
+      });
+
+      // Read aggregation from dropdown if it exists
+      const aggSelect = document.getElementById('breakdown-agg');
+      const aggFunc = aggSelect ? aggSelect.value : 'sum';
+
+      const groups = {};
+      allRows.forEach(row => {
+        const key = String(row[groupCol] != null ? row[groupCol] : 'Unknown');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(row);
+      });
+
+      const aggRows = Object.entries(groups).map(function(entry) {
+        const key = entry[0], groupRows = entry[1];
+        const agg = {};
+        agg[groupCol] = key;
+        numericCols.forEach(col => {
+          const vals = groupRows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
+          switch (aggFunc) {
+            case 'sum': agg[col] = vals.reduce((a, b) => a + b, 0); break;
+            case 'avg': agg[col] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0; break;
+            case 'count': agg[col] = vals.length; break;
+            case 'min': agg[col] = vals.length ? Math.min.apply(null, vals) : 0; break;
+            case 'max': agg[col] = vals.length ? Math.max.apply(null, vals) : 0; break;
+            default: agg[col] = vals.reduce((a, b) => a + b, 0);
+          }
+        });
+        agg['_count'] = groupRows.length;
+        return agg;
+      });
+
+      // Sort by first numeric column desc
+      const sortCol = numericCols.length ? numericCols[0] : '_count';
+      aggRows.sort((a, b) => (b[sortCol] || 0) - (a[sortCol] || 0));
+
+      // Render
+      let html = '<div style="font-size:0.72rem;color:var(--muted);margin-bottom:0.5rem;">' + aggRows.length + ' unique values for "' + esc(groupCol) + '"</div>';
+      html += '<div style="display:flex;gap:0.3rem;align-items:center;margin-bottom:0.5rem;">';
+      html += '<label style="font-size:0.7rem;color:var(--muted);">Aggregate:</label>';
+      html += '<select id="breakdown-agg" onchange="showBreakdown(\'' + esc(groupCol) + '\')" style="font-size:0.7rem;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:4px;">';
+      ['sum', 'avg', 'count', 'min', 'max'].forEach(f => {
+        html += '<option value="' + f + '"' + (f === aggFunc ? ' selected' : '') + '>' + f.toUpperCase() + '</option>';
+      });
+      html += '</select></div>';
+      html += renderTable(aggRows, 30);
+
+      // Auto-chart
+      if (aggRows.length >= 2 && numericCols.length) {
+        const chartId = 'breakdown-chart-' + Date.now();
+        html += '<div id="' + chartId + '" style="margin-top:0.5rem;"></div>';
+        container.innerHTML = html;
+        setTimeout(function() {
+          const chartArea = document.getElementById(chartId);
+          if (!chartArea) return;
+          _renderChart(chartArea, {
+            type: 'bar',
+            x: groupCol,
+            y: [numericCols[0]],
+            title: numericCols[0] + ' by ' + groupCol + ' (' + aggFunc + ')',
+          }, aggRows.slice(0, 20));
+        }, 100);
+      } else {
+        container.innerHTML = html;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Enhanced Chart Builder
+    // -----------------------------------------------------------------------
+    function aggregateRows(rows, groupCol, valueCols, aggFunc) {
+      const groups = {};
+      rows.forEach(row => {
+        const key = String(row[groupCol] != null ? row[groupCol] : 'Unknown');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(row);
+      });
+      return Object.entries(groups).map(function(entry) {
+        const key = entry[0], gRows = entry[1];
+        const result = {};
+        result[groupCol] = key;
+        valueCols.forEach(col => {
+          const vals = gRows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
+          switch (aggFunc) {
+            case 'sum': result[col + '_sum'] = vals.reduce((a, b) => a + b, 0); break;
+            case 'avg': result[col + '_avg'] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0; break;
+            case 'count': result[col + '_count'] = vals.length; break;
+            case 'min': result[col + '_min'] = vals.length ? Math.min.apply(null, vals) : 0; break;
+            case 'max': result[col + '_max'] = vals.length ? Math.max.apply(null, vals) : 0; break;
+          }
+        });
+        return result;
+      });
+    }
+
+    async function onChartSourceChange() {
+      const source = document.getElementById('cb-source').value;
+      const xSelect = document.getElementById('cb-x');
+      const ySelect = document.getElementById('cb-y');
+      const groupSelect = document.getElementById('cb-group');
+
+      if (source === 'current') {
+        const s = getActiveSession();
+        const sqlResults = s.lastAnalysisData?.sql_results || [s.lastAnalysisData?.sql_result];
+        const allRows = sqlResults.flatMap(sr => sr?.rows || []);
+        const cols = allRows.length ? Object.keys(allRows[0]) : [];
+        populateChartSelects(cols, xSelect, ySelect, groupSelect);
+      } else {
+        try {
+          const meta = await apiFetch(API + '/metadata');
+          const table = meta.find(t => t.table_name === source);
+          const cols = table ? (table.columns || []).map(c => c.name || c) : [];
+          populateChartSelects(cols, xSelect, ySelect, groupSelect);
+        } catch (e) { toast('Failed to load columns: ' + e.message); }
+      }
+    }
+
+    function populateChartSelects(cols, xSelect, ySelect, groupSelect) {
+      xSelect.innerHTML = cols.map(c => '<option>' + esc(c) + '</option>').join('');
+      ySelect.innerHTML = cols.map(c => '<option>' + esc(c) + '</option>').join('');
+      groupSelect.innerHTML = '<option value="">None</option>' + cols.map(c => '<option>' + esc(c) + '</option>').join('');
+    }
+
+    function onChartSettingChange() { /* placeholder for future live preview */ }
+
+    async function loadChartSources() {
+      const select = document.getElementById('cb-source');
+      if (!select) return;
+      try {
+        const tables = await apiFetch(API + '/metadata');
+        (tables || []).forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.table_name;
+          opt.textContent = 'Table: ' + t.table_name;
+          select.appendChild(opt);
+        });
+      } catch (e) { /* silent */ }
+    }
+
+    async function buildEnhancedChart() {
+      const source = document.getElementById('cb-source').value;
       const type = document.getElementById('cb-type').value;
       const xCol = document.getElementById('cb-x').value;
       const ySelect = document.getElementById('cb-y');
       const yCols = Array.from(ySelect.selectedOptions).map(o => o.value);
+      const groupCol = document.getElementById('cb-group').value;
+      const aggFunc = document.getElementById('cb-agg').value;
+      const title = document.getElementById('cb-title').value;
 
       if (!yCols.length) { toast('Select at least one Y column'); return; }
 
-      const sqlResults = lastAnalysisData.sql_results || [lastAnalysisData.sql_result];
-      const allRows = sqlResults.flatMap(sr => sr.rows || []);
+      const area = document.getElementById('cb-preview');
+      area.innerHTML = '<div style="font-size:0.75rem;color:var(--muted);"><span class="spinner"></span> Building chart\u2026</div>';
 
-      const area = document.getElementById('custom-chart-area');
+      let rows;
+      if (source === 'current') {
+        const s = getActiveSession();
+        const sqlResults = s.lastAnalysisData?.sql_results || [s.lastAnalysisData?.sql_result];
+        rows = sqlResults.flatMap(sr => sr?.rows || []);
+      } else {
+        try {
+          const data = await apiFetch(API + '/data/' + encodeURIComponent(source) + '?page=1&page_size=2000');
+          rows = data.rows || [];
+        } catch (e) {
+          area.innerHTML = '<div style="color:var(--red);font-size:0.75rem;">Failed to load data: ' + e.message + '</div>';
+          return;
+        }
+      }
+
+      if (!rows.length) { area.innerHTML = '<div style="color:var(--muted);font-size:0.75rem;">No data available</div>'; return; }
+
       area.innerHTML = '';
+      if (groupCol && aggFunc) {
+        const aggd = aggregateRows(rows, groupCol, yCols, aggFunc);
+        _renderChart(area, {
+          type: type,
+          x: groupCol,
+          y: yCols.map(c => c + '_' + aggFunc),
+          title: title || yCols.join(', ') + ' by ' + groupCol + ' (' + aggFunc + ')',
+        }, aggd);
+      } else if (aggFunc && !groupCol) {
+        const aggd = aggregateRows(rows, xCol, yCols, aggFunc);
+        _renderChart(area, {
+          type: type,
+          x: xCol,
+          y: yCols.map(c => c + '_' + aggFunc),
+          title: title || yCols.join(', ') + ' by ' + xCol + ' (' + aggFunc + ')',
+        }, aggd);
+      } else {
+        _renderChart(area, {
+          type: type,
+          x: xCol,
+          y: yCols,
+          title: title || yCols.join(', ') + ' by ' + xCol,
+        }, rows);
+      }
 
-      _renderChart(area, {
-        type,
-        x: xCol,
-        y: yCols,
-        title: `${yCols.join(', ')} by ${xCol}`,
-        number_format: 'decimal',
-      }, allRows);
+      // Load table sources if not yet loaded
+      loadChartSources();
+    }
+
+    async function saveChartToFeed(btn) {
+      const title = document.getElementById('cb-title')?.value || 'Custom Chart';
+      const s = getActiveSession();
+
+      await asyncAction(btn, async () => {
+        const data = await apiFetch(API + '/feed/from-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Chart: ' + title.substring(0, 150),
+            description: 'Custom chart. Type: ' + (document.getElementById('cb-type')?.value || 'bar'),
+            insight_type: 'composite',
+            severity: 'info',
+            evidence: { chart_title: title },
+            suggested_actions: [],
+            source_tables: s.lastAnalysisData?.tables_used || [],
+          }),
+        });
+        if (data.error) throw new Error(data.error);
+        markFeedDirty();
+      }, { successText: 'Chart saved to Feed', errorPrefix: 'Save failed' });
     }
 
     // ---------------------------------------------------------------------------
@@ -6299,7 +6861,13 @@
         }
 
         html += `<div class="feed-card-actions">`;
-        html += `<button class="btn-sm" onclick="investigateInsight(${i}, this)">Investigate</button>`;
+        html += `<span class="investigate-split">`;
+        html += `<button class="btn-sm btn-main" onclick="investigateInsight(${i}, this)">Investigate</button>`;
+        html += `<button class="btn-sm btn-arrow" onclick="event.stopPropagation();toggleInvestigateDropdown(${i}, this)">&#9662;`;
+        html += `<div class="investigate-dropdown" id="inv-dd-${i}">`;
+        html += `<button onclick="event.stopPropagation();investigateInsight(${i}, this.closest('.investigate-split').querySelector('.btn-main'))">Investigate now</button>`;
+        html += `<button onclick="event.stopPropagation();addToInvestigateQueue(${i});closeInvestigateDropdowns()">Add to queue</button>`;
+        html += `</div></button></span>`;
         html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
         html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
         html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
@@ -6342,6 +6910,9 @@
           body: JSON.stringify({ status: 'seen' }),
         }).catch(() => {});
 
+        // Open in a new analysis session tab
+        createNewSession(ins.title.substring(0, 40));
+
         // Switch to analyze tab
         switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
 
@@ -6354,6 +6925,102 @@
           business_impact: ins.suggested_actions?.[0] || '',
         });
       }, { loadingText: 'Investigating\u2026', errorPrefix: 'Investigation failed' });
+    }
+
+    // -----------------------------------------------------------------------
+    // Multi-select investigation queue
+    // -----------------------------------------------------------------------
+    let _investigateQueue = [];
+
+    function toggleInvestigateDropdown(index, btn) {
+      const dd = document.getElementById('inv-dd-' + index);
+      const wasOpen = dd && dd.classList.contains('open');
+      closeInvestigateDropdowns();
+      if (!wasOpen && dd) dd.classList.add('open');
+    }
+
+    function closeInvestigateDropdowns() {
+      document.querySelectorAll('.investigate-dropdown').forEach(function(d) { d.classList.remove('open'); });
+    }
+
+    document.addEventListener('click', closeInvestigateDropdowns);
+
+    function addToInvestigateQueue(index) {
+      const ins = feedInsights[index];
+      if (!ins) return;
+      if (_investigateQueue.some(function(q) { return q.id === ins.id; })) { toast('Already in queue'); return; }
+      _investigateQueue.push({ id: ins.id, index: index, title: ins.title, insight: ins });
+      renderInvestigateQueueBar();
+      toast('Added to investigation queue');
+    }
+
+    function removeFromInvestigateQueue(insightId) {
+      _investigateQueue = _investigateQueue.filter(function(q) { return q.id !== insightId; });
+      renderInvestigateQueueBar();
+    }
+
+    function clearInvestigateQueue() {
+      _investigateQueue = [];
+      renderInvestigateQueueBar();
+    }
+
+    function renderInvestigateQueueBar() {
+      let bar = document.getElementById('investigate-queue-bar');
+      if (!_investigateQueue.length) {
+        if (bar) bar.remove();
+        return;
+      }
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'investigate-queue-bar';
+        bar.className = 'investigate-queue-bar';
+        document.getElementById('feed').appendChild(bar);
+      }
+      let html = '<div class="queue-items">';
+      _investigateQueue.forEach(function(q) {
+        const label = q.title.length > 30 ? q.title.slice(0, 30) + '\u2026' : q.title;
+        html += '<span class="queue-chip">' + esc(label) + ' <span class="remove" onclick="removeFromInvestigateQueue(\'' + q.id + '\')">&times;</span></span>';
+      });
+      html += '</div>';
+      html += '<div style="display:flex;gap:0.3rem;">';
+      html += '<button class="btn-sm btn-secondary" onclick="clearInvestigateQueue()">Clear</button>';
+      html += '<button class="btn-sm" style="background:var(--accent);color:#fff;border:none;" onclick="investigateQueueAll(this)">Investigate All (' + _investigateQueue.length + ')</button>';
+      html += '</div>';
+      bar.innerHTML = html;
+    }
+
+    async function investigateQueueAll(btn) {
+      if (!_investigateQueue.length) return;
+
+      await asyncAction(btn, async () => {
+        // Build combined investigation question
+        const titles = _investigateQueue.map(function(q) { return q.title; });
+        const descriptions = _investigateQueue.map(function(q) { return q.insight.description; });
+        const question = 'Combined investigation of ' + titles.length + ' insights:\n' +
+          descriptions.map(function(d, i) { return (i + 1) + '. ' + d; }).join('\n');
+
+        // Mark all as seen (fire-and-forget)
+        _investigateQueue.forEach(function(q) {
+          apiFetch(API + '/feed/' + q.id + '/status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'seen' }),
+          }).catch(function() {});
+        });
+
+        // Create new session with combined label
+        createNewSession('Combined: ' + titles.slice(0, 2).join(', ').substring(0, 35));
+        switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
+
+        document.getElementById('question').value = question;
+        await runAnalysis({
+          type: 'composite',
+          description: question,
+          business_impact: 'Combined investigation of multiple feed insights',
+        });
+
+        clearInvestigateQueue();
+      }, { loadingText: 'Investigating all\u2026', errorPrefix: 'Combined investigation failed' });
     }
 
     async function dismissInsight(insightId, btn) {
@@ -6523,6 +7190,7 @@
     }
 
     function useRecommendation(description) {
+      createNewSession(description.substring(0, 40));
       switchToPanel('analyze', document.querySelector('.tabs > .tab[data-panel="analyze"]'));
       document.getElementById('question').value = description;
       runAnalysis();
