@@ -7478,6 +7478,7 @@
           const extra = parts.length ? ' (' + parts.join(', ') + ')' : '';
           toast('Deleted ' + tableName + extra);
           loadSchema();
+          loadSources();  // source record also deleted in cascade
         }
       } catch (e) {
         toast('Delete failed: ' + e.message);
@@ -10698,7 +10699,8 @@
       await asyncAction(btn, async () => {
         await apiFetch(API + '/sources/' + id, { method: 'DELETE' });
         loadSources();
-      }, { successText: 'Source removed', errorPrefix: 'Failed to remove source' });
+        loadSchema();  // table is also cascade-dropped, refresh data view
+      }, { successText: 'Source and table removed', errorPrefix: 'Failed to remove source' });
     }
 
     // -----------------------------------------------------------------------

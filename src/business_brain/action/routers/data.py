@@ -409,6 +409,46 @@ async def drop_table_cascade(table_name: str, session: AsyncSession = Depends(ge
     r = await session.execute(sa_delete(MetricThreshold).where(MetricThreshold.table_name == table_name))
     removed["thresholds"] = r.rowcount
 
+    # 13-16. Analysis engine tables (if they exist)
+    try:
+        from business_brain.analysis.models import (
+            AnalysisResult,
+            AgentOutput,
+            AnalysisDelta,
+            AnalysisFeedback,
+        )
+
+        # Find all analysis results for this table
+        result_ids = (
+            await session.execute(
+                sa_select(AnalysisResult.id).where(AnalysisResult.table_name == table_name)
+            )
+        ).scalars().all()
+
+        if result_ids:
+            # Clean up dependent rows that reference these results
+            r = await session.execute(
+                sa_delete(AgentOutput).where(AgentOutput.result_id.in_(result_ids))
+            )
+            removed["agent_outputs"] = r.rowcount
+            r = await session.execute(
+                sa_delete(AnalysisDelta).where(AnalysisDelta.result_id.in_(result_ids))
+            )
+            removed["analysis_deltas"] = r.rowcount
+            r = await session.execute(
+                sa_delete(AnalysisFeedback).where(AnalysisFeedback.result_id.in_(result_ids))
+            )
+            removed["analysis_feedback"] = r.rowcount
+            # Delete the results themselves
+            r = await session.execute(
+                sa_delete(AnalysisResult).where(AnalysisResult.table_name == table_name)
+            )
+            removed["analysis_results"] = r.rowcount
+        else:
+            removed["analysis_results"] = 0
+    except Exception:
+        pass  # Analysis module not yet deployed — skip gracefully
+
     await session.commit()
 
     return {"status": "deleted", "table": table_name, "removed": removed}
@@ -427,6 +467,13 @@ async def cleanup_orphaned_tables(session: AsyncSession = Depends(get_session)) 
     for base in (ModelsBase, DiscoveryBase, V3Base):
         for table_obj in base.metadata.tables.values():
             system_tables.add(table_obj.name)
+    # Analysis engine tables (shared Base, already registered)
+    # Explicitly list them in case the import hasn't happened yet
+    system_tables.update([
+        "analysis_runs", "analysis_results", "agent_outputs",
+        "analysis_deltas", "analysis_feedback", "analysis_learning_state",
+        "analysis_history_embeddings",
+    ])
     system_tables.add("alembic_version")
 
     try:
