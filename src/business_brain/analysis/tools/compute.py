@@ -11,7 +11,19 @@ from collections import Counter
 from typing import Any, Callable
 
 import numpy as np
-from scipy import stats as sp_stats
+
+# Lazy import — scipy is heavy (~80MB) and only needed when compute
+# functions are actually called, not at module import / app startup.
+_sp_stats = None
+
+
+def _sp():
+    """Lazy-load scipy.stats on first use."""
+    global _sp_stats
+    if _sp_stats is None:
+        from scipy import stats
+        _sp_stats = stats
+    return _sp_stats
 
 
 # ---------------------------------------------------------------------------
@@ -39,8 +51,8 @@ def describe_numeric(values: list[float] | np.ndarray) -> dict[str, Any]:
         "iqr": float(q3 - q1),
     }
     if len(arr) >= 8:
-        result["skewness"] = float(sp_stats.skew(arr))
-        result["kurtosis"] = float(sp_stats.kurtosis(arr))
+        result["skewness"] = float(_sp().skew(arr))
+        result["kurtosis"] = float(_sp().kurtosis(arr))
     return result
 
 
@@ -84,17 +96,17 @@ def detect_distribution(values: list[float] | np.ndarray) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
 
     # Normal
-    stat, p_normal = sp_stats.shapiro(arr[:5000])  # shapiro max ~5000
+    stat, p_normal = _sp().shapiro(arr[:5000])  # shapiro max ~5000
     candidates.append({"type": "normal", "p_value": float(p_normal), "params": {}})
 
     # Lognormal (only for positive values)
     if np.all(arr > 0):
         log_arr = np.log(arr)
-        _, p_lognormal = sp_stats.shapiro(log_arr[:5000])
+        _, p_lognormal = _sp().shapiro(log_arr[:5000])
         candidates.append({"type": "lognormal", "p_value": float(p_lognormal), "params": {}})
 
     # Uniform
-    _, p_uniform = sp_stats.kstest(arr, "uniform", args=(arr.min(), arr.ptp()))
+    _, p_uniform = _sp().kstest(arr, "uniform", args=(arr.min(), arr.ptp()))
     candidates.append({"type": "uniform", "p_value": float(p_uniform), "params": {}})
 
     # Bimodal check via Hartigan's dip test approximation
@@ -138,7 +150,7 @@ def compare_groups(groups: dict[str, list[float]]) -> dict[str, Any]:
         a, b = arrays
         pooled_std = math.sqrt((a.std(ddof=1) ** 2 + b.std(ddof=1) ** 2) / 2)
         cohens_d = float((a.mean() - b.mean()) / pooled_std) if pooled_std > 0 else 0.0
-        t_stat, p_value = sp_stats.ttest_ind(a, b, equal_var=False)
+        t_stat, p_value = _sp().ttest_ind(a, b, equal_var=False)
         return {
             "test": "welch_t",
             "groups": group_names,
@@ -150,7 +162,7 @@ def compare_groups(groups: dict[str, list[float]]) -> dict[str, Any]:
         }
 
     # N groups: one-way ANOVA
-    f_stat, p_value = sp_stats.f_oneway(*arrays)
+    f_stat, p_value = _sp().f_oneway(*arrays)
     grand_mean = np.concatenate(arrays).mean()
     ss_between = sum(len(a) * (a.mean() - grand_mean) ** 2 for a in arrays)
     ss_total = sum(((a - grand_mean) ** 2).sum() for a in arrays)
@@ -182,8 +194,8 @@ def compute_correlation(x: list[float] | np.ndarray, y: list[float] | np.ndarray
     if len(ax) < 3:
         return {"error": "need at least 3 paired values"}
 
-    pearson_r, pearson_p = sp_stats.pearsonr(ax, ay)
-    spearman_r, spearman_p = sp_stats.spearmanr(ax, ay)
+    pearson_r, pearson_p = _sp().pearsonr(ax, ay)
+    spearman_r, spearman_p = _sp().spearmanr(ax, ay)
 
     return {
         "pearson_r": float(pearson_r),
@@ -212,7 +224,7 @@ def compute_lag_correlation(
             xs, ys = ax[-lag:], ay[:len(ay) + lag]
         if len(xs) < 3:
             continue
-        r, p = sp_stats.pearsonr(xs, ys)
+        r, p = _sp().pearsonr(xs, ys)
         results.append({"lag": lag, "r": float(r), "p": float(p)})
 
     if not results:
@@ -250,7 +262,7 @@ def compute_partial_correlation(
     ctrl = combined[:, 2:]
 
     if ctrl.shape[1] == 0:
-        r, p = sp_stats.pearsonr(ax, ay)
+        r, p = _sp().pearsonr(ax, ay)
         return {"partial_r": float(r), "p_value": float(p), "n": len(ax), "controls": 0}
 
     # Residualize x and y against controls via OLS
@@ -262,7 +274,7 @@ def compute_partial_correlation(
     rx = _residualize(ax, ctrl)
     ry = _residualize(ay, ctrl)
 
-    r, p = sp_stats.pearsonr(rx, ry)
+    r, p = _sp().pearsonr(rx, ry)
     return {
         "partial_r": float(r),
         "p_value": float(p),
