@@ -68,6 +68,7 @@ from business_brain.action.routers.focus import router as focus_router
 from business_brain.action.routers.quarantine import router as quarantine_router
 from business_brain.action.routers.deep_tier import router as deep_tier_router
 from business_brain.action.routers.briefing import router as briefing_router
+from business_brain.action.routers.analysis import router as analysis_router
 
 app.include_router(auth_router)
 app.include_router(table_analysis_router)
@@ -87,6 +88,7 @@ app.include_router(focus_router)
 app.include_router(quarantine_router)
 app.include_router(deep_tier_router)
 app.include_router(briefing_router)
+app.include_router(analysis_router)
 
 # Background sync task handle
 _sync_task: Optional[asyncio.Task] = None

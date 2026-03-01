@@ -305,6 +305,14 @@ async def run_discovery(
             run.insights_found,
         )
 
+        # 14. Trigger analysis engine on changed tables (optional, non-blocking)
+        try:
+            from business_brain.analysis.integration import run_analysis_after_discovery
+            changed = [p.table_name for p in profiles]
+            await run_analysis_after_discovery(session, changed_tables=changed)
+        except Exception:
+            logger.debug("Analysis trigger skipped (engine not available or failed)")
+
     except Exception as exc:
         run.status = "failed"
         run.error = str(exc)
