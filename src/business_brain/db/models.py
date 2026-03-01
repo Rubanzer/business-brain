@@ -57,3 +57,4 @@ class ChatMessage(Base):
 # Import discovery and v3 models so Base.metadata picks them up for auto-create
 import business_brain.db.discovery_models as _discovery_models  # noqa: E402, F401
 import business_brain.db.v3_models as _v3_models  # noqa: E402, F401
+import business_brain.analysis.models as _analysis_models  # noqa: E402, F401
