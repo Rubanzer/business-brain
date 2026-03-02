@@ -1532,6 +1532,71 @@
       max-height: 200px;
     }
     .quarantine-row-data.open { display: block; }
+
+    /* Workspace (Excel-like) */
+    .workspace-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      height: calc(100vh - 80px);
+      gap: 0;
+    }
+    .workspace-sidebar {
+      border-right: 1px solid var(--border);
+      background: var(--surface-sunken);
+      overflow-y: auto;
+    }
+    .workspace-table-list {
+      display: flex;
+      flex-direction: column;
+    }
+    .workspace-table-item {
+      padding: var(--space-2) var(--space-3);
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: var(--text-sm);
+      transition: background 120ms ease;
+    }
+    .workspace-table-item:hover { background: var(--surface); }
+    .workspace-table-item.active { background: var(--accent-muted); color: var(--accent); font-weight: 600; }
+    .workspace-table-item .table-row-count {
+      font-size: var(--text-xs);
+      color: var(--muted);
+      font-weight: 400;
+    }
+    .workspace-main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .workspace-prompt-bar {
+      padding: var(--space-2p5) var(--space-3);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .workspace-grid {
+      flex: 1;
+      overflow: auto;
+      padding: 0;
+    }
+    .workspace-grid .data-table { font-size: var(--text-sm); }
+    .workspace-grid .data-table th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--surface-sunken);
+      cursor: pointer;
+    }
+    .workspace-grid .data-table th:hover { background: var(--border-subtle); }
+    .workspace-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-2) var(--space-3);
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      font-size: var(--text-sm);
+    }
+
     .table-chip {
       display: inline-block;
       background: var(--surface-sunken);
@@ -2824,6 +2889,10 @@
           <span class="nav-icon">&#9733;</span>
           <span class="nav-label">Analyze</span>
         </button>
+        <button class="nav-item" data-panel="workspace" onclick="sidebarNav('workspace', this)">
+          <span class="nav-icon">&#9638;</span>
+          <span class="nav-label">Workspace</span>
+        </button>
 
         <div class="sidebar-section-label">Manage</div>
         <button class="nav-item" data-panel="data" onclick="sidebarNav('data', this)">
@@ -2954,6 +3023,50 @@
       </div>
     </div>
 
+    <!-- Workspace Panel (Excel-like data exploration) -->
+    <div id="workspace" class="panel">
+      <div class="workspace-layout">
+        <aside class="workspace-sidebar">
+          <div style="padding:var(--space-2);">
+            <input type="text" id="workspace-table-search" placeholder="Search tables..."
+              style="width:100%;padding:var(--space-1p5) var(--space-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--text-sm);background:var(--surface);color:var(--text);"
+              oninput="_filterWorkspaceTables(this.value)" />
+          </div>
+          <div id="workspace-table-list" class="workspace-table-list">
+            <div class="feed-empty" style="padding:var(--space-3);font-size:var(--text-sm);">Loading tables...</div>
+          </div>
+        </aside>
+        <main class="workspace-main">
+          <div class="workspace-prompt-bar">
+            <div style="display:flex;gap:var(--space-2);align-items:center;flex:1;">
+              <span id="workspace-active-table" style="font-weight:600;font-size:var(--text-sm);color:var(--accent);white-space:nowrap;"></span>
+              <input type="text" id="workspace-prompt" placeholder="Ask anything about your data... (filter, sort, aggregate, pivot, join, compute)"
+                style="flex:1;padding:var(--space-2p5) var(--space-3);border:1px solid var(--border);border-radius:var(--radius-md);font-size:var(--text-sm);background:var(--surface);color:var(--text);"
+                onkeydown="if(event.key==='Enter')_runWorkspaceQuery()" />
+              <button class="btn-sm" onclick="_runWorkspaceQuery()" id="workspace-run-btn">Run</button>
+            </div>
+          </div>
+          <div id="workspace-grid" class="workspace-grid">
+            <div class="feed-empty" style="padding:var(--space-8);text-align:center;">
+              <div style="font-size:var(--text-lg);margin-bottom:var(--space-2);">Select a table to start</div>
+              <div style="font-size:var(--text-sm);color:var(--muted);">Click a table on the left, then use natural language to explore your data</div>
+            </div>
+          </div>
+          <div id="workspace-footer" class="workspace-footer" style="display:none;">
+            <div id="workspace-pagination" style="display:flex;align-items:center;gap:var(--space-2);"></div>
+            <div style="display:flex;align-items:center;gap:var(--space-2);">
+              <button class="btn-sm btn-secondary" onclick="_exportWorkspaceCSV()">Export CSV</button>
+              <span id="workspace-row-count" style="font-size:var(--text-xs);color:var(--muted);"></span>
+            </div>
+          </div>
+          <div id="workspace-ops-log" style="display:none;border-top:1px solid var(--border-subtle);max-height:150px;overflow-y:auto;padding:var(--space-2) var(--space-3);">
+            <div style="font-size:var(--text-xs);font-weight:600;color:var(--text-secondary);margin-bottom:var(--space-1);">Operation Log</div>
+            <div id="workspace-ops-body"></div>
+          </div>
+        </main>
+      </div>
+    </div>
+
     <!-- Context Panel -->
     <div id="context" class="panel">
       <div class="context-form">
@@ -3032,6 +3145,7 @@
         <button class="sub-nav-pill" data-sub="data-sources">Sources</button>
         <button class="sub-nav-pill" data-sub="data-quality">Quality</button>
         <button class="sub-nav-pill" data-sub="data-quarantine">Quarantine <span id="quarantine-badge" class="badge badge-red" style="display:none;font-size:var(--text-xs);padding:1px 5px;margin-left:2px;vertical-align:middle;"></span></button>
+        <button class="sub-nav-pill" data-sub="data-qualitative">Qualitative</button>
       </div>
 
       <!-- Sub: Tables (was Schema) -->
@@ -3110,6 +3224,23 @@
         <!-- Quarantine Rows -->
         <div id="quarantine-body">
           <div class="feed-empty">Loading quarantine data...</div>
+        </div>
+      </div>
+
+      <!-- Sub: Qualitative -->
+      <div id="data-qualitative" class="sub-panel">
+        <div class="flex justify-between items-center mb-3">
+          <span class="text-md text-secondary">Qualitative Analysis</span>
+          <button class="btn-sm" onclick="_loadQualDocs()">Refresh</button>
+        </div>
+        <div class="drop-zone" id="qual-drop-zone" style="margin-bottom:var(--space-4);">
+          <span class="drop-icon">&#128196;</span>
+          <div>Upload a qualitative document for analysis</div>
+          <div class="drop-hint">PDF, Excel (text columns), TXT, or MD — for surveys, reviews, reports, feedback</div>
+          <input type="file" id="qual-file-input" accept=".pdf,.xlsx,.xls,.txt,.md" />
+        </div>
+        <div id="qual-docs-body">
+          <div class="feed-empty">No qualitative documents uploaded yet.</div>
         </div>
       </div>
     </div>
@@ -6976,11 +7107,154 @@
 
     function closeModal() {
       document.getElementById('data-modal').classList.remove('active');
+      // Destroy any charts rendered inside the modal to free memory
+      const modalBody = document.getElementById('modal-body');
+      if (modalBody) {
+        modalBody.querySelectorAll('canvas').forEach(c => {
+          const chart = Chart.getChart(c);
+          if (chart) chart.destroy();
+        });
+      }
     }
 
     document.getElementById('data-modal').addEventListener('click', (e) => {
       if (e.target === document.getElementById('data-modal')) closeModal();
     });
+
+    // -----------------------------------------------------------------------
+    // View Insight Data — modal showing evidence (query + rows + chart)
+    // -----------------------------------------------------------------------
+    function viewInsightData(index) {
+      const ins = feedInsights[index];
+      if (!ins) return;
+
+      const ev = ins.evidence || {};
+      const modal = document.getElementById('data-modal');
+      const title = document.getElementById('modal-title');
+      const body = document.getElementById('modal-body');
+
+      title.textContent = ins.title || 'Insight Data';
+
+      let html = '';
+
+      // --- SQL Query ---
+      if (ev.query) {
+        html += `<div style="margin-bottom:var(--space-4);">`;
+        html += `<div style="font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--space-1);">SQL Query</div>`;
+        html += `<pre style="background:var(--surface-sunken);padding:var(--space-3);border-radius:var(--radius-md);font-size:var(--text-xs);overflow-x:auto;white-space:pre-wrap;word-break:break-all;border:1px solid var(--border-subtle);">${esc(ev.query)}</pre>`;
+        html += `</div>`;
+      }
+
+      // --- Chart ---
+      if (ev.chart_spec && ev.sample_rows?.length) {
+        html += `<div id="insight-chart-area" style="margin-bottom:var(--space-4);"></div>`;
+      }
+
+      // --- Data Table ---
+      if (ev.sample_rows?.length) {
+        const rows = ev.sample_rows;
+        const pageSize = 50;
+        let page = 1;
+        const totalPages = Math.ceil(rows.length / pageSize);
+
+        html += `<div style="margin-bottom:var(--space-3);">`;
+        html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-2);">`;
+        html += `<span style="font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);">Data (${rows.length} rows)</span>`;
+        html += `<button class="btn-sm btn-secondary" onclick="_exportInsightCSV(${index})">Export CSV</button>`;
+        html += `</div>`;
+        html += `<div id="insight-data-table">${renderTable(rows, pageSize)}</div>`;
+        if (totalPages > 1) {
+          html += `<div id="insight-data-pagination" class="pagination" style="margin-top:var(--space-2);"></div>`;
+        }
+        html += `</div>`;
+      }
+
+      // --- Narrative ---
+      if (ins.narrative) {
+        html += `<div style="margin-bottom:var(--space-3);">`;
+        html += `<div style="font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--space-1);">Narrative</div>`;
+        html += `<div style="font-size:var(--text-base);color:var(--text);line-height:1.5;padding:var(--space-3);background:var(--accent-muted);border-radius:var(--radius-md);">${esc(ins.narrative)}</div>`;
+        html += `</div>`;
+      }
+
+      // --- Suggested Actions ---
+      if (ins.suggested_actions?.length) {
+        html += `<div style="margin-bottom:var(--space-3);">`;
+        html += `<div style="font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--space-1);">Suggested Actions</div>`;
+        ins.suggested_actions.forEach(a => {
+          html += `<div style="font-size:var(--text-sm);color:var(--text);margin-bottom:4px;">&#8226; ${esc(a)}</div>`;
+        });
+        html += `</div>`;
+      }
+
+      // --- Meta ---
+      html += `<div style="display:flex;flex-wrap:wrap;gap:var(--space-2);font-size:var(--text-xs);color:var(--muted);border-top:1px solid var(--border-subtle);padding-top:var(--space-3);">`;
+      html += `<span>Type: ${esc(friendlyType(ins.insight_type))}</span>`;
+      html += `<span>&#183;</span><span>Severity: ${esc(ins.severity || '—')}</span>`;
+      html += `<span>&#183;</span><span>Impact: ${ins.impact_score ?? '—'}</span>`;
+      if (ins.source_tables?.length) {
+        html += `<span>&#183;</span><span>Tables: ${ins.source_tables.map(esc).join(', ')}</span>`;
+      }
+      if (ins.discovered_at) {
+        html += `<span>&#183;</span><span>${_timeAgo(new Date(ins.discovered_at))}</span>`;
+      }
+      html += `</div>`;
+
+      body.innerHTML = html;
+      modal.classList.add('active');
+
+      // Render chart AFTER DOM insertion so container exists
+      if (ev.chart_spec && ev.sample_rows?.length) {
+        const chartArea = document.getElementById('insight-chart-area');
+        if (chartArea) {
+          _renderChart(chartArea, ev.chart_spec, ev.sample_rows);
+        }
+      }
+
+      // Pagination for large data sets
+      if (ev.sample_rows?.length > 50) {
+        const rows = ev.sample_rows;
+        const pageSize = 50;
+        let page = 1;
+        const totalPages = Math.ceil(rows.length / pageSize);
+
+        function renderInsightPage() {
+          const start = (page - 1) * pageSize;
+          const pageRows = rows.slice(start, start + pageSize);
+          document.getElementById('insight-data-table').innerHTML = renderTable(pageRows, pageSize);
+          const pag = document.getElementById('insight-data-pagination');
+          if (pag) {
+            pag.innerHTML = `<button class="btn-sm btn-secondary" onclick="window._insightPagePrev()" ${page<=1?'disabled':''}>Prev</button>`
+              + `<span style="font-size:var(--text-sm);color:var(--muted);">Page ${page} of ${totalPages}</span>`
+              + `<button class="btn-sm btn-secondary" onclick="window._insightPageNext()" ${page>=totalPages?'disabled':''}>Next</button>`;
+          }
+        }
+        window._insightPagePrev = () => { if (page > 1) { page--; renderInsightPage(); } };
+        window._insightPageNext = () => { if (page < totalPages) { page++; renderInsightPage(); } };
+        renderInsightPage();
+      }
+    }
+
+    function _exportInsightCSV(index) {
+      const ins = feedInsights[index];
+      if (!ins?.evidence?.sample_rows?.length) return;
+      const rows = ins.evidence.sample_rows;
+      const keys = Object.keys(rows[0]);
+      const lines = [keys.join(',')];
+      rows.forEach(r => {
+        lines.push(keys.map(k => {
+          const v = String(r[k] ?? '');
+          return v.includes(',') || v.includes('"') || v.includes('\n')
+            ? '"' + v.replace(/"/g, '""') + '"' : v;
+        }).join(','));
+      });
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${(ins.title || 'insight').replace(/[^a-zA-Z0-9]/g, '_')}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
 
     // Server-side data viewer (for uploaded tables)
     async function openTableViewer(tableName) {
@@ -7184,15 +7458,40 @@
                 <span style="font-size:var(--text-sm);color:var(--muted);">${colCount} columns</span>
               </div>
               <div style="display:flex;gap:0.4rem;">
-                <button class="btn-sm btn-secondary" onclick="var el=document.getElementById('cols-${tId}');el.style.display=el.style.display==='none'?'flex':'none';this.textContent=el.style.display==='none'?'Show Columns':'Hide Columns'">Show Columns</button>
+                <button class="btn-sm btn-secondary" onclick="_toggleTableContext('${tId}')">Edit Context</button>
                 <button class="btn-sm btn-secondary" onclick="openTableViewer('${esc(t.table_name)}')">View Data</button>
                 <button class="btn-sm" onclick="deleteTable('${esc(t.table_name)}')" style="background:var(--red);color:#fff;font-size:var(--text-xs);">Delete</button>
               </div>
             </div>
-            <div class="col-list" id="cols-${tId}" style="display:none;">
-              ${(t.columns || []).map(c =>
-                `<span class="col-chip"><strong>${esc(c.name)}</strong> ${esc(c.type)}</span>`
-              ).join('')}
+            ${t.business_notes ? `<div style="font-size:var(--text-sm);color:var(--text-secondary);margin-top:var(--space-1);padding:var(--space-1p5) var(--space-2);background:var(--accent-muted);border-radius:var(--radius-sm);">${esc(t.business_notes)}</div>` : ''}
+            <div class="table-context-editor" id="ctx-${tId}" style="display:none;margin-top:var(--space-3);border-top:1px solid var(--border-subtle);padding-top:var(--space-3);">
+              <div style="margin-bottom:var(--space-3);">
+                <label style="font-size:var(--text-sm);font-weight:600;color:var(--text-secondary);display:block;margin-bottom:var(--space-1);">Table Description</label>
+                <textarea id="desc-${tId}" rows="2" style="width:100%;padding:var(--space-2);border:1px solid var(--border);border-radius:var(--radius-md);font-size:var(--text-sm);resize:vertical;background:var(--surface);color:var(--text);">${esc(t.description || '')}</textarea>
+              </div>
+              <div style="margin-bottom:var(--space-3);">
+                <label style="font-size:var(--text-sm);font-weight:600;color:var(--text-secondary);display:block;margin-bottom:var(--space-1);">Business Notes <span style="font-weight:400;color:var(--muted);">(free-form context for AI)</span></label>
+                <textarea id="notes-${tId}" rows="3" placeholder="e.g., This table contains daily production batch records. batch_id follows format B-YYYY-NNN." style="width:100%;padding:var(--space-2);border:1px solid var(--border);border-radius:var(--radius-md);font-size:var(--text-sm);resize:vertical;background:var(--surface);color:var(--text);">${esc(t.business_notes || '')}</textarea>
+              </div>
+              <div style="margin-bottom:var(--space-3);">
+                <label style="font-size:var(--text-sm);font-weight:600;color:var(--text-secondary);display:block;margin-bottom:var(--space-2);">Column Descriptions</label>
+                <div style="display:flex;flex-direction:column;gap:var(--space-1p5);">
+                  ${(t.columns || []).map(c => `
+                    <div style="display:grid;grid-template-columns:140px 80px 1fr;gap:var(--space-2);align-items:center;">
+                      <span style="font-size:var(--text-sm);font-weight:600;color:var(--text);">${esc(c.name)}</span>
+                      <span style="font-size:var(--text-xs);color:var(--muted);">${esc(c.type || '')}</span>
+                      <input type="text" data-col="${esc(c.name)}" class="col-desc-input-${tId}"
+                        value="${esc(c.description || '')}"
+                        placeholder="Describe this column..."
+                        style="padding:var(--space-1p5) var(--space-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--text-sm);background:var(--surface);color:var(--text);" />
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+              <div style="display:flex;gap:var(--space-2);">
+                <button class="btn-sm" onclick="_saveTableContext('${esc(t.table_name)}', '${tId}', this)">Save Context</button>
+                <button class="btn-sm btn-secondary" onclick="_toggleTableContext('${tId}')">Cancel</button>
+              </div>
             </div>
           </div>`;
         }).join('');
@@ -7202,6 +7501,453 @@
           <small style="color:var(--muted)">Try refreshing the page or uploading data first.</small>
         </div>`;
       }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Data Workspace (Excel-like tab)
+    // ---------------------------------------------------------------------------
+    var _wsCurrentTable = null;
+    var _wsCurrentRows = [];
+    var _wsCurrentColumns = [];
+    var _wsTotal = 0;
+    var _wsPage = 1;
+    var _wsPageSize = 100;
+    var _wsSortBy = null;
+    var _wsSortDir = 'asc';
+    var _wsOps = []; // [{prompt, sql, rowCount, timestamp}]
+    var _wsHistory = []; // chat history for multi-turn context
+    var _wsTableMeta = []; // cached metadata
+
+    async function _loadWorkspaceTables() {
+      try {
+        const data = await apiFetch(`${API}/metadata`);
+        _wsTableMeta = data || [];
+        _renderWorkspaceTableList(data);
+      } catch (e) {
+        document.getElementById('workspace-table-list').innerHTML =
+          `<div class="feed-empty" style="padding:var(--space-3);font-size:var(--text-sm);color:var(--red);">Failed to load tables</div>`;
+      }
+    }
+
+    function _renderWorkspaceTableList(tables) {
+      const list = document.getElementById('workspace-table-list');
+      if (!tables?.length) {
+        list.innerHTML = '<div class="feed-empty" style="padding:var(--space-3);font-size:var(--text-sm);">No tables yet. Upload data first.</div>';
+        return;
+      }
+      list.innerHTML = tables.map(t => {
+        const colCount = (t.columns || []).length;
+        const isActive = t.table_name === _wsCurrentTable;
+        return `<div class="workspace-table-item${isActive ? ' active' : ''}" onclick="_selectWorkspaceTable('${esc(t.table_name)}')">
+          <div>${esc(t.table_name)}</div>
+          <div class="table-row-count">${colCount} cols</div>
+        </div>`;
+      }).join('');
+    }
+
+    function _filterWorkspaceTables(query) {
+      const q = query.toLowerCase();
+      const filtered = _wsTableMeta.filter(t => t.table_name.toLowerCase().includes(q));
+      _renderWorkspaceTableList(filtered);
+    }
+
+    async function _selectWorkspaceTable(tableName) {
+      _wsCurrentTable = tableName;
+      _wsPage = 1;
+      _wsSortBy = null;
+      _wsSortDir = 'asc';
+      _wsOps = [];
+      _wsHistory = [];
+
+      document.getElementById('workspace-active-table').textContent = tableName;
+      document.getElementById('workspace-prompt').placeholder =
+        `Ask anything about ${tableName}... (filter, sort, aggregate, pivot, join)`;
+
+      // Re-render table list to show active state
+      _renderWorkspaceTableList(_wsTableMeta);
+
+      await _loadWorkspaceData();
+    }
+
+    async function _loadWorkspaceData() {
+      if (!_wsCurrentTable) return;
+
+      const grid = document.getElementById('workspace-grid');
+      grid.innerHTML = '<div class="feed-empty" style="padding:var(--space-4);"><span class="spinner"></span> Loading...</div>';
+
+      try {
+        const params = new URLSearchParams({
+          page: _wsPage,
+          page_size: _wsPageSize,
+        });
+        if (_wsSortBy) {
+          params.set('sort_by', _wsSortBy);
+          params.set('sort_dir', _wsSortDir);
+        }
+
+        const data = await apiFetch(`${API}/data/${encodeURIComponent(_wsCurrentTable)}?${params}`);
+        if (data.error) throw new Error(data.error);
+
+        _wsCurrentRows = data.rows || [];
+        _wsCurrentColumns = data.columns || [];
+        _wsTotal = data.total || 0;
+
+        _renderWorkspaceGrid();
+      } catch (e) {
+        grid.innerHTML = `<div class="feed-empty" style="color:var(--red);">Error: ${esc(e.message)}</div>`;
+      }
+    }
+
+    function _renderWorkspaceGrid() {
+      const grid = document.getElementById('workspace-grid');
+      const rows = _wsCurrentRows;
+      const cols = _wsCurrentColumns.length ? _wsCurrentColumns : (rows.length ? Object.keys(rows[0]) : []);
+
+      if (!rows.length) {
+        grid.innerHTML = '<div class="feed-empty" style="padding:var(--space-4);">No data found.</div>';
+        document.getElementById('workspace-footer').style.display = 'none';
+        return;
+      }
+
+      let html = '<table class="data-table"><thead><tr>';
+      cols.forEach(col => {
+        const isActive = _wsSortBy === col;
+        const arrow = isActive ? (_wsSortDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+        html += `<th onclick="_wsSort('${esc(col)}')" title="Sort by ${esc(col)}">${esc(col)}${arrow}</th>`;
+      });
+      html += '</tr></thead><tbody>';
+      rows.forEach(row => {
+        html += '<tr>';
+        cols.forEach(col => {
+          html += `<td>${esc(String(row[col] ?? ''))}</td>`;
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      grid.innerHTML = html;
+
+      // Footer
+      document.getElementById('workspace-footer').style.display = 'flex';
+      document.getElementById('workspace-row-count').textContent = `${_wsTotal.toLocaleString()} total rows`;
+
+      const totalPages = Math.ceil(_wsTotal / _wsPageSize);
+      document.getElementById('workspace-pagination').innerHTML =
+        `<button class="btn-sm btn-secondary" onclick="_wsPagePrev()" ${_wsPage <= 1 ? 'disabled' : ''}>Prev</button>` +
+        `<span style="font-size:var(--text-xs);color:var(--muted);">Page ${_wsPage} of ${totalPages}</span>` +
+        `<button class="btn-sm btn-secondary" onclick="_wsPageNext()" ${_wsPage >= totalPages ? 'disabled' : ''}>Next</button>`;
+
+      // Ops log
+      _renderWorkspaceOpsLog();
+    }
+
+    function _wsSort(col) {
+      if (_wsSortBy === col) {
+        _wsSortDir = _wsSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        _wsSortBy = col;
+        _wsSortDir = 'asc';
+      }
+      _wsPage = 1;
+      _loadWorkspaceData();
+    }
+
+    function _wsPagePrev() { if (_wsPage > 1) { _wsPage--; _loadWorkspaceData(); } }
+    function _wsPageNext() {
+      const totalPages = Math.ceil(_wsTotal / _wsPageSize);
+      if (_wsPage < totalPages) { _wsPage++; _loadWorkspaceData(); }
+    }
+
+    async function _runWorkspaceQuery() {
+      const input = document.getElementById('workspace-prompt');
+      const question = input.value.trim();
+      if (!question) return;
+
+      const btn = document.getElementById('workspace-run-btn');
+      await asyncAction(btn, async () => {
+        // Build context: include current table + history for multi-turn
+        const payload = {
+          question: question,
+          tables: _wsCurrentTable ? [_wsCurrentTable] : [],
+          history: _wsHistory.slice(-6), // last 3 turns
+        };
+
+        const data = await apiFetch(`${API}/workspace/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (data.error) throw new Error(data.error);
+
+        // Update history
+        _wsHistory.push({ role: 'user', content: question });
+        _wsHistory.push({ role: 'assistant', content: data.query || 'Query executed' });
+
+        // Log operation
+        _wsOps.push({
+          prompt: question,
+          sql: data.query || '',
+          rowCount: data.row_count || (data.rows || []).length,
+          timestamp: new Date().toLocaleTimeString(),
+        });
+
+        // Display results
+        _wsCurrentRows = data.rows || [];
+        _wsCurrentColumns = data.columns || (_wsCurrentRows.length ? Object.keys(_wsCurrentRows[0]) : []);
+        _wsTotal = data.row_count || _wsCurrentRows.length;
+        _wsPage = 1;
+        _renderWorkspaceGrid();
+
+        input.value = '';
+      }, { loadingText: 'Running...', errorPrefix: 'Query failed' });
+    }
+
+    function _renderWorkspaceOpsLog() {
+      const logEl = document.getElementById('workspace-ops-log');
+      const body = document.getElementById('workspace-ops-body');
+      if (!_wsOps.length) {
+        logEl.style.display = 'none';
+        return;
+      }
+      logEl.style.display = 'block';
+      body.innerHTML = _wsOps.map((op, i) =>
+        `<div style="font-size:var(--text-xs);padding:var(--space-1) 0;border-bottom:1px solid var(--border-subtle);display:flex;gap:var(--space-2);">
+          <span style="color:var(--muted);white-space:nowrap;">${op.timestamp}</span>
+          <span style="color:var(--text);">${esc(op.prompt)}</span>
+          <span style="color:var(--muted);margin-left:auto;white-space:nowrap;">${op.rowCount} rows</span>
+        </div>`
+      ).reverse().join('');
+    }
+
+    function _exportWorkspaceCSV() {
+      if (!_wsCurrentRows.length) return;
+      const rows = _wsCurrentRows;
+      const keys = _wsCurrentColumns.length ? _wsCurrentColumns : Object.keys(rows[0]);
+      const lines = [keys.join(',')];
+      rows.forEach(r => {
+        lines.push(keys.map(k => {
+          const v = String(r[k] ?? '');
+          return v.includes(',') || v.includes('"') || v.includes('\n')
+            ? '"' + v.replace(/"/g, '""') + '"' : v;
+        }).join(','));
+      });
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${_wsCurrentTable || 'workspace'}_export.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // Load workspace tables on first visit
+    let _wsLoaded = false;
+    document.querySelector('[data-panel="workspace"]')?.addEventListener('click', () => {
+      if (!_wsLoaded) { _wsLoaded = true; _loadWorkspaceTables(); }
+    });
+
+    // ---------------------------------------------------------------------------
+    // Qualitative Document Analysis
+    // ---------------------------------------------------------------------------
+
+    // Wire up qualitative file input
+    (function() {
+      const dropZone = document.getElementById('qual-drop-zone');
+      const fileInput = document.getElementById('qual-file-input');
+      if (!dropZone || !fileInput) return;
+
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-active'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
+      dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-active');
+        if (e.dataTransfer.files.length) { _uploadQualFile(e.dataTransfer.files[0]); }
+      });
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length) { _uploadQualFile(fileInput.files[0]); fileInput.value = ''; }
+      });
+    })();
+
+    async function _uploadQualFile(file) {
+      const fd = new FormData();
+      fd.append('file', file);
+      toast('Uploading ' + file.name + '...', 'info');
+
+      try {
+        const res = await apiFetch(`${API}/upload/qualitative`, { method: 'POST', body: fd });
+        if (res.error) throw new Error(res.error);
+        toast(`Uploaded: ${res.file_name} (${res.word_count} words). Analysis running...`, 'success');
+        // Start polling for completion
+        _pollQualDoc(res.doc_id);
+        _loadQualDocs();
+      } catch (e) {
+        toast('Upload failed: ' + e.message, 'error');
+      }
+    }
+
+    async function _pollQualDoc(docId) {
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 3000)); // poll every 3s
+        try {
+          const doc = await apiFetch(`${API}/qualitative/${docId}`);
+          if (doc.status === 'complete') {
+            toast('Qualitative analysis complete: ' + doc.file_name, 'success');
+            _loadQualDocs();
+            loadFeed(); // refresh feed to show qualitative insights
+            return;
+          }
+          if (doc.status === 'failed') {
+            toast('Analysis failed: ' + (doc.error || 'unknown error'), 'error');
+            _loadQualDocs();
+            return;
+          }
+        } catch (e) { /* keep polling */ }
+      }
+    }
+
+    async function _loadQualDocs() {
+      const body = document.getElementById('qual-docs-body');
+      if (!body) return;
+      try {
+        const docs = await apiFetch(`${API}/qualitative`);
+        if (!docs?.length) {
+          body.innerHTML = '<div class="feed-empty">No qualitative documents uploaded yet.</div>';
+          return;
+        }
+        body.innerHTML = docs.map(d => _renderQualDocCard(d)).join('');
+      } catch (e) {
+        body.innerHTML = '<div class="feed-empty" style="color:var(--red);">Failed to load documents.</div>';
+      }
+    }
+
+    function _renderQualDocCard(d) {
+      const statusColor = d.status === 'complete' ? 'var(--green)'
+        : d.status === 'failed' ? 'var(--red)'
+        : d.status === 'analyzing' ? 'var(--yellow)' : 'var(--muted)';
+
+      let html = `<div class="meta-card" style="margin-bottom:var(--space-3);">`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;">`;
+      html += `<div>`;
+      html += `<h3 style="margin:0;font-size:var(--text-md);">${esc(d.file_name)}</h3>`;
+      html += `<span style="font-size:var(--text-xs);color:var(--muted);">${d.word_count?.toLocaleString() || '?'} words`;
+      if (d.page_count) html += ` · ${d.page_count} pages`;
+      if (d.uploaded_at) html += ` · ${_timeAgo(new Date(d.uploaded_at))}`;
+      html += `</span></div>`;
+      html += `<span class="badge" style="background:${statusColor}20;color:${statusColor};">${esc(d.status)}</span>`;
+      html += `</div>`;
+
+      if (d.status === 'analyzing') {
+        html += `<div style="margin-top:var(--space-2);font-size:var(--text-sm);color:var(--muted);"><span class="spinner" style="width:14px;height:14px;"></span> Analysis in progress...</div>`;
+      }
+
+      if (d.status === 'complete') {
+        // Summary
+        if (d.summary) {
+          html += `<div style="margin-top:var(--space-3);font-size:var(--text-sm);color:var(--text);line-height:1.5;padding:var(--space-2p5);background:var(--surface-sunken);border-radius:var(--radius-md);">${esc(d.summary)}</div>`;
+        }
+
+        // Sentiment
+        if (d.sentiment && typeof d.sentiment === 'object') {
+          const s = d.sentiment;
+          const sentColor = (s.score || 0) > 0.2 ? 'var(--green)' : (s.score || 0) < -0.2 ? 'var(--red)' : 'var(--yellow)';
+          html += `<div style="margin-top:var(--space-2);display:flex;align-items:center;gap:var(--space-2);font-size:var(--text-sm);">`;
+          html += `<span style="font-weight:600;color:var(--text-secondary);">Sentiment:</span>`;
+          html += `<span style="color:${sentColor};font-weight:600;">${esc(s.overall || '?')}</span>`;
+          if (s.score != null) html += `<span style="color:var(--muted);">(${s.score > 0 ? '+' : ''}${Number(s.score).toFixed(2)})</span>`;
+          html += `</div>`;
+
+          // Sentiment breakdown
+          if (s.breakdown?.length) {
+            html += `<div style="margin-top:var(--space-1);display:flex;flex-wrap:wrap;gap:var(--space-1p5);">`;
+            s.breakdown.forEach(b => {
+              const bc = b.sentiment === 'positive' ? 'var(--green)' : b.sentiment === 'negative' ? 'var(--red)' : 'var(--yellow)';
+              html += `<span class="badge" style="background:${bc}15;color:${bc};font-size:var(--text-xs);">${esc(b.section || '?')}: ${esc(b.sentiment)}</span>`;
+            });
+            html += `</div>`;
+          }
+        }
+
+        // Themes
+        if (d.themes?.length) {
+          html += `<div style="margin-top:var(--space-3);">`;
+          html += `<div style="font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--space-1);">Themes</div>`;
+          html += `<div style="display:flex;flex-wrap:wrap;gap:var(--space-1p5);">`;
+          d.themes.forEach(t => {
+            html += `<span class="badge badge-accent" title="${esc((t.evidence || []).join(' | '))}">${esc(t.theme)} (${t.count || '?'})</span>`;
+          });
+          html += `</div></div>`;
+        }
+
+        // Key Findings
+        if (d.key_findings?.length) {
+          html += `<div style="margin-top:var(--space-3);">`;
+          html += `<div style="font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--space-1);">Key Findings</div>`;
+          d.key_findings.forEach(f => {
+            const fc = f.severity === 'critical' ? 'var(--red)' : f.severity === 'warning' ? 'var(--yellow)' : 'var(--accent)';
+            html += `<div style="font-size:var(--text-sm);margin-bottom:var(--space-1);padding-left:var(--space-2);border-left:3px solid ${fc};">`;
+            html += `<div style="color:var(--text);">${esc(f.finding || '')}</div>`;
+            if (f.evidence) html += `<div style="font-size:var(--text-xs);color:var(--muted);margin-top:2px;">${esc(f.evidence)}</div>`;
+            html += `</div>`;
+          });
+          html += `</div>`;
+        }
+
+        // Linked tables
+        if (d.linked_tables?.length) {
+          html += `<div style="margin-top:var(--space-2);font-size:var(--text-xs);color:var(--muted);">Linked: ${d.linked_tables.map(esc).join(', ')}</div>`;
+        }
+      }
+
+      if (d.status === 'failed' && d.error) {
+        html += `<div style="margin-top:var(--space-2);font-size:var(--text-sm);color:var(--red);">${esc(d.error)}</div>`;
+      }
+
+      html += `</div>`;
+      return html;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Table Context Editing
+    // ---------------------------------------------------------------------------
+    function _toggleTableContext(tId) {
+      const el = document.getElementById('ctx-' + tId);
+      if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function _saveTableContext(tableName, tId, btn) {
+      await asyncAction(btn, async () => {
+        const desc = document.getElementById('desc-' + tId)?.value || '';
+        const notes = document.getElementById('notes-' + tId)?.value || '';
+
+        // Collect column descriptions
+        const colInputs = document.querySelectorAll('.col-desc-input-' + tId);
+        const columns = [];
+        colInputs.forEach(inp => {
+          const colName = inp.dataset.col;
+          const colDesc = inp.value.trim();
+          if (colName && colDesc) {
+            columns.push({ name: colName, description: colDesc });
+          }
+        });
+
+        const body = {};
+        if (desc) body.description = desc;
+        body.business_notes = notes;
+        if (columns.length) body.columns = columns;
+
+        await apiFetch(`${API}/metadata/${encodeURIComponent(tableName)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+        toast('Table context saved', 'success');
+        _toggleTableContext(tId);
+
+        // Refresh the schema view to show updated notes
+        dataTabLoaded = false;
+        loadSchemaIntoData();
+      }, { loadingText: 'Saving...', errorPrefix: 'Save failed' });
     }
 
     // ---------------------------------------------------------------------------
@@ -7715,6 +8461,9 @@
         html += `</div></button></span>`;
         html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
         html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
+        if (ins.evidence && (ins.evidence.query || ins.evidence.sample_rows?.length)) {
+          html += `<button class="btn-sm btn-secondary" onclick="viewInsightData(${i})">View Data</button>`;
+        }
         html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
         html += `</div>`;
         html += `</div>`;

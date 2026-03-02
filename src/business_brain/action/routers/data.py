@@ -271,6 +271,7 @@ async def list_metadata(
                 "table_name": e.table_name,
                 "description": e.description,
                 "columns": e.columns_metadata,
+                "business_notes": e.business_notes,
             }
             for e in entries
         ]
@@ -298,10 +299,45 @@ async def get_table_metadata(
             "table_name": entry.table_name,
             "description": entry.description,
             "columns": entry.columns_metadata,
+            "business_notes": entry.business_notes,
         }
     except Exception:
         logger.exception("Error fetching metadata for table: %s", table)
         return {"error": "Failed to fetch table metadata"}
+
+
+@router.put("/metadata/{table}")
+async def update_table_metadata(
+    table: str,
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+    user: Optional[dict] = Depends(get_current_user),
+) -> dict:
+    """Update user-editable table context: description, business_notes, column descriptions."""
+    try:
+        accessible = await get_accessible_tables(session, user)
+        if accessible is not None and table not in accessible:
+            return {"error": "Table not found"}
+
+        entry = await metadata_store.update_context(
+            session,
+            table_name=table,
+            description=body.get("description"),
+            business_notes=body.get("business_notes"),
+            column_descriptions=body.get("columns"),  # [{name, description}]
+        )
+        if not entry:
+            return {"error": "Table not found"}
+        return {
+            "status": "updated",
+            "table_name": entry.table_name,
+            "description": entry.description,
+            "business_notes": entry.business_notes,
+            "columns": entry.columns_metadata,
+        }
+    except Exception:
+        logger.exception("Error updating metadata for table: %s", table)
+        return {"error": "Failed to update table metadata"}
 
 
 @router.delete("/metadata/{table}")
@@ -716,6 +752,352 @@ async def generate_chart(body: dict) -> dict:
             },
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Qualitative Document Upload & Analysis
+# ---------------------------------------------------------------------------
+
+
+@router.post("/upload/qualitative")
+async def upload_qualitative(
+    file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    session: AsyncSession = Depends(get_session),
+    user: Optional[dict] = Depends(get_current_user),
+) -> dict:
+    """Upload a qualitative document (PDF, Excel with text, TXT) for analysis."""
+    import gzip
+
+    from business_brain.cognitive.data_engineer_agent import parse_pdf
+    from business_brain.db.discovery_models import QualitativeDocument
+
+    file_bytes = await file.read()
+    file_name = file.filename or "document.pdf"
+
+    if file_name.endswith(".gz"):
+        file_bytes = gzip.decompress(file_bytes)
+        file_name = file_name[:-3]
+
+    ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+
+    # Extract text based on file type
+    raw_text = ""
+    page_count = 0
+
+    if ext == "pdf":
+        raw_text = parse_pdf(file_bytes)
+        try:
+            from PyPDF2 import PdfReader
+            from io import BytesIO
+            reader = PdfReader(BytesIO(file_bytes))
+            page_count = len(reader.pages)
+        except Exception:
+            page_count = 0
+    elif ext in ("xlsx", "xls"):
+        import pandas as pd
+        from io import BytesIO
+        try:
+            df = pd.read_excel(BytesIO(file_bytes))
+            # Concatenate all text columns
+            text_cols = df.select_dtypes(include=["object"]).columns
+            text_parts = []
+            for col in text_cols:
+                values = df[col].dropna().astype(str).tolist()
+                if values:
+                    text_parts.append(f"=== {col} ===")
+                    text_parts.extend(values)
+            raw_text = "\n".join(text_parts)
+        except Exception as exc:
+            return {"error": f"Failed to read Excel file: {exc}"}
+    elif ext in ("txt", "md"):
+        raw_text = file_bytes.decode("utf-8")
+    else:
+        return {"error": f"Unsupported file type: .{ext}. Use .pdf, .xlsx, .txt, or .md"}
+
+    if not raw_text.strip():
+        return {"error": "File is empty or could not be parsed"}
+
+    word_count = len(raw_text.split())
+
+    # Create document record
+    doc = QualitativeDocument(
+        file_name=file_name,
+        file_type=ext,
+        raw_text=raw_text,
+        page_count=page_count,
+        word_count=word_count,
+        uploaded_by=user.get("sub") if user else None,
+        status="pending",
+    )
+    session.add(doc)
+    await session.commit()
+    await session.refresh(doc)
+
+    # Kick off background analysis
+    background_tasks.add_task(_run_qualitative_analysis, doc.id)
+
+    return {
+        "status": "uploaded",
+        "doc_id": doc.id,
+        "file_name": file_name,
+        "word_count": word_count,
+        "page_count": page_count,
+        "message": "Document uploaded. Analysis running in background.",
+    }
+
+
+async def _run_qualitative_analysis(doc_id: str):
+    """Background task: run qualitative analysis pipeline on a document."""
+    from business_brain.cognitive.qualitative_analyzer import (
+        QualitativeAnalyzer,
+        find_linked_tables,
+    )
+    from business_brain.db.connection import get_session as session_factory
+    from business_brain.db.discovery_models import QualitativeDocument, Insight
+
+    try:
+        async for session in session_factory():
+            # Load the document
+            from sqlalchemy import select
+            result = await session.execute(
+                select(QualitativeDocument).where(QualitativeDocument.id == doc_id)
+            )
+            doc = result.scalar_one_or_none()
+            if not doc:
+                logger.error("Qualitative doc %s not found", doc_id)
+                return
+
+            doc.status = "analyzing"
+            await session.commit()
+
+            # Run analysis
+            analyzer = QualitativeAnalyzer()
+            results = await analyzer.analyze(doc.raw_text or "", doc.file_name)
+
+            # Update document with results
+            doc.summary = results.get("summary")
+            doc.sentiment = results.get("sentiment")
+            doc.themes = results.get("themes")
+            doc.key_findings = results.get("key_findings")
+            doc.entities = results.get("entities")
+            doc.status = "complete"
+
+            # Find linked tables
+            try:
+                all_metadata = await metadata_store.get_all(session)
+                table_names = [m.table_name for m in all_metadata]
+                linked = await find_linked_tables(
+                    results.get("entities", []),
+                    table_names,
+                )
+                doc.linked_tables = linked
+            except Exception:
+                logger.debug("Table linking failed — non-critical")
+
+            # Create a qualitative insight for the feed
+            try:
+                severity = "info"
+                sentiment = results.get("sentiment", {})
+                if isinstance(sentiment, dict):
+                    score = sentiment.get("score", 0)
+                    if score < -0.3:
+                        severity = "critical"
+                    elif score < 0:
+                        severity = "warning"
+
+                findings_summary = ""
+                findings = results.get("key_findings", [])
+                if isinstance(findings, list) and findings:
+                    findings_summary = "; ".join(
+                        f.get("finding", "") for f in findings[:3] if isinstance(f, dict)
+                    )
+
+                insight = Insight(
+                    insight_type="qualitative",
+                    severity=severity,
+                    title=f"Qualitative Analysis: {doc.file_name}",
+                    description=doc.summary or findings_summary or f"Analysis of {doc.file_name}",
+                    narrative=doc.summary,
+                    source_tables=doc.linked_tables or [],
+                    source_columns=[],
+                    impact_score=min(80, 30 + (doc.word_count or 0) // 100),
+                    evidence={
+                        "source_doc": doc.id,
+                        "sentiment": doc.sentiment,
+                        "themes": (doc.themes or [])[:5],
+                        "key_findings": (doc.key_findings or [])[:5],
+                    },
+                    suggested_actions=[
+                        f.get("finding", "") for f in (findings[:3] if isinstance(findings, list) else [])
+                        if isinstance(f, dict) and f.get("severity") in ("critical", "warning")
+                    ] or None,
+                    quality_score=50,
+                )
+                session.add(insight)
+                doc.linked_insights = [insight.id]
+            except Exception:
+                logger.debug("Qualitative insight creation failed — non-critical")
+
+            await session.commit()
+            logger.info("Qualitative analysis complete for %s (doc_id=%s)", doc.file_name, doc_id)
+
+    except Exception as exc:
+        logger.exception("Qualitative analysis failed for doc %s", doc_id)
+        try:
+            async for session in session_factory():
+                from sqlalchemy import select
+                result = await session.execute(
+                    select(QualitativeDocument).where(QualitativeDocument.id == doc_id)
+                )
+                doc = result.scalar_one_or_none()
+                if doc:
+                    doc.status = "failed"
+                    doc.error = str(exc)
+                    await session.commit()
+        except Exception:
+            pass
+
+
+@router.get("/qualitative")
+async def list_qualitative_docs(
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """List all qualitative documents."""
+    from sqlalchemy import select
+    from business_brain.db.discovery_models import QualitativeDocument
+
+    try:
+        result = await session.execute(
+            select(QualitativeDocument)
+            .order_by(QualitativeDocument.uploaded_at.desc())
+            .limit(50)
+        )
+        docs = result.scalars().all()
+        return [
+            {
+                "id": d.id,
+                "file_name": d.file_name,
+                "file_type": d.file_type,
+                "word_count": d.word_count,
+                "page_count": d.page_count,
+                "status": d.status,
+                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+                "summary": d.summary,
+                "sentiment": d.sentiment,
+                "themes": d.themes,
+                "key_findings": d.key_findings,
+                "entities": d.entities,
+                "linked_tables": d.linked_tables,
+                "linked_insights": d.linked_insights,
+                "error": d.error,
+            }
+            for d in docs
+        ]
+    except Exception:
+        logger.exception("Failed to list qualitative documents")
+        return []
+
+
+@router.get("/qualitative/{doc_id}")
+async def get_qualitative_doc(
+    doc_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get a single qualitative document with full analysis results."""
+    from sqlalchemy import select
+    from business_brain.db.discovery_models import QualitativeDocument
+
+    try:
+        result = await session.execute(
+            select(QualitativeDocument).where(QualitativeDocument.id == doc_id)
+        )
+        d = result.scalar_one_or_none()
+        if not d:
+            return {"error": "Document not found"}
+        return {
+            "id": d.id,
+            "file_name": d.file_name,
+            "file_type": d.file_type,
+            "word_count": d.word_count,
+            "page_count": d.page_count,
+            "status": d.status,
+            "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+            "summary": d.summary,
+            "sentiment": d.sentiment,
+            "themes": d.themes,
+            "key_findings": d.key_findings,
+            "entities": d.entities,
+            "linked_tables": d.linked_tables,
+            "linked_insights": d.linked_insights,
+            "error": d.error,
+        }
+    except Exception:
+        logger.exception("Failed to fetch qualitative doc %s", doc_id)
+        return {"error": "Failed to fetch document"}
+
+
+# ---------------------------------------------------------------------------
+# Workspace — SQL-only fast query
+# ---------------------------------------------------------------------------
+
+
+@router.post("/workspace/query")
+async def workspace_query(
+    body: dict,
+    session: AsyncSession = Depends(get_session),
+    user: Optional[dict] = Depends(get_current_user),
+) -> dict:
+    """Execute a natural language query in workspace context.
+
+    Uses SQL agent directly — no CFO, no Python analyst, no deep tier.
+    Fast, sub-second responses for iterative data exploration.
+    """
+    from sqlalchemy import text as sql_text
+
+    question = body.get("question", "").strip()
+    tables = body.get("tables", [])
+    history = body.get("history", [])
+
+    if not question:
+        return {"error": "No question provided"}
+
+    try:
+        from business_brain.memory.schema_rag import retrieve_relevant_tables
+        from business_brain.cognitive.sql_agent import SQLAgent
+
+        # Get RAG context (schema + relationships + business notes)
+        rag_tables, rag_contexts = await retrieve_relevant_tables(
+            session, question, top_k=6,
+            allowed_tables=tables if tables else None,
+        )
+
+        # Build SQL agent state
+        agent = SQLAgent()
+        state = {
+            "question": question,
+            "db_session": session,
+            "rag_tables": rag_tables,
+            "rag_contexts": rag_contexts,
+            "chat_history": history,
+        }
+
+        result = await agent.invoke(state)
+        sql_result = result.get("sql_result", {})
+
+        rows = sql_result.get("rows", [])
+        columns = list(rows[0].keys()) if rows else []
+
+        return {
+            "query": sql_result.get("query", ""),
+            "rows": rows[:500],  # Cap at 500 rows for workspace
+            "columns": columns,
+            "row_count": len(rows),
+            "error": sql_result.get("error"),
+        }
+    except Exception as exc:
+        logger.exception("Workspace query failed")
+        return {"error": str(exc)}
 
 
 # ---------------------------------------------------------------------------
