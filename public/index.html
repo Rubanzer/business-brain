@@ -1270,44 +1270,7 @@
     .analysis-tab-new:hover { color: var(--accent); }
 
     /* Investigation queue */
-    .investigate-split { display: inline-flex; border-radius: var(--radius-sm); overflow: visible; position: relative; }
-    .investigate-split .btn-main { border-radius: var(--radius-sm) 0 0 var(--radius-sm); border-right: 1px solid var(--border); }
-    .investigate-split .btn-arrow {
-      padding: var(--space-1) var(--space-1p5);
-      font-size: var(--text-xs);
-      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-      cursor: pointer;
-      position: relative;
-      background: var(--accent);
-      color: #fff;
-      border: none;
-    }
-    .investigate-dropdown {
-      display: none;
-      position: absolute;
-      bottom: calc(100% + 4px);
-      right: 0;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      min-width: 140px;
-      padding: var(--space-1) 0;
-      z-index: 50;
-      box-shadow: var(--shadow-lg);
-    }
-    .investigate-dropdown.open { display: block; }
-    .investigate-dropdown button {
-      display: block;
-      width: 100%;
-      padding: var(--space-2) var(--space-3);
-      background: none;
-      border: none;
-      color: var(--text);
-      font-size: var(--text-sm);
-      cursor: pointer;
-      text-align: left;
-    }
-    .investigate-dropdown button:hover { background: var(--accent-subtle); }
+    /* investigate-split and investigate-dropdown removed — flat buttons now */
     .investigate-queue-bar {
       position: sticky;
       bottom: 0;
@@ -1499,8 +1462,12 @@
     .feed-card.type-story { border-left: 3px solid var(--accent); }
     .feed-card-title {
       font-size: var(--text-md);
-      font-weight: 500;
-      margin-bottom: var(--space-1);
+      font-weight: 600;
+      margin-bottom: var(--space-1p5);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     .feed-card-desc {
       font-size: var(--text-base);
@@ -1518,6 +1485,8 @@
     .feed-card-actions {
       display: flex;
       gap: var(--space-2);
+      flex-wrap: wrap;
+      align-items: center;
       margin-top: var(--space-2);
     }
     .quarantine-row-data {
@@ -2978,6 +2947,7 @@
         <button class="btn-export btn-sm" onclick="exportFeed('csv', this)" title="Export insights as CSV">Export CSV</button>
         <button class="btn-sm btn-secondary" onclick="dismissAllInsights()" id="dismiss-all-btn">Dismiss All</button>
         <button class="btn-sm btn-secondary" onclick="loadDailyBriefing()" id="briefing-btn" title="View daily intelligence briefing">Daily Briefing</button>
+        <button class="btn-sm" id="feed-queue-btn" style="display:none;" onclick="investigateQueueAll(this)">Investigate Queue (<span id="feed-queue-count">0</span>)</button>
         <button class="btn-sm" onclick="triggerDiscovery()" id="scan-btn">Scan Now</button>
       </div>
       <div id="daily-briefing-panel" style="display:none;margin-bottom:0.75rem;"></div>
@@ -3031,6 +3001,9 @@
             <input type="text" id="workspace-table-search" placeholder="Search tables..."
               style="width:100%;padding:var(--space-1p5) var(--space-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:var(--text-sm);background:var(--surface);color:var(--text);"
               oninput="_filterWorkspaceTables(this.value)" />
+          </div>
+          <div id="workspace-context-indicator" style="padding:var(--space-1p5) var(--space-2);font-size:var(--text-xs);color:var(--muted);border-bottom:1px solid var(--border-subtle);display:none;">
+            <span style="color:var(--green);">&#9679;</span> Context: <span id="ws-context-detail"></span>
           </div>
           <div id="workspace-table-list" class="workspace-table-list">
             <div class="feed-empty" style="padding:var(--space-3);font-size:var(--text-sm);">Loading tables...</div>
@@ -4611,7 +4584,7 @@
     // All mutable globals consolidated here to avoid let-before-init errors
     let _focusState = {};
     let _investigateQueue = [];
-    let compareSelection = [];
+    // compareSelection removed — Compare feature deleted
     let _deployInsightId = null;
     let _deployInsightData = null;
     let _lastDeployedReportId = null;
@@ -7544,10 +7517,30 @@
         const data = await apiFetch(`${API}/metadata`);
         _wsTableMeta = data || [];
         _renderWorkspaceTableList(data);
+        _loadWorkspaceContext(); // fire-and-forget
       } catch (e) {
         document.getElementById('workspace-table-list').innerHTML =
           `<div class="feed-empty" style="padding:var(--space-3);font-size:var(--text-sm);color:var(--red);">Failed to load tables</div>`;
       }
+    }
+
+    async function _loadWorkspaceContext() {
+      try {
+        const [company, thresholds] = await Promise.all([
+          apiFetch(API + '/company').catch(() => null),
+          apiFetch(API + '/thresholds').catch(() => []),
+        ]);
+        const parts = [];
+        if (company && company.name) parts.push(company.name);
+        const tCount = Array.isArray(thresholds) ? thresholds.length : 0;
+        if (tCount > 0) parts.push(tCount + ' threshold' + (tCount > 1 ? 's' : ''));
+        const indicator = document.getElementById('workspace-context-indicator');
+        const detail = document.getElementById('ws-context-detail');
+        if (indicator && detail && parts.length > 0) {
+          detail.textContent = parts.join(', ');
+          indicator.style.display = '';
+        }
+      } catch (e) { /* silent */ }
     }
 
     function _renderWorkspaceTableList(tables) {
@@ -8442,9 +8435,21 @@
           : ins.insight_type === 'story' ? 'badge-accent'
           : 'badge-green';
 
+        // Deduplicate title/description overlap
+        let descText = ins.description || '';
+        const titleText = ins.title || '';
+        if (titleText && descText) {
+          const titleNorm = titleText.replace(/[.\s]+$/, '').toLowerCase();
+          const descNorm = descText.toLowerCase();
+          if (descNorm.startsWith(titleNorm)) {
+            descText = descText.slice(titleNorm.length).replace(/^[.\s:,\-]+/, '').trim();
+            if (descText) descText = descText.charAt(0).toUpperCase() + descText.slice(1);
+          }
+        }
+
         let html = `<div class="feed-card ${sevClass}" data-insight-type="${esc(ins.insight_type || '')}" data-status="${ins.status || 'new'}">`;
         html += `<div class="feed-card-title">${esc(ins.title)}</div>`;
-        html += `<div class="feed-card-desc">${esc(ins.description)}</div>`;
+        if (descText) html += `<div class="feed-card-desc">${esc(descText)}</div>`;
         html += `<div class="feed-card-meta">`;
         html += `<span class="badge ${sevBadge}">${esc(friendlyType(ins.insight_type))}</span>`;
         html += `<span class="badge badge-accent">Score: ${ins.impact_score}</span>`;
@@ -8473,15 +8478,9 @@
         }
 
         html += `<div class="feed-card-actions">`;
-        html += `<span class="investigate-split">`;
-        html += `<button class="btn-sm btn-main" onclick="investigateInsight(${i}, this)">Investigate</button>`;
-        html += `<button class="btn-sm btn-arrow" onclick="event.stopPropagation();toggleInvestigateDropdown(${i}, this)">&#9662;`;
-        html += `<div class="investigate-dropdown" id="inv-dd-${i}">`;
-        html += `<button onclick="event.stopPropagation();investigateInsight(${i}, this.closest('.investigate-split').querySelector('.btn-main'))">Investigate now</button>`;
-        html += `<button onclick="event.stopPropagation();addToInvestigateQueue(${i});closeInvestigateDropdowns()">Add to queue</button>`;
-        html += `</div></button></span>`;
+        html += `<button class="btn-sm" style="background:var(--accent);color:#fff;border:none;" onclick="investigateInsight(${i}, this)">Investigate Now</button>`;
+        html += `<button class="btn-sm btn-secondary" onclick="event.stopPropagation();addToInvestigateQueue(${i})">Add to Queue</button>`;
         html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
-        html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
         html += `<button class="btn-sm btn-secondary" onclick="viewInsightData(${i})">View Data</button>`;
         html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
         html += `</div>`;
@@ -8565,19 +8564,6 @@
     // -----------------------------------------------------------------------
     // Multi-select investigation queue
     // -----------------------------------------------------------------------
-    function toggleInvestigateDropdown(index, btn) {
-      const dd = document.getElementById('inv-dd-' + index);
-      const wasOpen = dd && dd.classList.contains('open');
-      closeInvestigateDropdowns();
-      if (!wasOpen && dd) dd.classList.add('open');
-    }
-
-    function closeInvestigateDropdowns() {
-      document.querySelectorAll('.investigate-dropdown').forEach(function(d) { d.classList.remove('open'); });
-    }
-
-    document.addEventListener('click', closeInvestigateDropdowns);
-
     function addToInvestigateQueue(index) {
       const ins = feedInsights[index];
       if (!ins) return;
@@ -8598,6 +8584,18 @@
     }
 
     function renderInvestigateQueueBar() {
+      // Sync header queue button
+      const feedQueueBtn = document.getElementById('feed-queue-btn');
+      const feedQueueCount = document.getElementById('feed-queue-count');
+      if (feedQueueBtn && feedQueueCount) {
+        if (_investigateQueue.length) {
+          feedQueueBtn.style.display = '';
+          feedQueueCount.textContent = _investigateQueue.length;
+        } else {
+          feedQueueBtn.style.display = 'none';
+        }
+      }
+
       let bar = document.getElementById('investigate-queue-bar');
       if (!_investigateQueue.length) {
         if (bar) bar.remove();
@@ -8681,102 +8679,6 @@
         document.getElementById('feed-body').innerHTML =
           '<div class="feed-empty">All insights dismissed. Run a new scan to discover fresh insights.</div>';
       }, { loadingText: 'Dismissing\u2026', successText: 'All insights dismissed', errorPrefix: 'Failed to dismiss all' });
-    }
-
-    // -----------------------------------------------------------------------
-    // Insight Comparison Mode
-    // -----------------------------------------------------------------------
-    function toggleCompare(index, btn) {
-      const existing = compareSelection.indexOf(index);
-      if (existing >= 0) {
-        compareSelection.splice(existing, 1);
-        btn.style.background = '';
-        btn.textContent = 'Compare';
-      } else {
-        if (compareSelection.length >= 2) {
-          toast('Already selected 2 insights. Click Compare on a selected one to deselect.');
-          return;
-        }
-        compareSelection.push(index);
-        btn.style.background = 'var(--accent)';
-        btn.style.color = '#fff';
-        btn.textContent = 'Selected';
-      }
-
-      if (compareSelection.length === 2) {
-        showComparisonView(compareSelection[0], compareSelection[1]);
-      }
-    }
-
-    function showComparisonView(idxA, idxB) {
-      try {
-        const a = feedInsights[idxA];
-        const b = feedInsights[idxB];
-        if (!a || !b) return;
-
-        const overlay = document.getElementById('time-analysis-overlay');
-        const title = document.getElementById('time-analysis-title');
-        const body = document.getElementById('time-analysis-body');
-        title.textContent = 'Insight Comparison';
-
-        let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">';
-
-        for (const ins of [a, b]) {
-          const borderColor = ins.severity === 'critical' ? 'var(--red)' :
-                              ins.severity === 'warning' ? 'var(--yellow)' : 'var(--green)';
-          html += `<div class="feed-card" style="border-left:3px solid ${borderColor};">`;
-          html += `<div style="font-size:var(--text-xs);text-transform:uppercase;color:${borderColor};font-weight:600;">${esc(ins.severity)} / ${esc(ins.insight_type)}</div>`;
-          html += `<div style="font-weight:600;margin:0.3rem 0;">${esc(ins.title)}</div>`;
-          html += `<div style="font-size:var(--text-sm);color:var(--muted);">${esc(ins.description)}</div>`;
-          html += `<div style="margin-top:0.4rem;font-size:var(--text-sm);">`;
-          html += `<strong>Impact:</strong> ${ins.impact_score}/100<br>`;
-          html += `<strong>Tables:</strong> ${(ins.source_tables||[]).join(', ')}<br>`;
-          html += `<strong>Columns:</strong> ${(ins.source_columns||[]).join(', ')}<br>`;
-          if (ins.composite_template) html += `<strong>Template:</strong> ${esc(ins.composite_template)}<br>`;
-          if (ins.suggested_actions?.length) {
-            html += `<strong>Actions:</strong><br>`;
-            ins.suggested_actions.forEach(a => { html += `&nbsp;&nbsp;- ${esc(a)}<br>`; });
-          }
-          html += `</div></div>`;
-        }
-        html += '</div>';
-
-        // Differences summary
-        html += '<div style="margin-top:1rem;padding:0.8rem;background:var(--surface);border-radius:var(--radius-md);font-size:var(--text-sm);">';
-        html += '<strong>Key Differences:</strong><br>';
-        if (a.severity !== b.severity) html += `Severity: ${a.severity} vs ${b.severity}<br>`;
-        if (a.impact_score !== b.impact_score) html += `Impact: ${a.impact_score} vs ${b.impact_score} (delta: ${Math.abs(a.impact_score - b.impact_score)})<br>`;
-        if (a.insight_type !== b.insight_type) html += `Type: ${a.insight_type} vs ${b.insight_type}<br>`;
-        const tablesA = new Set(a.source_tables || []);
-        const tablesB = new Set(b.source_tables || []);
-        const shared = [...tablesA].filter(t => tablesB.has(t));
-        if (shared.length > 0) html += `Shared tables: ${shared.join(', ')}<br>`;
-        else html += `No shared tables<br>`;
-        html += '</div>';
-
-        html += '<div style="margin-top:0.8rem;text-align:center;">';
-        html += '<button onclick="clearComparison()" style="padding:6px 16px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;">Close</button>';
-        html += '</div>';
-
-        body.innerHTML = html;
-        overlay.style.display = 'block';
-      } catch (e) {
-        toast('Comparison failed: ' + e.message);
-        clearComparison();
-      }
-    }
-
-    function clearComparison() {
-      compareSelection = [];
-      document.getElementById('time-analysis-overlay').style.display = 'none';
-      // Reset all compare buttons
-      document.querySelectorAll('.feed-card-actions button').forEach(btn => {
-        if (btn.textContent === 'Selected') {
-          btn.style.background = '';
-          btn.style.color = '';
-          btn.textContent = 'Compare';
-        }
-      });
     }
 
     async function loadDashboardKPIs() {

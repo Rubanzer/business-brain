@@ -194,7 +194,7 @@ def _build_data_section(state: dict[str, Any]) -> tuple[str, int]:
 
     query = result.get("query", "")
     task = result.get("task", "Query")
-    sample = rows[:20]
+    sample = rows[:10]
     data_text = (
         f"--- {task} ---\n"
         f"SQL: {query}\n"
