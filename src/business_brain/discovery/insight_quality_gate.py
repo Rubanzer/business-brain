@@ -124,7 +124,7 @@ def apply_quality_gate(
     insights: list[Insight],
     profiles: list | None = None,
     reinforcement_weights=None,
-) -> list[Insight]:
+) -> tuple[list[Insight], dict]:
     """Run all quality filters and scoring on a list of insights.
 
     Steps:
@@ -138,7 +138,8 @@ def apply_quality_gate(
             reinforcement loop. When provided, novelty scores are modulated
             by learned multipliers.
 
-    Returns filtered, scored, and rewritten insights.
+    Returns:
+        Tuple of (filtered insights, diagnostic dict with breakdown).
     """
     original_count = len(insights)
 
@@ -159,6 +160,13 @@ def apply_quality_gate(
     for insight in insights:
         _rewrite_for_readability(insight)
 
+    diagnostics = {
+        "input": original_count,
+        "output": len(insights),
+        "trivial_correlations_killed": trivial_killed,
+        "meta_insights_suppressed": meta_suppressed,
+    }
+
     logger.info(
         "Quality gate: %d → %d insights (killed %d trivial correlations, "
         "suppressed %d meta-insights)",
@@ -168,7 +176,7 @@ def apply_quality_gate(
         meta_suppressed,
     )
 
-    return insights
+    return insights, diagnostics
 
 
 # ---------------------------------------------------------------------------
