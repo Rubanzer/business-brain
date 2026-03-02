@@ -139,9 +139,16 @@ async def _ensure_tables():
             "ALTER TABLE discovery_runs ADD COLUMN IF NOT EXISTS pass_diagnostics JSON",
         ]
 
-        async with engine.begin() as conn:
-            for stmt in _migrations:
-                await conn.execute(sql_text(stmt))
+        # Run each migration in its own transaction so AccessExclusiveLock
+        # is released immediately after each ALTER TABLE — prevents deadlocks
+        # with concurrent queries during serverless cold starts.
+        for stmt in _migrations:
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(sql_text("SET lock_timeout = '3s'"))
+                    await conn.execute(sql_text(stmt))
+            except Exception:
+                logger.debug("Migration skipped (lock timeout or already applied): %s", stmt[:60])
 
         logger.info("Database tables and columns ensured (%d migrations)", len(_migrations))
     except Exception:
