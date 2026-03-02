@@ -118,7 +118,7 @@ async def rescore_feed(session: AsyncSession = Depends(get_session)) -> dict:
         if not null_insights:
             return {"status": "ok", "rescored": 0, "message": "No insights with NULL quality_score"}
 
-        scored = apply_quality_gate(null_insights, [])
+        scored, _diag = apply_quality_gate(null_insights, [])
 
         for insight in null_insights:
             if insight not in scored:

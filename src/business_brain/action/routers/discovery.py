@@ -91,6 +91,14 @@ async def discovery_status(session: AsyncSession = Depends(get_session)) -> dict
 
     diagnostics = getattr(run, "pass_diagnostics", None) or []
     failed_passes = [d for d in diagnostics if d.get("status") == "failed"]
+
+    # Build pipeline breakdown: raw counts from discovery passes
+    # (all passes except quality_gate and persist_insights are raw producers)
+    raw_total = sum(d.get("count", 0) for d in diagnostics
+                    if d.get("status") == "ok" and d["pass"] not in ("quality_gate", "persist_insights", "profile_tables", "find_relationships"))
+    quality_gate_pass = next((d for d in diagnostics if d["pass"] == "quality_gate"), None)
+    persist_pass = next((d for d in diagnostics if d["pass"] == "persist_insights"), None)
+
     return {
         "id": run.id,
         "status": status,
@@ -103,6 +111,12 @@ async def discovery_status(session: AsyncSession = Depends(get_session)) -> dict
         "pass_diagnostics": diagnostics,
         "failed_passes": len(failed_passes),
         "total_passes": len(diagnostics),
+        # Pipeline breakdown for UI
+        "pipeline_breakdown": {
+            "raw_insights": raw_total,
+            "after_quality_gate": quality_gate_pass.get("count", 0) if quality_gate_pass else None,
+            "after_dedup": persist_pass.get("count", 0) if persist_pass else None,
+        },
     }
 
 

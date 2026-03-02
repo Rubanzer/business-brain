@@ -269,7 +269,8 @@ async def run_discovery(
 
         # 7. Quality gate + dedup + persist
         t0 = time.monotonic()
-        logger.info("Discovery: committing %d fast-pass insights...", len(all_insights))
+        raw_count = len(all_insights)
+        logger.info("Discovery: processing %d raw insights through quality gate + dedup...", raw_count)
         try:
             from business_brain.discovery.dedup import compute_insight_key, deduplicate_insights
 
@@ -280,7 +281,8 @@ async def run_discovery(
             except Exception:
                 pass
 
-            gated = apply_quality_gate(all_insights, profiles, reinforcement_weights=reinforcement_weights)
+            gated, gate_diag = apply_quality_gate(all_insights, profiles, reinforcement_weights=reinforcement_weights)
+            post_gate_count = len(gated)
 
             # Dedup against existing DB records (exclude dismissed —
             # dismissed insights should be re-discoverable after purge)
@@ -297,14 +299,36 @@ async def run_discovery(
                 dummy.composite_template = row[3]
                 existing_keys.add(compute_insight_key(dummy))
 
+            pre_dedup_count = len(gated)
             gated = deduplicate_insights(gated, existing_keys)
+            dedup_killed = pre_dedup_count - len(gated)
 
             for insight in gated:
                 insight.discovery_run_id = run.id
                 session.add(insight)
 
             run.insights_found = len(gated)
+
+            # Detailed pipeline diagnostics
+            tracker.record("quality_gate", count=post_gate_count, duration_ms=_elapsed_ms(t0))
             tracker.record("persist_insights", count=len(gated), duration_ms=_elapsed_ms(t0))
+
+            logger.info(
+                "Discovery pipeline: %d raw → %d after quality gate "
+                "(-%d trivial, -%d meta) → %d after dedup "
+                "(-%d duplicates, %d existing keys) → %d persisted",
+                raw_count, post_gate_count,
+                gate_diag.get("trivial_correlations_killed", 0),
+                gate_diag.get("meta_insights_suppressed", 0),
+                len(gated), dedup_killed, len(existing_keys), len(gated),
+            )
+
+            if dedup_killed > 0:
+                logger.warning(
+                    "Dedup removed %d/%d insights (%d existing non-dismissed keys in DB). "
+                    "If unexpected, check if old active insights are blocking re-discovery.",
+                    dedup_killed, pre_dedup_count, len(existing_keys),
+                )
         except Exception as exc:
             logger.exception("Insight persist failed")
             gated = []
@@ -470,7 +494,7 @@ async def run_discovery_enrich(
             except Exception:
                 pass
 
-            gated = apply_quality_gate(all_new_insights, profiles, reinforcement_weights=reinforcement_weights)
+            gated, _gate_diag = apply_quality_gate(all_new_insights, profiles, reinforcement_weights=reinforcement_weights)
 
             existing_result = await session.execute(
                 select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)

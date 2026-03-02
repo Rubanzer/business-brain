@@ -8072,9 +8072,8 @@
         btn.textContent = 'Starting...';
         await apiFetch(`${API}/discovery/trigger`, { method: 'POST' });
         toast('Scan triggered — results will appear shortly', 'info');
-        // Also fire enrichment right away (it waits for fast phase internally)
-        apiFetch(`${API}/discovery/enrich`, { method: 'POST' }).catch(() => {});
-        // Start polling for results if not already polling
+        // Enrichment is fired AFTER the fast phase completes (in _onScanComplete)
+        // — not here — to avoid race condition where enrich runs before insights exist
         _startScanPoll();
       } catch (e) {
         toast('Failed to trigger scan: ' + (e.message || 'Unknown error'), 'error');
@@ -8098,23 +8097,7 @@
           // Detect when a new run completes
           if ((data.status === 'completed' || data.status === 'failed') && data.id !== _lastKnownRunId) {
             _lastKnownRunId = data.id;
-            if (data.status === 'completed') {
-              toast(`Scan complete: ${data.insights_found} insights found`, 'success');
-              // Show diagnostics warning if passes failed
-              if (data.failed_passes > 0) {
-                const diag = data.pass_diagnostics || [];
-                const failed = diag.filter(d => d.status === 'failed');
-                const names = failed.map(d => d.pass).join(', ');
-                const hasRateLimit = failed.some(d => d.error_type === 'rate_limit');
-                let msg = `${data.failed_passes} of ${data.total_passes} passes failed: ${names}`;
-                if (hasRateLimit) msg += '\nLLM quota exceeded — consider switching provider.';
-                toast(msg, 'warning');
-              }
-              loadFeed();
-            } else {
-              toast('Discovery failed: ' + (data.error || 'Unknown error'), 'error');
-              loadFeed();
-            }
+            _onScanComplete(data);
           }
         } catch (e) { /* network blip, keep polling */ }
 
@@ -8132,20 +8115,47 @@
         if (!data || data.status === 'no_runs') return;
         if ((data.status === 'completed' || data.status === 'failed') && data.id !== _lastKnownRunId) {
           _lastKnownRunId = data.id;
-          if (data.status === 'completed') {
-            toast(`Scan complete: ${data.insights_found} insights found`, 'success');
-            if (data.failed_passes > 0) {
-              const diag = data.pass_diagnostics || [];
-              const failed = diag.filter(d => d.status === 'failed');
-              const names = failed.map(d => d.pass).join(', ');
-              toast(`${data.failed_passes} passes failed: ${names}`, 'warning');
-            }
-            loadFeed();
-          } else {
-            toast('Discovery failed: ' + (data.error || 'Unknown error'), 'error');
-          }
+          _onScanComplete(data);
         }
       } catch (e) { /* ignore */ }
+    }
+
+    function _onScanComplete(data) {
+      if (data.status === 'completed') {
+        // Build informative toast with pipeline breakdown
+        const pb = data.pipeline_breakdown;
+        let msg = `Scan complete: ${data.insights_found} insights found`;
+        if (pb && pb.raw_insights > 0) {
+          const gateFiltered = (pb.raw_insights || 0) - (pb.after_quality_gate || 0);
+          const dedupFiltered = (pb.after_quality_gate || 0) - (pb.after_dedup || 0);
+          if (gateFiltered > 0 || dedupFiltered > 0) {
+            const parts = [];
+            if (gateFiltered > 0) parts.push(`${gateFiltered} filtered`);
+            if (dedupFiltered > 0) parts.push(`${dedupFiltered} deduplicated`);
+            msg += ` (${pb.raw_insights} raw, ${parts.join(', ')})`;
+          }
+        }
+        toast(msg, 'success');
+
+        // Show diagnostics warning if passes failed
+        if (data.failed_passes > 0) {
+          const diag = data.pass_diagnostics || [];
+          const failed = diag.filter(d => d.status === 'failed');
+          const names = failed.map(d => d.pass).join(', ');
+          const hasRateLimit = failed.some(d => d.error_type === 'rate_limit');
+          let warnMsg = `${data.failed_passes} of ${data.total_passes} passes failed: ${names}`;
+          if (hasRateLimit) warnMsg += '\nLLM quota exceeded — consider switching provider.';
+          toast(warnMsg, 'warning');
+        }
+
+        loadFeed();
+
+        // Fire enrichment AFTER fast phase completes (narratives, sanctity, precomputation)
+        apiFetch(`${API}/discovery/enrich`, { method: 'POST' }).catch(() => {});
+      } else {
+        toast('Discovery failed: ' + (data.error || 'Unknown error'), 'error');
+        loadFeed();
+      }
     }
 
     // Seed _lastKnownRunId on page load so we don't re-toast old results
