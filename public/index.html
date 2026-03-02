@@ -1154,6 +1154,39 @@
     .toast.toast-warning { border-color: var(--yellow); color: var(--yellow); }
     .toast.toast-success { border-color: var(--green); color: var(--green); }
 
+    /* Discovery activity indicator — fixed bottom-right */
+    .discovery-activity {
+      position: fixed;
+      bottom: var(--space-4);
+      right: var(--space-4);
+      display: none;
+      align-items: center;
+      gap: var(--space-2);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      padding: var(--space-1p5) var(--space-3) var(--space-1p5) var(--space-2p5);
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      box-shadow: var(--shadow-md);
+      z-index: calc(var(--z-toast) - 1);
+      transition: opacity var(--transition-fast);
+      user-select: none;
+    }
+    .discovery-activity.visible { display: flex; }
+    .discovery-activity .da-spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .discovery-activity .da-phase {
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* Chat history thread */
     .chat-thread {
       margin-bottom: var(--space-4);
@@ -8063,6 +8096,21 @@
     // -----------------------------------------------------------------------
     var _scanPollTimer = null;
     var _lastKnownRunId = null;
+    var _enrichPollTimer = null;
+
+    function _showActivity(phase, detail) {
+      const el = document.getElementById('discovery-activity');
+      const phaseEl = document.getElementById('da-phase');
+      const detailEl = document.getElementById('da-detail');
+      if (!el) return;
+      phaseEl.textContent = phase;
+      detailEl.textContent = detail || '';
+      el.classList.add('visible');
+    }
+    function _hideActivity() {
+      const el = document.getElementById('discovery-activity');
+      if (el) el.classList.remove('visible');
+    }
 
     async function triggerDiscovery() {
       const btn = document.getElementById('scan-btn');
@@ -8072,11 +8120,13 @@
         btn.textContent = 'Starting...';
         await apiFetch(`${API}/discovery/trigger`, { method: 'POST' });
         toast('Scan triggered — results will appear shortly', 'info');
+        _showActivity('Scanning', '— analyzing tables');
         // Enrichment is fired AFTER the fast phase completes (in _onScanComplete)
         // — not here — to avoid race condition where enrich runs before insights exist
         _startScanPoll();
       } catch (e) {
         toast('Failed to trigger scan: ' + (e.message || 'Unknown error'), 'error');
+        _hideActivity();
       } finally {
         btn.disabled = false;
         btn.textContent = 'Scan Now';
@@ -8151,11 +8201,52 @@
         loadFeed();
 
         // Fire enrichment AFTER fast phase completes (narratives, sanctity, precomputation)
-        apiFetch(`${API}/discovery/enrich`, { method: 'POST' }).catch(() => {});
+        _showActivity('Enriching', '— narratives, quality checks');
+        apiFetch(`${API}/discovery/enrich`, { method: 'POST' })
+          .then(() => _startEnrichPoll())
+          .catch(() => _hideActivity());
       } else {
         toast('Discovery failed: ' + (data.error || 'Unknown error'), 'error');
+        _hideActivity();
         loadFeed();
       }
+    }
+
+    function _startEnrichPoll() {
+      // Poll discovery/status until enrichment passes appear in pass_diagnostics.
+      // Enrichment appends its passes (narrative_building, sanctity_check, etc.)
+      // and updates insights_found when done.
+      if (_enrichPollTimer) clearInterval(_enrichPollTimer);
+      let enrichPollCount = 0;
+      const enrichPasses = ['narrative_building', 'sanctity_check', 'precomputation', 'reinforcement_update'];
+      _enrichPollTimer = setInterval(async () => {
+        enrichPollCount++;
+        if (enrichPollCount > 24) { // 2 min max — give up
+          clearInterval(_enrichPollTimer);
+          _enrichPollTimer = null;
+          _hideActivity();
+          loadFeed();
+          return;
+        }
+        try {
+          const data = await apiFetch(`${API}/discovery/status`);
+          if (!data || !data.pass_diagnostics) return;
+          // Check if enrichment passes have landed in diagnostics
+          const passNames = data.pass_diagnostics.map(d => d.pass);
+          const hasEnrich = enrichPasses.some(p => passNames.includes(p));
+          if (hasEnrich) {
+            clearInterval(_enrichPollTimer);
+            _enrichPollTimer = null;
+            _hideActivity();
+            const enrichDiags = data.pass_diagnostics.filter(d => enrichPasses.includes(d.pass));
+            const enrichFailed = enrichDiags.filter(d => d.status === 'failed');
+            if (enrichFailed.length > 0) {
+              toast(`Enrichment: ${enrichFailed.length} passes had issues`, 'warning');
+            }
+            loadFeed(); // Reload to pick up narrative/enrichment insights
+          }
+        } catch (e) { /* keep polling */ }
+      }, 5000);
     }
 
     // Seed _lastKnownRunId on page load so we don't re-toast old results
@@ -12156,5 +12247,12 @@
     };
 
   </script>
+
+  <!-- Discovery activity indicator (fixed bottom-right) -->
+  <div class="discovery-activity" id="discovery-activity">
+    <div class="da-spinner"></div>
+    <span class="da-phase" id="da-phase">Scanning</span>
+    <span id="da-detail"></span>
+  </div>
 </body>
 </html>
