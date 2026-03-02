@@ -1746,6 +1746,7 @@
     /* v3: Feed filters */
     .feed-filters {
       display: flex;
+      flex-wrap: wrap;
       gap: var(--space-1p5);
       margin-bottom: var(--space-3);
     }
@@ -1758,8 +1759,11 @@
       padding: var(--space-1p5) var(--space-3);
       border-radius: 20px;
       cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s;
     }
-    .feed-filter.active { border-color: var(--accent); color: var(--accent); }
+    .feed-filter:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+    .feed-filter.active { border-color: var(--accent); color: var(--accent); background: var(--accent-muted, rgba(37,99,235,0.06)); }
 
     /* v3: Threshold cards */
     .threshold-card {
@@ -2877,15 +2881,14 @@
       <div id="daily-briefing-panel" style="display:none;margin-bottom:0.75rem;"></div>
       <div id="dashboard-kpis" style="display:none;margin-bottom:0.75rem;"></div>
       <div id="recommendations-bar" style="display:none;margin-bottom:0.5rem;"></div>
-      <div class="feed-filters">
-        <button class="feed-filter active" onclick="filterFeed('all', this)">All</button>
-        <button class="feed-filter" onclick="filterFeed('alert', this)">Alerts</button>
-        <button class="feed-filter" onclick="filterFeed('insight', this)">Insights</button>
-        <button class="feed-filter" onclick="filterFeed('sanctity', this)">Data Issues</button>
-        <span style="border-left:1px solid var(--border);height:16px;margin:0 4px;"></span>
-        <button class="feed-filter" onclick="filterFeedByStatus('new', this)">New</button>
-        <button class="feed-filter" onclick="filterFeedByStatus('seen', this)">Seen</button>
-        <button class="feed-filter" onclick="filterFeedByStatus('dismissed', this)">Dismissed</button>
+      <div class="feed-filters" id="feed-type-filters">
+        <button class="feed-filter active" onclick="filterFeedByType('all', this)">All</button>
+      </div>
+      <div class="feed-filters" style="margin-top:calc(-1 * var(--space-2));">
+        <button class="feed-filter feed-status-filter active" onclick="filterFeedByStatus('active', this)">Active</button>
+        <button class="feed-filter feed-status-filter" onclick="filterFeedByStatus('new', this)">New</button>
+        <button class="feed-filter feed-status-filter" onclick="filterFeedByStatus('seen', this)">Seen</button>
+        <button class="feed-filter feed-status-filter" onclick="filterFeedByStatus('dismissed', this)">Dismissed</button>
       </div>
       <div id="feed-body">
         <div class="feed-empty" id="feed-empty">
@@ -4448,8 +4451,29 @@
     let _deployInsightId = null;
     let _deployInsightData = null;
     let _lastDeployedReportId = null;
-    let currentFeedFilter = 'all';
+    let currentFeedTypeFilter = 'all';
     let _currentStatusFilter = null;
+
+    // Friendly names for insight types — used in filter pills and card badges
+    const INSIGHT_TYPE_LABELS = {
+      cross_event: 'Cross-Table Patterns',
+      anomaly: 'Anomalies',
+      trend: 'Trends',
+      correlation: 'Correlations',
+      entity_performance: 'Performance Gaps',
+      seasonality: 'Seasonal Patterns',
+      composite: 'Combined Insights',
+      data_quality: 'Data Quality',
+      schema_change: 'Schema Changes',
+      domain_analysis: 'Deep Analysis',
+      dynamic_analysis: 'Analysis',
+      story: 'Stories',
+      analysis: 'Analysis',
+    };
+
+    function friendlyType(raw) {
+      return INSIGHT_TYPE_LABELS[raw] || (raw || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
     let pendingAlertRule = null;
     let tutorialStep = 0;
     let tutorialActive = false;
@@ -7594,8 +7618,12 @@
 
       if (!insights.length) {
         body.innerHTML = `<div class="feed-empty">${emptyMessage || 'No insights found.'}</div>`;
+        _buildTypeFilterPills(insights);
         return;
       }
+
+      // Build dynamic type filter pills from loaded data
+      _buildTypeFilterPills(insights);
 
       body.innerHTML = insights.map((ins, i) => {
         const sevClass = ins.insight_type === 'story' ? 'type-story' : `severity-${ins.severity}`;
@@ -7604,20 +7632,11 @@
           : ins.insight_type === 'story' ? 'badge-accent'
           : 'badge-green';
 
-        // Determine card type for feed filtering
-        const cardType = ins.insight_type === 'anomaly' ? 'sanctity'
-          : ins.severity === 'critical' ? 'alert'
-          : ins.insight_type === 'story' ? 'insight'
-          : ins.insight_type === 'correlation' ? 'insight'
-          : ins.insight_type === 'composite' ? 'insight'
-          : ins.insight_type === 'cross_event' ? 'insight'
-          : ins.insight_type === 'trend' ? 'alert'
-          : 'insight';
-        let html = `<div class="feed-card ${sevClass}" data-type="${cardType}" data-status="${ins.status || 'new'}">`;
+        let html = `<div class="feed-card ${sevClass}" data-insight-type="${esc(ins.insight_type || '')}" data-status="${ins.status || 'new'}">`;
         html += `<div class="feed-card-title">${esc(ins.title)}</div>`;
         html += `<div class="feed-card-desc">${esc(ins.description)}</div>`;
         html += `<div class="feed-card-meta">`;
-        html += `<span class="badge ${sevBadge}">${esc(ins.insight_type)}</span>`;
+        html += `<span class="badge ${sevBadge}">${esc(friendlyType(ins.insight_type))}</span>`;
         html += `<span class="badge badge-accent">Score: ${ins.impact_score}</span>`;
         if (ins.source_tables?.length) {
           ins.source_tables.forEach(t => {
@@ -7660,7 +7679,36 @@
       }).join('');
 
       // Apply current type filter after rendering
-      if (currentFeedFilter !== 'all') filterFeed(currentFeedFilter);
+      if (currentFeedTypeFilter !== 'all') _applyTypeFilter(currentFeedTypeFilter);
+    }
+
+    function _buildTypeFilterPills(insights) {
+      const container = document.getElementById('feed-type-filters');
+      if (!container) return;
+
+      // Count insights by type
+      const typeCounts = {};
+      for (const ins of insights) {
+        const t = ins.insight_type || 'unknown';
+        typeCounts[t] = (typeCounts[t] || 0) + 1;
+      }
+
+      // Build pills: "All" first, then each type with count
+      let html = `<button class="feed-filter ${currentFeedTypeFilter === 'all' ? 'active' : ''}" onclick="filterFeedByType('all', this)">All (${insights.length})</button>`;
+      const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+      for (const [typ, count] of sortedTypes) {
+        const isActive = currentFeedTypeFilter === typ ? 'active' : '';
+        html += `<button class="feed-filter ${isActive}" onclick="filterFeedByType('${esc(typ)}', this)">${esc(friendlyType(typ))} (${count})</button>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function _applyTypeFilter(typeFilter) {
+      const cards = document.querySelectorAll('.feed-card');
+      cards.forEach(card => {
+        if (typeFilter === 'all') { card.style.display = ''; }
+        else { card.style.display = card.dataset.insightType === typeFilter ? '' : 'none'; }
+      });
     }
 
     async function loadFeed() {
@@ -8519,49 +8567,49 @@
     }
 
     // -----------------------------------------------------------------------
-    // v3: Feed Filters
+    // v3: Feed Filters — Type + Status
     // -----------------------------------------------------------------------
-    function filterFeed(filter, btn) {
-      currentFeedFilter = filter;
-      document.querySelectorAll('.feed-filter').forEach(f => f.classList.remove('active'));
+    function filterFeedByType(typeFilter, btn) {
+      currentFeedTypeFilter = typeFilter;
+
+      // Update type filter button states
+      document.querySelectorAll('#feed-type-filters .feed-filter').forEach(f => f.classList.remove('active'));
       if (btn) btn.classList.add('active');
 
-      // If "All" type filter is clicked and we were in a status filter, re-fetch default feed
-      if (filter === 'all' && _currentStatusFilter) {
-        _currentStatusFilter = null;
-        loadFeed();
-        return;
-      }
-      _currentStatusFilter = null;
-
-      // Client-side type filter on already-loaded cards
-      const cards = document.querySelectorAll('.feed-card');
-      cards.forEach(card => {
-        const type = card.dataset.type || '';
-        if (filter === 'all') { card.style.display = ''; }
-        else if (filter === 'alert') { card.style.display = type === 'alert' ? '' : 'none'; }
-        else if (filter === 'insight') { card.style.display = (type !== 'alert' && type !== 'sanctity') ? '' : 'none'; }
-        else if (filter === 'sanctity') { card.style.display = type === 'sanctity' ? '' : 'none'; }
-      });
+      // Re-fetch from server with type param (server returns all matching)
+      _reloadFeedWithFilters();
     }
 
     async function filterFeedByStatus(status, btn) {
-      document.querySelectorAll('.feed-filter').forEach(f => f.classList.remove('active'));
+      // Update status filter button states
+      document.querySelectorAll('.feed-status-filter').forEach(f => f.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      _currentStatusFilter = status;
+      _currentStatusFilter = status === 'active' ? null : status;
 
+      _reloadFeedWithFilters();
+    }
+
+    async function _reloadFeedWithFilters() {
       const body = document.getElementById('feed-body');
       body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading...</div>';
 
       try {
-        const insights = await apiFetch(`${API}/feed?status=${encodeURIComponent(status)}`);
-        const emptyMsg = status === 'dismissed'
+        let url = `${API}/feed`;
+        const params = [];
+        if (_currentStatusFilter) params.push(`status=${encodeURIComponent(_currentStatusFilter)}`);
+        if (currentFeedTypeFilter && currentFeedTypeFilter !== 'all') params.push(`insight_type=${encodeURIComponent(currentFeedTypeFilter)}`);
+        if (params.length) url += '?' + params.join('&');
+
+        const insights = await apiFetch(url);
+        const emptyMsg = _currentStatusFilter === 'dismissed'
           ? 'No dismissed insights.'
-          : `No ${status} insights found.`;
+          : _currentStatusFilter
+          ? `No ${_currentStatusFilter} insights found.`
+          : 'No insights discovered yet. Upload data and click "Scan Now" to discover insights.';
         renderFeedCards(insights, emptyMsg);
 
         // Show "Clear Dismissed" bar when viewing dismissed tab with items
-        if (status === 'dismissed' && insights.length > 0) {
+        if (_currentStatusFilter === 'dismissed' && insights.length > 0) {
           const bar = document.createElement('div');
           bar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:var(--space-2) var(--space-3);margin-bottom:var(--space-2);background:var(--surface-sunken);border-radius:var(--radius);font-size:var(--text-sm);color:var(--text-secondary);';
           bar.innerHTML = `<span>${insights.length} dismissed insight${insights.length !== 1 ? 's' : ''}</span>`
@@ -8578,7 +8626,7 @@
         const res = await apiFetch(`${API}/feed/purge-dismissed`, { method: 'DELETE' });
         toast(`Permanently deleted ${res.purged || 0} dismissed insights`, 'success');
         // Refresh — back to main feed
-        filterFeedByStatus('dismissed', document.querySelector('.feed-filter:last-child'));
+        filterFeedByStatus('dismissed', document.querySelector('.feed-status-filter:last-child'));
       }, { loadingText: 'Deleting\u2026', errorPrefix: 'Failed to purge' });
     }
 
@@ -10850,7 +10898,7 @@
         // Click to go to feed filtered by data issues
         el.onclick = () => {
           document.querySelector('[data-panel="feed"]').click();
-          setTimeout(() => filterFeed('sanctity'), 200);
+          setTimeout(() => filterFeedByType('anomaly', null), 200);
         };
       } catch {
         el.className = 'data-health-global';

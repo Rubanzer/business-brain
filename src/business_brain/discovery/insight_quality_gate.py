@@ -316,36 +316,40 @@ def _apply_business_scoring(insight: Insight, reinforcement_weights=None) -> Non
     score = min(score, 30)  # Cap at 30
 
     # --- Novelty (0-25) ---
+    # Balanced scoring: all insight types should have fair representation.
+    # Single-table insights (anomaly, entity, trend) are often MORE actionable
+    # than cross-table correlations — don't penalize them for being single-table.
     novelty = 0
     insight_type = insight.insight_type or ""
 
-    # Cross-event and narrative insights are inherently more novel
     if insight_type == "cross_event":
-        novelty += 20
+        novelty += 15  # Cross-table is interesting but often noisy
     elif insight_type == "story":
         novelty += 22
     elif insight_type == "composite":
         novelty += 18
+    elif insight_type == "entity_performance":
+        novelty += 18  # Highly actionable: "who's underperforming"
     elif insight_type == "anomaly":
         severity = insight.severity or "info"
         if severity == "critical":
-            novelty += 20
+            novelty += 22
         elif severity == "warning":
-            novelty += 15
+            novelty += 16
         else:
-            novelty += 8
+            novelty += 10
     elif insight_type == "correlation":
-        novelty += 15  # Correlations are novel for non-technical plant owners
+        novelty += 15
     elif insight_type == "seasonality":
-        novelty += 12
+        novelty += 14
     elif insight_type == "trend":
-        novelty += 10
+        novelty += 13
     elif insight_type == "schema_change":
         novelty += 15
     elif insight_type == "data_freshness":
         novelty += 12
     else:
-        novelty += 5
+        novelty += 8
 
     # Reinforcement adjustment: modulate novelty by learned multiplier
     if reinforcement_weights is not None:
@@ -415,12 +419,34 @@ def _apply_business_scoring(insight: Insight, reinforcement_weights=None) -> Non
         elif abs(pct_diff) >= 10:
             magnitude += 5
 
+    # For entity performance: use the gap percentage
+    gap_pct = evidence.get("gap_pct")
+    if gap_pct is not None:
+        if abs(gap_pct) >= 40:
+            magnitude += 15
+        elif abs(gap_pct) >= 25:
+            magnitude += 10
+        elif abs(gap_pct) >= 15:
+            magnitude += 7
+
+    # For trends: use the percentage change
+    pct_change = evidence.get("pct_change")
+    if pct_change is not None:
+        if abs(pct_change) >= 30:
+            magnitude += 15
+        elif abs(pct_change) >= 20:
+            magnitude += 10
+        elif abs(pct_change) >= 10:
+            magnitude += 5
+
     score += min(magnitude, 15)
 
     # --- Cross-table bonus (0-10) ---
+    # Reduced from 10 to 5 — cross-table is nice but shouldn't
+    # overwhelm actionable single-table findings
     source_tables = insight.source_tables or []
     if len(source_tables) > 1:
-        score += 10
+        score += 5
     elif len(source_tables) == 1:
         score += 0
 
@@ -528,5 +554,14 @@ def _generate_so_what(insight: Insight, evidence: dict) -> str:
 
     if insight_type == "seasonality":
         return "Understanding this pattern can help optimize scheduling, staffing, and resource allocation."
+
+    if insight_type == "entity_performance":
+        gap_pct = evidence.get("gap_pct")
+        if gap_pct and abs(gap_pct) >= 25:
+            return "This performance gap represents a concrete opportunity — closing it could significantly impact your bottom line."
+        return "Comparing entity performance reveals where to focus improvement efforts for maximum impact."
+
+    if insight_type == "trend":
+        return "Trends that persist should be investigated — early action can amplify gains or prevent losses."
 
     return ""

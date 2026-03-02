@@ -47,13 +47,14 @@ class SaveToFeedRequest(BaseModel):
 @router.get("/feed")
 async def get_feed(
     status: Optional[str] = None,
+    insight_type: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     """Get ranked insight feed, filtered by focus scope if active."""
     from business_brain.discovery.feed_store import get_feed as _get_feed
 
     try:
-        insights = await _get_feed(session, status=status)
+        insights = await _get_feed(session, status=status, insight_type=insight_type)
 
         focus_tables = await get_focus_tables(session)
         if focus_tables:

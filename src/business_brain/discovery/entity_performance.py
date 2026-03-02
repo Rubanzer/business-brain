@@ -17,9 +17,13 @@ Produces insights like:
 from __future__ import annotations
 
 import logging
+import re
 import statistics
 import uuid
 from collections import defaultdict
+
+from sqlalchemy import text as sql_text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from business_brain.db.discovery_models import Insight, TableProfile
 
@@ -115,13 +119,15 @@ def _compare_entities(
     cat_samples = cat_samples[:n]
     num_samples = num_samples[:n]
 
-    # Parse numeric values
+    # Parse numeric values — skip pairs where either is None (row-aligned null handling)
     entity_values: dict[str, list[float]] = defaultdict(list)
     for cat_val, num_val in zip(cat_samples, num_samples):
+        if cat_val is None or num_val is None:
+            continue
         try:
             v = float(str(num_val).replace(",", ""))
             entity = str(cat_val).strip()
-            if entity:
+            if entity and entity != "None":
                 entity_values[entity].append(v)
         except (ValueError, TypeError):
             continue
@@ -185,17 +191,19 @@ def _compare_entities(
     is_currency = num_info.get("semantic_type") == "numeric_currency"
     unit = "₹" if is_currency else ""
 
+    # Humanize table name (strip numeric prefix)
+    import re as _re
+    h_table = _re.sub(r"^\d+[_\s]*", "", profile.table_name).replace("_", " ").title()
+    h_metric = num_col.replace("_", " ").title()
+
     title = (
-        f"{worst['entity']} {metric_label} {gap_pct:.0f}% below {best['entity']} "
-        f"in {profile.table_name}"
+        f"{worst['entity']} {metric_label} is {gap_pct:.0f}% below {best['entity']}"
     )
     description = (
-        f"{entity_label} performance gap on {num_col}: "
-        f"Best: {best['entity']} at {unit}{best['mean']:,.1f}, "
-        f"Worst: {worst['entity']} at {unit}{worst['mean']:,.1f} "
-        f"({gap_pct:.0f}% gap). "
-        f"Group average: {unit}{overall_mean:,.1f}. "
-        f"Full ranking: {ranking_str}."
+        f"{entity_label} {worst['entity']} averages {unit}{worst['mean']:,.1f} on {h_metric}, "
+        f"which is {gap_pct:.0f}% below {best['entity']} at {unit}{best['mean']:,.1f}. "
+        f"The overall average is {unit}{overall_mean:,.1f}. "
+        f"Ranking: {ranking_str}."
     )
 
     return Insight(
@@ -241,9 +249,9 @@ def _compare_entities(
             ),
         },
         suggested_actions=[
-            f"Investigate why {worst['entity']} is {gap_pct:.0f}% below {best['entity']} on {num_col}",
-            f"Replicate {best['entity']} practices to bring {worst['entity']} up to average ({unit}{overall_mean:,.0f})",
-            f"Run a detailed comparison of {best['entity']} vs {worst['entity']} across all metrics",
+            f"Investigate why {worst['entity']} is {gap_pct:.0f}% below {best['entity']} on {h_metric}",
+            f"Look at what {best['entity']} does differently and replicate those practices",
+            f"Compare {best['entity']} vs {worst['entity']} across all available metrics",
         ],
     )
 
@@ -321,3 +329,207 @@ def _infer_metric_label(col_name: str, info: dict) -> str:
         if keyword in col_lower:
             return label
     return col_name.replace("_", " ").lower()
+
+
+# ---------------------------------------------------------------------------
+# SQL-backed full-data entity performance (async, uses real GROUP BY)
+# ---------------------------------------------------------------------------
+
+def _humanize_table(name: str) -> str:
+    """Convert table name to human-readable form."""
+    cleaned = re.sub(r"^\d+[_\s]*", "", name)
+    return cleaned.replace("_", " ").title() if cleaned else name.replace("_", " ").title()
+
+
+def _safe(name: str) -> str:
+    """Strip non-alphanumeric/underscore chars for SQL safety."""
+    return re.sub(r"[^a-zA-Z0-9_]", "", name)
+
+
+async def discover_entity_performance_sql(
+    session: AsyncSession,
+    profiles: list[TableProfile],
+) -> list[Insight]:
+    """SQL-backed entity performance — runs GROUP BY on full data.
+
+    This is the *accurate* version: instead of estimating from 100-row samples,
+    it runs ``SELECT cat_col, AVG(num_col), COUNT(*) ... GROUP BY cat_col``
+    against the actual database for every viable (categorical × numeric) pair.
+    """
+    insights: list[Insight] = []
+
+    for profile in profiles:
+        try:
+            cls = profile.column_classification
+            if not cls or "columns" not in cls:
+                continue
+
+            cols = cls["columns"]
+            row_count = profile.row_count or 0
+            if row_count < 10:
+                continue
+
+            cat_cols = [
+                (c, info) for c, info in cols.items()
+                if info.get("semantic_type") == "categorical"
+                and 2 <= info.get("cardinality", 0) <= 50
+            ]
+            num_cols = [
+                (c, info) for c, info in cols.items()
+                if info.get("semantic_type") in ("numeric_metric", "numeric_currency", "numeric_percentage")
+                and info.get("stats") and info["stats"].get("stdev", 0) > 0
+            ]
+
+            if not cat_cols or not num_cols:
+                continue
+
+            for cat_col, cat_info in cat_cols:
+                for num_col, num_info in num_cols:
+                    insight = await _sql_compare_entities(
+                        session, profile, cat_col, cat_info, num_col, num_info,
+                    )
+                    if insight:
+                        insights.append(insight)
+        except Exception:
+            logger.exception("SQL entity performance scan failed for %s", profile.table_name)
+
+    return insights
+
+
+async def _sql_compare_entities(
+    session: AsyncSession,
+    profile: TableProfile,
+    cat_col: str,
+    cat_info: dict,
+    num_col: str,
+    num_info: dict,
+) -> Insight | None:
+    """Run actual GROUP BY on full data for one (categorical × numeric) pair."""
+    s_table = _safe(profile.table_name)
+    s_cat = _safe(cat_col)
+    s_num = _safe(num_col)
+
+    query = f"""
+        SELECT "{s_cat}" AS entity,
+               AVG("{s_num}") AS avg_val,
+               COUNT(*) AS cnt,
+               SUM("{s_num}") AS total
+        FROM "{s_table}"
+        WHERE "{s_cat}" IS NOT NULL AND "{s_num}" IS NOT NULL
+        GROUP BY "{s_cat}"
+        HAVING COUNT(*) >= 3
+        ORDER BY avg_val DESC
+    """
+
+    try:
+        result = await session.execute(sql_text(query))
+        rows = [dict(r._mapping) for r in result.fetchall()]
+    except Exception:
+        logger.debug("SQL entity performance query failed for %s.%s", s_table, s_cat)
+        return None
+
+    if len(rows) < 2:
+        return None
+
+    # Compute overall mean
+    all_total = sum(r["total"] for r in rows if r["total"] is not None)
+    all_count = sum(r["cnt"] for r in rows if r["cnt"])
+    if all_count == 0:
+        return None
+    overall_mean = all_total / all_count
+
+    if overall_mean == 0:
+        return None
+
+    best = rows[0]
+    worst = rows[-1]
+    best_avg = float(best["avg_val"])
+    worst_avg = float(worst["avg_val"])
+
+    gap_pct = ((best_avg - worst_avg) / overall_mean) * 100
+
+    if gap_pct < 15:
+        return None
+
+    # Build ranking
+    entity_stats = []
+    for r in rows:
+        avg = float(r["avg_val"])
+        vs_avg = ((avg - overall_mean) / overall_mean) * 100
+        entity_stats.append({
+            "entity": str(r["entity"]),
+            "mean": round(avg, 2),
+            "count": r["cnt"],
+            "vs_avg_pct": round(vs_avg, 1),
+        })
+
+    ranking_parts = []
+    for i, es in enumerate(entity_stats):
+        sign = "+" if es["vs_avg_pct"] > 0 else ""
+        ranking_parts.append(
+            f"{i+1}. {es['entity']}: {es['mean']:,.1f} ({sign}{es['vs_avg_pct']:.0f}% vs avg)"
+        )
+
+    entity_label = _infer_entity_label(cat_col)
+    metric_label = _infer_metric_label(num_col, num_info)
+    severity = "warning" if gap_pct > 30 else "info"
+    impact = min(int(gap_pct / 2) + 35, 80)
+
+    is_currency = num_info.get("semantic_type") == "numeric_currency"
+    unit = "₹" if is_currency else ""
+
+    h_table = _humanize_table(profile.table_name)
+    h_metric = num_col.replace("_", " ").title()
+
+    title = (
+        f"{worst['entity']} {metric_label} is {gap_pct:.0f}% below {best['entity']}"
+    )
+    description = (
+        f"{entity_label} {worst['entity']} averages {unit}{worst_avg:,.1f} on {h_metric}, "
+        f"which is {gap_pct:.0f}% below {best['entity']} at {unit}{best_avg:,.1f}. "
+        f"The overall average across all {len(rows)} entities is {unit}{overall_mean:,.1f}. "
+        f"Based on all {all_count:,} rows of data. "
+        f"Ranking: {'; '.join(ranking_parts)}."
+    )
+
+    return Insight(
+        id=str(uuid.uuid4()),
+        insight_type="entity_performance",
+        severity=severity,
+        impact_score=impact,
+        title=title,
+        description=description,
+        source_tables=[profile.table_name],
+        source_columns=[cat_col, num_col],
+        evidence={
+            "entity_column": cat_col,
+            "metric_column": num_col,
+            "best_entity": str(best["entity"]),
+            "best_value": round(best_avg, 2),
+            "worst_entity": str(worst["entity"]),
+            "worst_value": round(worst_avg, 2),
+            "overall_mean": round(overall_mean, 2),
+            "gap_pct": round(gap_pct, 1),
+            "entity_count": len(entity_stats),
+            "total_rows": all_count,
+            "full_ranking": entity_stats,
+            "chart_spec": {
+                "type": "bar",
+                "x": cat_col,
+                "y": [num_col],
+                "title": f"{num_col} by {cat_col}",
+                "highlight": {"worst": str(worst["entity"]), "best": str(best["entity"])},
+            },
+            "query": (
+                f'SELECT "{cat_col}", AVG("{num_col}") as avg_{num_col}, '
+                f'COUNT(*) as count, SUM("{num_col}") as total '
+                f'FROM "{profile.table_name}" '
+                f'GROUP BY "{cat_col}" ORDER BY avg_{num_col} DESC'
+            ),
+        },
+        suggested_actions=[
+            f"Investigate why {worst['entity']} is {gap_pct:.0f}% below {best['entity']} on {h_metric}",
+            f"Look at what {best['entity']} does differently and replicate those practices",
+            f"Compare {best['entity']} vs {worst['entity']} across all available metrics",
+        ],
+    )

@@ -37,21 +37,28 @@ class TestFindEventColumns:
         assert _find_event_columns(prof) == ["shift"]
 
     def test_categorical_high_cardinality_excluded(self):
-        """Cardinality > 10 excludes the column."""
+        """Cardinality > 6 excludes the column to reduce noise."""
         prof = _Prof("t", {
             "product_name": {"semantic_type": "categorical", "cardinality": 50},
         })
         assert _find_event_columns(prof) == []
 
-    def test_categorical_boundary_10_included(self):
+    def test_categorical_boundary_6_included(self):
         prof = _Prof("t", {
-            "category": {"semantic_type": "categorical", "cardinality": 10},
+            "category": {"semantic_type": "categorical", "cardinality": 6},
         })
         assert _find_event_columns(prof) == ["category"]
 
-    def test_categorical_boundary_11_excluded(self):
+    def test_categorical_boundary_7_excluded(self):
         prof = _Prof("t", {
-            "category": {"semantic_type": "categorical", "cardinality": 11},
+            "category": {"semantic_type": "categorical", "cardinality": 7},
+        })
+        assert _find_event_columns(prof) == []
+
+    def test_batch_id_columns_excluded(self):
+        """Batch/ID-like column names are excluded even with low cardinality."""
+        prof = _Prof("t", {
+            "batch_number": {"semantic_type": "categorical", "cardinality": 5},
         })
         assert _find_event_columns(prof) == []
 

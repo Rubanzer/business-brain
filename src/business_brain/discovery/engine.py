@@ -206,17 +206,49 @@ async def run_discovery(
             tracker.record("domain_analysis", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
         # 5e. Entity performance comparison (operational gaps: who's underperforming)
+        # Uses SQL GROUP BY on full data for accuracy, falls back to sample-based
         t0 = time.monotonic()
-        logger.info("Discovery: comparing entity performance...")
+        logger.info("Discovery: comparing entity performance (SQL-backed)...")
+        entity_insights = []
         try:
-            from business_brain.discovery.entity_performance import discover_entity_performance
-            entity_insights = discover_entity_performance(profiles)
-            logger.info("Discovery: found %d entity performance insights", len(entity_insights))
-            tracker.record("entity_performance", count=len(entity_insights), duration_ms=_elapsed_ms(t0))
+            from business_brain.discovery.entity_performance import discover_entity_performance_sql
+            async with session.begin_nested():
+                entity_insights = await discover_entity_performance_sql(session, profiles)
+            logger.info("Discovery: found %d entity performance insights (SQL)", len(entity_insights))
+            tracker.record("entity_performance_sql", count=len(entity_insights), duration_ms=_elapsed_ms(t0))
         except Exception as exc:
-            logger.exception("Entity performance comparison failed, continuing")
-            entity_insights = []
-            tracker.record("entity_performance", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+            logger.exception("SQL entity performance failed, falling back to sample-based")
+            tracker.record("entity_performance_sql", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+        # Fallback: sample-based entity performance if SQL produced nothing
+        if not entity_insights:
+            t0 = time.monotonic()
+            try:
+                from business_brain.discovery.entity_performance import discover_entity_performance
+                entity_insights = discover_entity_performance(profiles)
+                logger.info("Discovery: found %d entity performance insights (sample)", len(entity_insights))
+                tracker.record("entity_performance_sample", count=len(entity_insights), duration_ms=_elapsed_ms(t0))
+            except Exception as exc:
+                logger.exception("Entity performance comparison failed, continuing")
+                entity_insights = []
+                tracker.record("entity_performance_sample", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+        # 5f. SQL-backed correlation (full data CORR()), falls back to sample-based
+        sql_corr_insights: list = []
+        t0 = time.monotonic()
+        logger.info("Discovery: computing correlations (SQL-backed)...")
+        try:
+            from business_brain.discovery.correlation_discoverer import discover_correlations_sql
+            async with session.begin_nested():
+                sql_corr_insights = await discover_correlations_sql(session, profiles)
+            logger.info("Discovery: found %d correlation insights (SQL)", len(sql_corr_insights))
+            tracker.record("correlation_sql", count=len(sql_corr_insights), duration_ms=_elapsed_ms(t0))
+            # If SQL found correlations, use those instead of sample-based
+            if sql_corr_insights:
+                correlation_insights = sql_corr_insights
+        except Exception as exc:
+            logger.exception("SQL correlation discovery failed, using sample-based results")
+            tracker.record("correlation_sql", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
         # 6. Combine all fast-pass insights
         all_insights = (
