@@ -122,10 +122,11 @@ async def retrieve_relevant_tables(
                 "score": score,
             }
 
-    # 3. Aggressively expand via discovered relationships
-    #    For EVERY matched table, pull in ALL related tables — even if they
-    #    scored 0 on keywords.  This is critical for multi-table JOIN queries
-    #    (e.g. "which customer paid on time?" needs both sales + bank_statements).
+    # 3. Expand via value-validated relationships only
+    #    For matched tables, pull in related tables — but ONLY when the
+    #    relationship has verified value overlap.  Unverified name matches
+    #    (e.g. same column name but different value domains) are excluded
+    #    by _get_relationships() which filters at confidence >= 0.6.
     if results:
         try:
             relationships = await _get_relationships(session)
@@ -133,7 +134,10 @@ async def retrieve_relevant_tables(
             seed_tables = set(results.keys())
             for rel in relationships:
                 confidence = rel.get("confidence", 0.5)
-                # table_a matched → unconditionally include table_b
+                # Only expand via high-confidence relationships (≥0.7 = value-validated)
+                if confidence < 0.7:
+                    continue
+                # table_a matched → include table_b
                 if rel["table_a"] in seed_tables and rel["table_b"] not in results:
                     entry = _find_entry(all_entries, rel["table_b"])
                     if entry:
@@ -143,7 +147,7 @@ async def retrieve_relevant_tables(
                             "columns": entry.columns_metadata,
                             "score": 2.0 * confidence,
                         }
-                # table_b matched → unconditionally include table_a
+                # table_b matched → include table_a
                 if rel["table_b"] in seed_tables and rel["table_a"] not in results:
                     entry = _find_entry(all_entries, rel["table_a"])
                     if entry:
@@ -180,17 +184,24 @@ async def retrieve_relevant_tables(
     except Exception:
         logger.debug("Column profile enrichment failed, continuing without it")
 
-    # Enrich tables with relationship info
+    # Enrich tables with relationship info (only value-validated joins)
     try:
         relationships = await _get_relationships(session)
         ranked_names = {r["table_name"] for r in ranked}
         for table_info in ranked:
             related = []
             for rel in relationships:
+                conf = rel.get("confidence", 0)
+                overlap = rel.get("overlap_count", 0)
+                # Label by confidence: high (≥0.7) = Verified, medium (0.6-0.7) = Likely
+                label = "Verified JOIN" if conf >= 0.7 else "Likely JOIN"
+                join_str = f"{rel['table_a']}.{rel['column_a']} → {rel['table_b']}.{rel['column_b']}"
+                detail = f"[{label}, {conf:.0%} overlap, {overlap} common values]"
+
                 if rel["table_a"] == table_info["table_name"] and rel["table_b"] in ranked_names:
-                    related.append(f"{rel['table_a']}.{rel['column_a']} → {rel['table_b']}.{rel['column_b']}")
+                    related.append(f"{join_str} {detail}")
                 elif rel["table_b"] == table_info["table_name"] and rel["table_a"] in ranked_names:
-                    related.append(f"{rel['table_a']}.{rel['column_a']} → {rel['table_b']}.{rel['column_b']}")
+                    related.append(f"{join_str} {detail}")
             if related:
                 table_info["relationships"] = related
     except Exception:
@@ -248,12 +259,19 @@ def _find_entry(entries: list, table_name: str):
 
 
 async def _get_relationships(session: AsyncSession) -> list[dict]:
-    """Fetch discovered relationships from the database."""
+    """Fetch discovered relationships from the database.
+
+    Only returns value-validated relationships (confidence >= 0.6).
+    Unverified name matches (confidence=0.4) are excluded — they
+    produce NULL JOINs because columns can share names but have
+    completely different value domains.
+    """
     try:
         from business_brain.db.discovery_models import DiscoveredRelationship
         result = await session.execute(
             select(DiscoveredRelationship).where(
-                DiscoveredRelationship.confidence >= 0.4
+                DiscoveredRelationship.confidence >= 0.6,
+                DiscoveredRelationship.relationship_type != "name_match_unverified",
             ).order_by(DiscoveredRelationship.confidence.desc())
             .limit(80)
         )
@@ -266,6 +284,7 @@ async def _get_relationships(session: AsyncSession) -> list[dict]:
                 "column_b": r.column_b,
                 "relationship_type": r.relationship_type,
                 "confidence": r.confidence,
+                "overlap_count": r.overlap_count,
             }
             for r in rels
         ]

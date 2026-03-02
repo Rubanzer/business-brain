@@ -152,34 +152,78 @@ def _find_between(
     prof_b: TableProfile,
     value_cache: dict[tuple[str, str], set[str]],
 ) -> list[DiscoveredRelationship]:
-    """Find relationships between two specific tables (no DB queries)."""
+    """Find relationships between two specific tables (no DB queries).
+
+    All methods now require value overlap validation when values are available.
+    A column name match alone is NOT sufficient — columns with the same name
+    in different tables can contain completely different value domains.
+    """
     results: list[DiscoveredRelationship] = []
     seen_pairs: set[tuple[str, str, str, str]] = set()
 
     cls_a = (prof_a.column_classification or {}).get("columns", {})
     cls_b = (prof_b.column_classification or {}).get("columns", {})
 
-    # ------ Method A: Name matching (fast, pure string comparison) ------
+    # ------ Method A: Name matching + value validation ------
+    # Name match is a HINT, not proof. Validate with value overlap when
+    # values are available. Without validation, use low confidence.
     for col_a in cls_a:
         for col_b in cls_b:
             pair_key = (prof_a.table_name, col_a, prof_b.table_name, col_b)
             if pair_key in seen_pairs:
                 continue
-            if _names_match(col_a, col_b, prof_a.table_name, prof_b.table_name):
+            if not _names_match(col_a, col_b, prof_a.table_name, prof_b.table_name):
+                continue
+
+            # Validate name match with actual value overlap
+            vals_a = value_cache.get((prof_a.table_name, col_a))
+            vals_b = value_cache.get((prof_b.table_name, col_b))
+
+            if vals_a and vals_b:
+                overlap = vals_a & vals_b
+                overlap_count = len(overlap)
+                min_card = min(len(vals_a), len(vals_b))
+                overlap_pct = overlap_count / min_card if min_card > 0 else 0
+
+                if overlap_pct >= 0.5 and overlap_count >= 3:
+                    # Name match + strong value overlap → high confidence
+                    results.append(
+                        DiscoveredRelationship(
+                            table_a=prof_a.table_name,
+                            column_a=col_a,
+                            table_b=prof_b.table_name,
+                            column_b=col_b,
+                            relationship_type="join_key",
+                            confidence=round(min(0.95, 0.7 + overlap_pct * 0.25), 3),
+                            overlap_count=overlap_count,
+                        )
+                    )
+                    seen_pairs.add(pair_key)
+                else:
+                    # Name match but values DON'T overlap → reject
+                    logger.debug(
+                        "Name match %s.%s ↔ %s.%s rejected: overlap=%d/%d (%.0f%%)",
+                        prof_a.table_name, col_a, prof_b.table_name, col_b,
+                        overlap_count, min_card, overlap_pct * 100,
+                    )
+            else:
+                # No values to validate — mark as unverified with low confidence
+                # so it doesn't get used for SQL JOINs but is still visible
                 results.append(
                     DiscoveredRelationship(
                         table_a=prof_a.table_name,
                         column_a=col_a,
                         table_b=prof_b.table_name,
                         column_b=col_b,
-                        relationship_type="join_key",
-                        confidence=0.9,
+                        relationship_type="name_match_unverified",
+                        confidence=0.4,
                         overlap_count=0,
                     )
                 )
                 seen_pairs.add(pair_key)
 
     # ------ Method B: Value overlap via pre-fetched sets ------
+    # Require strong overlap: ≥50% AND at least 3 common values.
     id_cat_types = {"identifier", "categorical"}
     id_cols_a = [c for c, i in cls_a.items() if i.get("semantic_type") in id_cat_types]
     id_cols_b = [c for c, i in cls_b.items() if i.get("semantic_type") in id_cat_types]
@@ -203,7 +247,7 @@ def _find_between(
             min_card = min(len(vals_a), len(vals_b))
             confidence = round(overlap_count / min_card, 3) if min_card > 0 else 0
 
-            if confidence > 0.3:
+            if confidence >= 0.5 and overlap_count >= 3:
                 results.append(
                     DiscoveredRelationship(
                         table_a=prof_a.table_name,
@@ -217,25 +261,40 @@ def _find_between(
                 )
                 seen_pairs.add(pair_key)
 
-    # ------ Method C: Semantic matching (profile metadata, no SQL) ------
+    # ------ Method C: Semantic matching — ONLY with value validation ------
+    # Two identifier columns with similar cardinality is NOT proof of a
+    # relationship. Require actual value overlap to confirm.
     for col_a, info_a in cls_a.items():
         for col_b, info_b in cls_b.items():
             pair_key = (prof_a.table_name, col_a, prof_b.table_name, col_b)
             if pair_key in seen_pairs:
                 continue
-            if _semantic_match(info_a, info_b):
-                results.append(
-                    DiscoveredRelationship(
-                        table_a=prof_a.table_name,
-                        column_a=col_a,
-                        table_b=prof_b.table_name,
-                        column_b=col_b,
-                        relationship_type="semantic_match",
-                        confidence=0.5,
-                        overlap_count=0,
+            if not _semantic_match(info_a, info_b):
+                continue
+
+            # Semantic hint found — require value overlap to confirm
+            vals_a = value_cache.get((prof_a.table_name, col_a))
+            vals_b = value_cache.get((prof_b.table_name, col_b))
+            if vals_a and vals_b:
+                overlap = vals_a & vals_b
+                overlap_count = len(overlap)
+                min_card = min(len(vals_a), len(vals_b))
+                overlap_pct = overlap_count / min_card if min_card > 0 else 0
+
+                if overlap_pct >= 0.5 and overlap_count >= 3:
+                    results.append(
+                        DiscoveredRelationship(
+                            table_a=prof_a.table_name,
+                            column_a=col_a,
+                            table_b=prof_b.table_name,
+                            column_b=col_b,
+                            relationship_type="semantic_match",
+                            confidence=round(min(0.85, 0.4 + overlap_pct * 0.45), 3),
+                            overlap_count=overlap_count,
+                        )
                     )
-                )
-                seen_pairs.add(pair_key)
+                    seen_pairs.add(pair_key)
+            # No values available → skip entirely (don't create unverified semantic matches)
 
     return results
 
