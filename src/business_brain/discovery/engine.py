@@ -132,9 +132,14 @@ async def run_discovery(
         # 3. Find relationships
         t0 = time.monotonic()
         logger.info("Discovery: finding relationships...")
-        relationships = await find_relationships(session, profiles)
-        logger.info("Discovery: found %d relationships", len(relationships))
-        tracker.record("find_relationships", count=len(relationships), duration_ms=_elapsed_ms(t0))
+        try:
+            relationships = await find_relationships(session, profiles)
+            logger.info("Discovery: found %d relationships", len(relationships))
+            tracker.record("find_relationships", count=len(relationships), duration_ms=_elapsed_ms(t0))
+        except Exception as exc:
+            logger.exception("Relationship finding failed, continuing")
+            relationships = []
+            tracker.record("find_relationships", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
         # 4. Detect anomalies
         t0 = time.monotonic()

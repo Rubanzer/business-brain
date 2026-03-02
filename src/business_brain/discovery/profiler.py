@@ -31,12 +31,13 @@ async def profile_all_tables(
 
     for entry in entries:
         try:
-            profile = await _profile_table(session, entry.table_name, entry.columns_metadata)
-            if profile:
-                profiles.append(profile)
+            # Use savepoint so a single table failure doesn't rollback everything
+            async with session.begin_nested():
+                profile = await _profile_table(session, entry.table_name, entry.columns_metadata)
+                if profile:
+                    profiles.append(profile)
         except Exception:
             logger.exception("Failed to profile table %s", entry.table_name)
-            await session.rollback()
 
     return profiles
 

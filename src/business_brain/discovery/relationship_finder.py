@@ -24,17 +24,33 @@ async def find_relationships(
     if len(profiles) < 2:
         return relationships
 
+    # Clear existing relationships for profiled tables so we don't accumulate
+    # duplicates across scans.
+    table_names = [p.table_name for p in profiles]
+    try:
+        from sqlalchemy import delete
+        await session.execute(
+            delete(DiscoveredRelationship).where(
+                DiscoveredRelationship.table_a.in_(table_names)
+                | DiscoveredRelationship.table_b.in_(table_names)
+            )
+        )
+        await session.flush()
+    except Exception:
+        logger.debug("Failed to clear old relationships, continuing")
+
     for prof_a, prof_b in combinations(profiles, 2):
         try:
-            rels = await _find_between(session, prof_a, prof_b)
-            relationships.extend(rels)
+            # Use savepoint so a single pair failure doesn't rollback everything
+            async with session.begin_nested():
+                rels = await _find_between(session, prof_a, prof_b)
+                relationships.extend(rels)
         except Exception:
             logger.exception(
                 "Failed to find relationships between %s and %s",
                 prof_a.table_name,
                 prof_b.table_name,
             )
-            await session.rollback()
 
     # Bulk insert
     for rel in relationships:
@@ -89,9 +105,10 @@ async def _find_between(
                 continue
 
             try:
-                overlap = await _check_value_overlap(
-                    session, prof_a.table_name, col_a, prof_b.table_name, col_b
-                )
+                async with session.begin_nested():
+                    overlap = await _check_value_overlap(
+                        session, prof_a.table_name, col_a, prof_b.table_name, col_b
+                    )
                 if overlap["confidence"] > 0.3:
                     results.append(DiscoveredRelationship(
                         table_a=prof_a.table_name,
@@ -108,7 +125,6 @@ async def _find_between(
                     "Value overlap check failed for %s.%s <-> %s.%s",
                     prof_a.table_name, col_a, prof_b.table_name, col_b,
                 )
-                await session.rollback()
 
     # Method C: Semantic matching — both identifier with similar cardinality
     for col_a, info_a in cols_a.items():
