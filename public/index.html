@@ -7169,6 +7169,27 @@
         html += `</div>`;
       }
 
+      // --- Evidence key-values (for insights without query/sample_rows) ---
+      const evKeys = Object.keys(ev).filter(k => !['query','sample_rows','chart_spec','source_doc'].includes(k));
+      if (evKeys.length && !ev.query && !ev.sample_rows?.length) {
+        html += `<div style="margin-bottom:var(--space-4);">`;
+        html += `<div style="font-weight:600;font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--space-2);">Evidence</div>`;
+        html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:var(--space-2);">`;
+        evKeys.forEach(k => {
+          let val = ev[k];
+          if (val && typeof val === 'object') val = JSON.stringify(val, null, 1);
+          if (Array.isArray(ev[k]) && ev[k].length <= 5) {
+            val = ev[k].map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
+          }
+          const label = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          html += `<div style="background:var(--surface-sunken);padding:var(--space-2) var(--space-3);border-radius:var(--radius-md);border:1px solid var(--border-subtle);">`;
+          html += `<div style="font-size:var(--text-xs);color:var(--muted);margin-bottom:2px;">${esc(label)}</div>`;
+          html += `<div style="font-size:var(--text-base);font-weight:600;color:var(--text);">${esc(String(val ?? '—'))}</div>`;
+          html += `</div>`;
+        });
+        html += `</div></div>`;
+      }
+
       // --- Narrative ---
       if (ins.narrative) {
         html += `<div style="margin-bottom:var(--space-3);">`;
@@ -8461,9 +8482,7 @@
         html += `</div></button></span>`;
         html += `<button class="btn-sm btn-secondary" onclick="showDeployModal('${ins.id}', '${esc(ins.title).replace(/'/g, "\\'")}')">Deploy as Report</button>`;
         html += `<button class="btn-sm btn-secondary" onclick="toggleCompare(${i}, this)">Compare</button>`;
-        if (ins.evidence && (ins.evidence.query || ins.evidence.sample_rows?.length)) {
-          html += `<button class="btn-sm btn-secondary" onclick="viewInsightData(${i})">View Data</button>`;
-        }
+        html += `<button class="btn-sm btn-secondary" onclick="viewInsightData(${i})">View Data</button>`;
         html += `<button class="btn-sm btn-secondary" onclick="dismissInsight('${ins.id}', this)">Dismiss</button>`;
         html += `</div>`;
         html += `</div>`;
