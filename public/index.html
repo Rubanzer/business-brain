@@ -7821,6 +7821,9 @@
       if (!cards.length) { toast('No insights to dismiss'); return; }
       const btn = document.getElementById('dismiss-all-btn');
       await asyncAction(btn, async () => {
+        // Purge any previously dismissed insights first so they don't block dedup
+        await apiFetch(`${API}/feed/purge-dismissed`, { method: 'DELETE' }).catch(() => {});
+        // Now dismiss current insights
         await apiFetch(`${API}/feed/dismiss-all`, { method: 'POST' });
         feedInsights = [];
         document.getElementById('feed-body').innerHTML =
@@ -8552,10 +8555,31 @@
 
       try {
         const insights = await apiFetch(`${API}/feed?status=${encodeURIComponent(status)}`);
-        renderFeedCards(insights, `No ${status} insights found.`);
+        const emptyMsg = status === 'dismissed'
+          ? 'No dismissed insights.'
+          : `No ${status} insights found.`;
+        renderFeedCards(insights, emptyMsg);
+
+        // Show "Clear Dismissed" bar when viewing dismissed tab with items
+        if (status === 'dismissed' && insights.length > 0) {
+          const bar = document.createElement('div');
+          bar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:var(--space-2) var(--space-3);margin-bottom:var(--space-2);background:var(--surface-sunken);border-radius:var(--radius);font-size:var(--text-sm);color:var(--text-secondary);';
+          bar.innerHTML = `<span>${insights.length} dismissed insight${insights.length !== 1 ? 's' : ''}</span>`
+            + `<button class="btn-sm" style="background:var(--red);color:#fff;" onclick="purgeDismissedInsights(this)">Delete All Permanently</button>`;
+          body.insertBefore(bar, body.firstChild);
+        }
       } catch (e) {
         body.innerHTML = `<div class="feed-empty" style="color:var(--red);">Failed to load: ${esc(e.message)}</div>`;
       }
+    }
+
+    async function purgeDismissedInsights(btn) {
+      await asyncAction(btn, async () => {
+        const res = await apiFetch(`${API}/feed/purge-dismissed`, { method: 'DELETE' });
+        toast(`Permanently deleted ${res.purged || 0} dismissed insights`, 'success');
+        // Refresh — back to main feed
+        filterFeedByStatus('dismissed', document.querySelector('.feed-filter:last-child'));
+      }, { loadingText: 'Deleting\u2026', errorPrefix: 'Failed to purge' });
     }
 
     // -----------------------------------------------------------------------
