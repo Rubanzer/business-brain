@@ -110,17 +110,26 @@ def _estimate_sample_correlations(
             if len(samples_a) < 5 or len(samples_b) < 5:
                 continue
 
-            # Parse to floats
-            vals_a = _parse_samples(samples_a)
-            vals_b = _parse_samples(samples_b)
+            # Parse to floats while maintaining row alignment:
+            # zip the raw samples and only keep rows where BOTH parse to float.
+            # This ensures vals_a[i] and vals_b[i] come from the same DB row.
+            vals_a: list[float] = []
+            vals_b: list[float] = []
+            n = min(len(samples_a), len(samples_b))
+            for k in range(n):
+                sa, sb = samples_a[k], samples_b[k]
+                if sa is None or sb is None:
+                    continue
+                try:
+                    va = float(str(sa).replace(",", ""))
+                    vb = float(str(sb).replace(",", ""))
+                    vals_a.append(va)
+                    vals_b.append(vb)
+                except (ValueError, TypeError):
+                    continue
 
-            # Use paired values only (min length)
-            n = min(len(vals_a), len(vals_b))
-            if n < 5:
+            if len(vals_a) < 5:
                 continue
-
-            vals_a = vals_a[:n]
-            vals_b = vals_b[:n]
 
             r = _quick_pearson(vals_a, vals_b)
             if r is None:

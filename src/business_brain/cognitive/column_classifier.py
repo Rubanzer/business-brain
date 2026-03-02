@@ -188,7 +188,10 @@ def _classify_one(
     result: dict[str, Any] = {
         "cardinality": cardinality,
         "null_count": len(raw_values) - len(non_null),
-        "sample_values": [str(v) for v in non_null[:100]],
+        # Preserve row alignment: store None for null values so that
+        # sample_values[i] across different columns refers to the same row.
+        # Consumers that zip cross-column samples must skip None pairs.
+        "sample_values": [str(v) if v is not None else None for v in raw_values[:100]],
     }
 
     sql_type_lower = (sql_type or "").lower().strip()

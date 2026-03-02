@@ -18,18 +18,24 @@ logger = logging.getLogger(__name__)
 async def get_feed(
     session: AsyncSession,
     status: str | None = None,
-    limit: int = 50,
+    limit: int = 100,
     min_quality: int = 15,
 ) -> list[Insight]:
-    """Get ranked insight feed, optionally filtered by status and minimum quality.
+    """Get type-diverse ranked insight feed.
+
+    Returns a balanced mix of insight types rather than letting one
+    high-scoring type dominate. Within each type, insights are ranked
+    by impact_score.
 
     Args:
         session: Database session.
         status: Filter by specific status (new/seen/deployed/dismissed).
         limit: Maximum number of insights to return.
-        min_quality: Minimum quality_score threshold. Insights below this
-            are filtered out to keep the feed clean. Default 15.
+        min_quality: Minimum quality_score threshold. Default 15.
     """
+    # Fetch more than needed so we can ensure type diversity
+    fetch_limit = max(limit * 3, 300)
+
     q = select(Insight).order_by(Insight.impact_score.desc(), Insight.discovered_at.desc())
 
     if status:
@@ -39,7 +45,6 @@ async def get_feed(
         q = q.where(Insight.status != "dismissed")
 
     # Filter by minimum quality score to keep feed clean
-    # Show unscored (NULL) and legacy unscored (0) insights, only hide explicitly low-scored
     if min_quality > 0:
         q = q.where(
             (Insight.quality_score == None)  # noqa: E711
@@ -47,9 +52,49 @@ async def get_feed(
             | (Insight.quality_score >= min_quality)
         )
 
-    q = q.limit(limit)
+    q = q.limit(fetch_limit)
     result = await session.execute(q)
-    return list(result.scalars().all())
+    all_insights = list(result.scalars().all())
+
+    if len(all_insights) <= limit:
+        return all_insights
+
+    # Type-diverse selection: ensure each insight type gets fair representation.
+    # Take up to min_per_type from each type first, then fill remaining by score.
+    from collections import defaultdict
+
+    by_type: dict[str, list[Insight]] = defaultdict(list)
+    for ins in all_insights:
+        by_type[ins.insight_type or "unknown"].append(ins)
+
+    n_types = max(len(by_type), 1)
+    # Reserve at least 3 slots per type, up to 10
+    min_per_type = min(max(limit // (n_types * 2), 3), 10)
+
+    selected: list[Insight] = []
+    selected_ids: set[str] = set()
+
+    # Round 1: guaranteed slots per type (already sorted by score from query)
+    for insight_type, type_insights in by_type.items():
+        for ins in type_insights[:min_per_type]:
+            if ins.id not in selected_ids:
+                selected.append(ins)
+                selected_ids.add(ins.id)
+
+    # Round 2: fill remaining slots by score
+    remaining = limit - len(selected)
+    if remaining > 0:
+        for ins in all_insights:
+            if ins.id not in selected_ids:
+                selected.append(ins)
+                selected_ids.add(ins.id)
+                remaining -= 1
+                if remaining <= 0:
+                    break
+
+    # Re-sort final list by score for consistent presentation
+    selected.sort(key=lambda i: (i.impact_score or 0, i.discovered_at or ""), reverse=True)
+    return selected
 
 
 async def update_status(session: AsyncSession, insight_id: str, status: str) -> None:

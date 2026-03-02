@@ -115,13 +115,15 @@ def _compare_entities(
     cat_samples = cat_samples[:n]
     num_samples = num_samples[:n]
 
-    # Parse numeric values
+    # Parse numeric values — skip pairs where either is None (row-aligned null handling)
     entity_values: dict[str, list[float]] = defaultdict(list)
     for cat_val, num_val in zip(cat_samples, num_samples):
+        if cat_val is None or num_val is None:
+            continue
         try:
             v = float(str(num_val).replace(",", ""))
             entity = str(cat_val).strip()
-            if entity:
+            if entity and entity != "None":
                 entity_values[entity].append(v)
         except (ValueError, TypeError):
             continue
@@ -185,17 +187,19 @@ def _compare_entities(
     is_currency = num_info.get("semantic_type") == "numeric_currency"
     unit = "₹" if is_currency else ""
 
+    # Humanize table name (strip numeric prefix)
+    import re as _re
+    h_table = _re.sub(r"^\d+[_\s]*", "", profile.table_name).replace("_", " ").title()
+    h_metric = num_col.replace("_", " ").title()
+
     title = (
-        f"{worst['entity']} {metric_label} {gap_pct:.0f}% below {best['entity']} "
-        f"in {profile.table_name}"
+        f"{worst['entity']} {metric_label} is {gap_pct:.0f}% below {best['entity']}"
     )
     description = (
-        f"{entity_label} performance gap on {num_col}: "
-        f"Best: {best['entity']} at {unit}{best['mean']:,.1f}, "
-        f"Worst: {worst['entity']} at {unit}{worst['mean']:,.1f} "
-        f"({gap_pct:.0f}% gap). "
-        f"Group average: {unit}{overall_mean:,.1f}. "
-        f"Full ranking: {ranking_str}."
+        f"{entity_label} {worst['entity']} averages {unit}{worst['mean']:,.1f} on {h_metric}, "
+        f"which is {gap_pct:.0f}% below {best['entity']} at {unit}{best['mean']:,.1f}. "
+        f"The overall average is {unit}{overall_mean:,.1f}. "
+        f"Ranking: {ranking_str}."
     )
 
     return Insight(
@@ -241,9 +245,9 @@ def _compare_entities(
             ),
         },
         suggested_actions=[
-            f"Investigate why {worst['entity']} is {gap_pct:.0f}% below {best['entity']} on {num_col}",
-            f"Replicate {best['entity']} practices to bring {worst['entity']} up to average ({unit}{overall_mean:,.0f})",
-            f"Run a detailed comparison of {best['entity']} vs {worst['entity']} across all metrics",
+            f"Investigate why {worst['entity']} is {gap_pct:.0f}% below {best['entity']} on {h_metric}",
+            f"Look at what {best['entity']} does differently and replicate those practices",
+            f"Compare {best['entity']} vs {worst['entity']} across all available metrics",
         ],
     )
 

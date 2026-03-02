@@ -59,12 +59,13 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                 ],
             ))
 
-        # 2. Numeric outliers: values > 3 stdev from mean (raised from 2σ to reduce noise)
+        # 2. Numeric outliers: values > 2.5 stdev from mean
+        # (2.5σ catches ~1.2% of values in a normal distribution — reasonable for 100-row samples)
         if stats and "stdev" in stats and stats["stdev"] > 0:
             mean = stats["mean"]
             stdev = stats["stdev"]
-            low_bound = mean - 3 * stdev
-            high_bound = mean + 3 * stdev
+            low_bound = mean - 2.5 * stdev
+            high_bound = mean + 2.5 * stdev
 
             outlier_samples = []
             for s in samples:
@@ -329,12 +330,12 @@ def _detect_actual_trend(
 
         pct_change = ((last_avg - first_avg) / abs(first_avg)) * 100
 
-        # Only report if change is significant (> 15%)
-        if abs(pct_change) < 15:
+        # Only report if change is significant (> 10%)
+        if abs(pct_change) < 10:
             continue
 
         direction = "increased" if pct_change > 0 else "decreased"
-        severity = "warning" if abs(pct_change) > 30 else "info"
+        severity = "warning" if abs(pct_change) > 25 else "info"
 
         return Insight(
             id=str(uuid.uuid4()),

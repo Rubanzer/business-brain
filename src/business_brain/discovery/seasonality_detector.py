@@ -136,12 +136,16 @@ def _detect_shift_performance_gap(
         num_info = cols.get(num_col, {})
         num_samples = num_info.get("sample_values", [])
 
-        if not num_samples or len(num_samples) != len(shift_samples):
+        if not num_samples or len(num_samples) < 6:
             continue
 
-        # Group numeric values by shift
+        # Group numeric values by shift — use min length to zip,
+        # skip pairs where either value is None (row-aligned null handling)
+        n = min(len(shift_samples), len(num_samples))
         shift_groups: dict[str, list[float]] = {}
-        for shift_val, num_val in zip(shift_samples, num_samples):
+        for shift_val, num_val in zip(shift_samples[:n], num_samples[:n]):
+            if shift_val is None or num_val is None:
+                continue
             try:
                 v = float(str(num_val).replace(",", ""))
                 key = str(shift_val)

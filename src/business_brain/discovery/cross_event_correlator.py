@@ -25,6 +25,18 @@ logger = logging.getLogger(__name__)
 _ROW_LIMIT = 2000
 
 
+def _humanize_col(name: str) -> str:
+    """Convert column name to human-readable form: downtime_hrs → Downtime Hours."""
+    return name.replace("_", " ").title()
+
+
+def _humanize_table(name: str) -> str:
+    """Convert table name to human-readable form: 08_nary_segments → Nary Segments."""
+    # Strip leading numeric prefix like "01_", "08_"
+    cleaned = re.sub(r"^\d+[_\s]*", "", name)
+    return cleaned.replace("_", " ").title() if cleaned else name.replace("_", " ").title()
+
+
 def filter_by_confidence(
     relationships: list[DiscoveredRelationship],
     min_confidence: float = 0.5,
@@ -119,13 +131,24 @@ async def _check_correlation(
 
 
 def _find_event_columns(profile: TableProfile) -> list[str]:
-    """Find boolean/categorical columns that represent events."""
+    """Find boolean/categorical columns that represent events.
+
+    Filters to low-cardinality categoricals (≤6 unique values) to avoid
+    noise from high-cardinality columns like batch numbers, IDs, etc.
+    """
     cls = profile.column_classification or {}
     cols = cls.get("columns", {})
     events = []
     for col, info in cols.items():
         sem = info.get("semantic_type", "")
-        if sem in ("boolean", "categorical") and info.get("cardinality", 0) <= 10:
+        cardinality = info.get("cardinality", 0)
+        col_lower = col.lower()
+
+        # Skip identifier-like columns even if classified as categorical
+        if any(kw in col_lower for kw in ("batch", "id", "number", "no", "code", "serial")):
+            continue
+
+        if sem in ("boolean", "categorical") and cardinality <= 6:
             events.append(col)
     return events
 
@@ -230,8 +253,8 @@ def _analyze_pair(
         ev_str = str(ev)
         groups.setdefault(ev_str, []).append(val)
 
-    # Need at least 2 groups with 2+ samples each
-    valid_groups = {k: v for k, v in groups.items() if len(v) >= 2}
+    # Need at least 2 groups with 5+ samples each for statistical significance
+    valid_groups = {k: v for k, v in groups.items() if len(v) >= 5}
     if len(valid_groups) < 2:
         return None
 
@@ -256,16 +279,25 @@ def _analyze_pair(
     worst = min(avgs, key=lambda x: x[1])
     direction = "higher" if best[1] > worst[1] else "lower"
 
+    # Human-readable names for titles and descriptions
+    h_event = _humanize_col(event_col)
+    h_metric = _humanize_col(metric_col)
+    h_event_table = _humanize_table(event_table)
+    h_metric_table = _humanize_table(metric_table)
+
     return Insight(
         id=str(uuid.uuid4()),
         insight_type="cross_event",
         severity="warning" if pct_diff > 30 else "info",
         impact_score=min(int(pct_diff), 90),
-        title=f"{event_col} in {event_table} correlates with {metric_col} in {metric_table}",
+        title=(
+            f"{h_event} {best[0]} has {round(pct_diff)}% {direction} {h_metric}"
+        ),
         description=(
-            f"When {entity_col_event} has {event_col}='{best[0]}' in {event_table}, "
-            f"{metric_col} in {metric_table} is {round(pct_diff, 1)}% {direction} "
-            f"(avg {round(best[1], 2)}) vs {event_col}='{worst[0]}' (avg {round(worst[1], 2)})."
+            f"When {h_event} is {best[0]} (from {h_event_table}), "
+            f"average {h_metric} (from {h_metric_table}) is {round(pct_diff, 1)}% {direction} "
+            f"at {round(best[1], 2):g} compared to {h_event} {worst[0]} at {round(worst[1], 2):g}. "
+            f"This pattern connects data across your {h_event_table} and {h_metric_table} tables."
         ),
         source_tables=[event_table, metric_table],
         source_columns=[event_col, metric_col, entity_col_event],
@@ -279,11 +311,11 @@ def _analyze_pair(
                 "type": "bar",
                 "x": event_col,
                 "y": [f"avg_{metric_col}"],
-                "title": f"{metric_col} by {event_col}",
+                "title": f"{h_metric} by {h_event}",
             },
         },
         suggested_actions=[
-            f"Investigate why {event_col}='{best[0]}' correlates with {direction} {metric_col}",
-            f"Check if this correlation implies causation or is coincidental",
+            f"Investigate why {h_event} {best[0]} shows {direction} {h_metric}",
+            f"Compare operational differences between {h_event} {best[0]} and {worst[0]}",
         ],
     )
