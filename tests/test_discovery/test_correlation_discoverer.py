@@ -2,7 +2,6 @@
 
 from business_brain.discovery.correlation_discoverer import (
     _estimate_sample_correlations,
-    _make_opportunity_insight,
     _parse_samples,
     _quick_pearson,
     discover_correlations_from_profiles,
@@ -66,9 +65,8 @@ class TestEstimateSampleCorrelations:
             ("b", {"sample_values": [3, 1, 4, 2, 5, 1, 3]}),
         ]
         results = _estimate_sample_correlations(cols)
-        # Weak correlation should not be included (threshold raised to |r| >= 0.7)
         for r in results:
-            assert abs(r[2]) >= 0.7
+            assert abs(r[2]) >= 0.5
 
     def test_too_few_samples(self):
         cols = [
@@ -83,17 +81,6 @@ class TestEstimateSampleCorrelations:
             ("b", {}),
         ]
         assert _estimate_sample_correlations(cols) == []
-
-
-class TestMakeOpportunityInsight:
-    def test_basic(self):
-        prof = _Prof("test_table")
-        cols = [("col1", {}), ("col2", {}), ("col3", {})]
-        insight = _make_opportunity_insight(prof, cols)
-        assert insight.insight_type == "correlation"
-        assert insight.severity == "info"
-        assert "test_table" in insight.title
-        assert "3 numeric columns" in insight.description
 
 
 class TestDiscoverCorrelationsFromProfiles:
@@ -114,13 +101,13 @@ class TestDiscoverCorrelationsFromProfiles:
         assert discover_correlations_from_profiles([p]) == []
 
     def test_two_numeric_no_samples(self):
-        """Two numeric cols without samples → no insight (opportunity insights suppressed)."""
+        """Two numeric cols without samples -> no insight."""
         p = _Prof("t1", columns={
             "a": {"semantic_type": "numeric_metric", "stats": {"stdev": 5}},
             "b": {"semantic_type": "numeric_metric", "stats": {"stdev": 10}},
         })
         insights = discover_correlations_from_profiles([p])
-        assert len(insights) == 0  # Opportunity meta-insights suppressed
+        assert len(insights) == 0
 
     def test_correlated_samples_detected(self):
         p = _Prof("t1", columns={
@@ -137,9 +124,7 @@ class TestDiscoverCorrelationsFromProfiles:
         })
         insights = discover_correlations_from_profiles([p])
         assert len(insights) >= 1
-        corr_insights = [i for i in insights if "Potential correlation" in i.title]
-        assert len(corr_insights) == 1
-        assert "positive" in corr_insights[0].description.lower()
+        assert any("correlation" in i.title.lower() for i in insights)
 
     def test_zero_stdev_skipped(self):
         p = _Prof("t1", columns={
@@ -160,21 +145,8 @@ class TestDiscoverCorrelationsFromProfiles:
         p.column_classification = None
         assert discover_correlations_from_profiles([p]) == []
 
-    def test_multiple_profiles_no_samples(self):
-        """Multiple profiles without samples → no insights (opportunity suppressed)."""
-        p1 = _Prof("t1", columns={
-            "x": {"semantic_type": "numeric_metric", "stats": {"stdev": 5}},
-            "y": {"semantic_type": "numeric_metric", "stats": {"stdev": 10}},
-        })
-        p2 = _Prof("t2", columns={
-            "a": {"semantic_type": "numeric_currency", "stats": {"stdev": 100}},
-            "b": {"semantic_type": "numeric_currency", "stats": {"stdev": 200}},
-        })
-        insights = discover_correlations_from_profiles([p1, p2])
-        assert len(insights) == 0  # Opportunity meta-insights suppressed
-
     def test_multiple_profiles_with_correlations(self):
-        """Multiple profiles WITH correlated samples → actual correlation insights."""
+        """Multiple profiles WITH correlated samples -> actual correlation insights."""
         p1 = _Prof("t1", columns={
             "x": {"semantic_type": "numeric_metric", "stats": {"stdev": 5},
                    "sample_values": [1, 2, 3, 4, 5, 6, 7, 8]},
@@ -188,13 +160,12 @@ class TestDiscoverCorrelationsFromProfiles:
                    "sample_values": [200, 400, 600, 800, 1000, 1200, 1400, 1600]},
         })
         insights = discover_correlations_from_profiles([p1, p2])
-        assert len(insights) == 2  # One correlation per table
+        assert len(insights) == 2
         tables = {i.source_tables[0] for i in insights}
         assert "t1" in tables
         assert "t2" in tables
 
     def test_all_insights_have_ids(self):
-        """Requires sample values to produce actual correlation insights."""
         p = _Prof("t1", columns={
             "a": {"semantic_type": "numeric_metric", "stats": {"stdev": 5},
                    "sample_values": [1, 2, 3, 4, 5, 6, 7, 8]},

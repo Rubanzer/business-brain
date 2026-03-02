@@ -555,60 +555,6 @@ async def compare_table_data(
     }
 
 
-# ---------------------------------------------------------------------------
-# Goals
-# ---------------------------------------------------------------------------
-
-
-@router.post("/goals/evaluate")
-async def evaluate_goals_endpoint(body: dict):
-    """Evaluate metric goals against current values.
-
-    Body: {
-        "goals": [{"metric_name": "revenue", "target_value": 1000, "direction": "above", "baseline": 0}],
-        "current_values": {"revenue": 800}
-    }
-    """
-    from business_brain.discovery.goal_tracker import (
-        Goal,
-        compute_overall_health,
-        evaluate_goals,
-    )
-
-    raw_goals = body.get("goals", [])
-    current_values = body.get("current_values", {})
-
-    goals = [
-        Goal(
-            metric_name=g["metric_name"],
-            target_value=g["target_value"],
-            direction=g.get("direction", "above"),
-            target_min=g.get("target_min"),
-            baseline=g.get("baseline"),
-            deadline=g.get("deadline"),
-        )
-        for g in raw_goals
-    ]
-
-    progress = evaluate_goals(goals, current_values)
-    health = compute_overall_health(progress)
-
-    return {
-        "goals": [
-            {
-                "metric_name": p.metric_name,
-                "current_value": p.current_value,
-                "target_value": p.target_value,
-                "direction": p.direction,
-                "progress_pct": p.progress_pct,
-                "status": p.status,
-                "remaining": p.remaining,
-                "summary": p.summary,
-            }
-            for p in progress
-        ],
-        "health": health,
-    }
 
 
 # ---------------------------------------------------------------------------

@@ -149,17 +149,23 @@ class TestNumericOutliers:
         outlier = [i for i in results if "outlier" in i.title.lower()]
         assert len(outlier) == 0
 
-    def test_outlier_samples_capped_at_5(self):
+    def test_outlier_samples_capped_at_10(self):
         prof = _Prof("t", {"val": {
             "semantic_type": "numeric_metric",
             "null_count": 0,
             "cardinality": 50,
             "stats": {"mean": 10.0, "stdev": 1.0, "min": 1.0, "max": 100.0},
-            "sample_values": ["100", "200", "300", "400", "500", "600", "700"],
+            "sample_values": [str(i * 100) for i in range(1, 16)],  # 15 outliers
         }})
         results = _scan_table(prof)
         outlier = [i for i in results if "outlier" in i.title.lower()]
-        assert len(outlier[0].evidence["outlier_samples"]) <= 5
+        assert len(outlier) == 1
+        assert len(outlier[0].evidence["outlier_samples"]) <= 10
+        # New evidence fields should be present
+        assert "outlier_count" in outlier[0].evidence
+        assert "sample_size" in outlier[0].evidence
+        assert "outlier_pct" in outlier[0].evidence
+        assert "outlier_range" in outlier[0].evidence
 
 
 # ---------------------------------------------------------------------------

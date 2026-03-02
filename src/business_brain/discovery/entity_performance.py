@@ -80,8 +80,8 @@ def _analyze_table(profile: TableProfile) -> list[Insight]:
     ]
 
     # For each categorical × numeric combo, look for performance gaps
-    for cat_col, cat_info in cat_cols[:3]:  # Limit to top 3 categories
-        for num_col, num_info in num_cols[:4]:  # Limit to top 4 metrics
+    for cat_col, cat_info in cat_cols:
+        for num_col, num_info in num_cols:
             insight = _compare_entities(
                 profile, cols, cat_col, cat_info, num_col, num_info,
             )

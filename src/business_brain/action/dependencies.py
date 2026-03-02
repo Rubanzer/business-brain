@@ -275,7 +275,7 @@ async def enrich_column_descriptions(session: AsyncSession, table_name: str) -> 
 async def run_discovery_background(
     trigger: str = "manual", table_filter: Optional[list] = None
 ) -> None:
-    """Run discovery engine in background with a fresh session."""
+    """Run fast discovery phase in background with a fresh session."""
     try:
         from business_brain.discovery.engine import run_discovery
 
@@ -283,6 +283,17 @@ async def run_discovery_background(
             await run_discovery(session, trigger=trigger, table_filter=table_filter)
     except Exception:
         logger.exception("Background discovery failed for trigger: %s", trigger)
+
+
+async def run_discovery_enrich_background(run_id: Optional[str] = None) -> None:
+    """Run slow enrichment passes in background with a fresh session."""
+    try:
+        from business_brain.discovery.engine import run_discovery_enrich
+
+        async with async_session() as session:
+            await run_discovery_enrich(session, run_id=run_id)
+    except Exception:
+        logger.exception("Background enrichment failed for run: %s", run_id)
 
 
 # ---------------------------------------------------------------------------

@@ -2812,10 +2812,6 @@
           <span class="nav-icon">&#8644;</span>
           <span class="nav-label">Relationships</span>
         </button>
-        <button class="nav-item" data-panel="goals" onclick="sidebarNav('goals', this)">
-          <span class="nav-icon">&#9873;</span>
-          <span class="nav-label">Goals</span>
-        </button>
         <button class="nav-item" data-panel="changelog" onclick="sidebarNav('changelog', this)">
           <span class="nav-icon">&#128203;</span>
           <span class="nav-label">Audit Log</span>
@@ -2839,10 +2835,6 @@
           </div>
           <button class="btn-ghost" id="logout-btn" onclick="doLogout()" style="display:none;font-size:var(--text-xs);" title="Logout">&#x2192;</button>
         </div>
-        <div style="margin-top:var(--space-2);display:flex;gap:var(--space-1);">
-          <button class="btn-ghost" onclick="startTutorial()" style="font-size:var(--text-xs);flex:1;" title="Product Tour">? Tour</button>
-          <button class="btn-ghost" onclick="openCommandPalette()" style="font-size:var(--text-xs);flex:1;" title="Command palette (Cmd+K)">&#8984;K</button>
-        </div>
       </div>
     </nav>
 
@@ -2858,7 +2850,6 @@
         <button class="tab-more-btn" id="tab-more-btn">More &#x25BE;</button>
         <div class="tab-more-menu" id="tab-more-menu">
           <button class="tab-menu-item" data-panel="relationships">Relationships</button>
-          <button class="tab-menu-item" data-panel="goals">Goals</button>
           <button class="tab-menu-item" data-panel="changelog">Audit Log</button>
           <button class="tab-menu-item" data-panel="users">Users</button>
         </div>
@@ -3477,31 +3468,6 @@
       </div>
     </div>
 
-    <!-- Goals Panel -->
-    <div id="goals" class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-        <h3 style="margin:0;font-size:var(--text-lg);">Metric Goals</h3>
-        <button class="btn-sm" onclick="showAddGoalForm()">+ Add Goal</button>
-      </div>
-      <div id="goal-form" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:0.8rem;margin-bottom:0.75rem;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem;">
-          <input id="goal-metric" placeholder="Metric name (e.g. revenue)" style="padding:6px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-size:var(--text-sm);">
-          <input id="goal-target" type="number" placeholder="Target value" style="padding:6px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-size:var(--text-sm);">
-          <select id="goal-direction" style="padding:6px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-size:var(--text-sm);">
-            <option value="above">Target: Above</option>
-            <option value="below">Target: Below</option>
-            <option value="between">Target: Between</option>
-          </select>
-          <input id="goal-baseline" type="number" placeholder="Baseline (optional)" style="padding:6px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card);color:var(--text);font-size:var(--text-sm);">
-        </div>
-        <div style="display:flex;gap:0.4rem;">
-          <button class="btn-sm" onclick="addGoal()">Save Goal</button>
-          <button class="btn-sm btn-secondary" onclick="document.getElementById('goal-form').style.display='none'">Cancel</button>
-        </div>
-      </div>
-      <div id="goals-health" style="margin-bottom:0.75rem;"></div>
-      <div id="goals-body"><div class="feed-empty">No goals set yet. Click "+ Add Goal" to define metric targets.</div></div>
-    </div>
 
     <!-- Users / Access Management Panel -->
     <div id="users" class="panel">
@@ -4484,7 +4450,6 @@
     let _lastDeployedReportId = null;
     let currentFeedFilter = 'all';
     let _currentStatusFilter = null;
-    let savedGoals = JSON.parse(localStorage.getItem('bb_goals') || '[]');
     let pendingAlertRule = null;
     let tutorialStep = 0;
     let tutorialActive = false;
@@ -8039,47 +8004,106 @@
       }
     }
 
+    // -----------------------------------------------------------------------
+    // Discovery: fire-and-forget + background polling
+    // -----------------------------------------------------------------------
+    let _scanPollTimer = null;
+    let _lastKnownRunId = null;
+
     async function triggerDiscovery() {
       const btn = document.getElementById('scan-btn');
-      await asyncAction(btn, async () => {
+      // Fire the POST and return immediately — don't wait for the scan to finish
+      try {
+        btn.disabled = true;
+        btn.textContent = 'Starting...';
         await apiFetch(`${API}/discovery/trigger`, { method: 'POST' });
-        toast('Discovery scan started');
-
-        // Poll for completion — await a promise that resolves when done
-        await new Promise((resolve) => {
-          let attempts = 0;
-          const poll = setInterval(async () => {
-            attempts++;
-            try {
-              const data = await apiFetch(`${API}/discovery/status`);
-              if (data.status === 'completed' || data.status === 'failed' || attempts > 60) {
-                clearInterval(poll);
-                if (data.status === 'completed') {
-                  toast(`Discovery complete: ${data.insights_found} insights found`);
-                  // Show diagnostics warning if passes failed
-                  if (data.failed_passes > 0) {
-                    const diag = data.pass_diagnostics || [];
-                    const failed = diag.filter(d => d.status === 'failed');
-                    const names = failed.map(d => d.pass).join(', ');
-                    const hasRateLimit = failed.some(d => d.error_type === 'rate_limit');
-                    let msg = `${data.failed_passes} of ${data.total_passes} discovery passes failed: ${names}`;
-                    if (hasRateLimit) msg += '\nLLM quota exceeded \u2014 consider switching provider in Settings.';
-                    toast(msg, 'warning');
-                  }
-                } else if (data.status === 'failed') {
-                  toast('Discovery failed: ' + (data.error || 'Unknown error'));
-                }
-                await loadFeed();
-                resolve();
-              }
-            } catch(e) {
-              clearInterval(poll);
-              resolve();
-            }
-          }, 2000);
-        });
-      }, { loadingText: 'Scanning\u2026', errorPrefix: 'Failed to trigger discovery' });
+        toast('Scan triggered — results will appear shortly', 'info');
+        // Also fire enrichment right away (it waits for fast phase internally)
+        apiFetch(`${API}/discovery/enrich`, { method: 'POST' }).catch(() => {});
+        // Start polling for results if not already polling
+        _startScanPoll();
+      } catch (e) {
+        toast('Failed to trigger scan: ' + (e.message || 'Unknown error'), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Scan Now';
+      }
     }
+
+    function _startScanPoll() {
+      // If already polling, bump it to check sooner (restart timer)
+      if (_scanPollTimer) clearInterval(_scanPollTimer);
+      // Poll quickly at first (every 5s for the first minute), then every 60s
+      let pollCount = 0;
+      _scanPollTimer = setInterval(async () => {
+        pollCount++;
+        try {
+          const data = await apiFetch(`${API}/discovery/status`);
+          if (!data || data.status === 'no_runs') return;
+
+          // Detect when a new run completes
+          if ((data.status === 'completed' || data.status === 'failed') && data.id !== _lastKnownRunId) {
+            _lastKnownRunId = data.id;
+            if (data.status === 'completed') {
+              toast(`Scan complete: ${data.insights_found} insights found`, 'success');
+              // Show diagnostics warning if passes failed
+              if (data.failed_passes > 0) {
+                const diag = data.pass_diagnostics || [];
+                const failed = diag.filter(d => d.status === 'failed');
+                const names = failed.map(d => d.pass).join(', ');
+                const hasRateLimit = failed.some(d => d.error_type === 'rate_limit');
+                let msg = `${data.failed_passes} of ${data.total_passes} passes failed: ${names}`;
+                if (hasRateLimit) msg += '\nLLM quota exceeded — consider switching provider.';
+                toast(msg, 'warning');
+              }
+              loadFeed();
+            } else {
+              toast('Discovery failed: ' + (data.error || 'Unknown error'), 'error');
+              loadFeed();
+            }
+          }
+        } catch (e) { /* network blip, keep polling */ }
+
+        // After 12 quick polls (60s), switch to slow polling (every 60s)
+        if (pollCount === 12) {
+          clearInterval(_scanPollTimer);
+          _scanPollTimer = setInterval(_pollScanStatus, 60000);
+        }
+      }, 5000);
+    }
+
+    async function _pollScanStatus() {
+      try {
+        const data = await apiFetch(`${API}/discovery/status`);
+        if (!data || data.status === 'no_runs') return;
+        if ((data.status === 'completed' || data.status === 'failed') && data.id !== _lastKnownRunId) {
+          _lastKnownRunId = data.id;
+          if (data.status === 'completed') {
+            toast(`Scan complete: ${data.insights_found} insights found`, 'success');
+            if (data.failed_passes > 0) {
+              const diag = data.pass_diagnostics || [];
+              const failed = diag.filter(d => d.status === 'failed');
+              const names = failed.map(d => d.pass).join(', ');
+              toast(`${data.failed_passes} passes failed: ${names}`, 'warning');
+            }
+            loadFeed();
+          } else {
+            toast('Discovery failed: ' + (data.error || 'Unknown error'), 'error');
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // Seed _lastKnownRunId on page load so we don't re-toast old results
+    (async function _initScanState() {
+      try {
+        const data = await apiFetch(`${API}/discovery/status`);
+        if (data && data.id) _lastKnownRunId = data.id;
+      } catch (e) { /* ok */ }
+    })();
+
+    // Start background polling on page load (every 60s) to catch cron/external scans
+    _scanPollTimer = setInterval(_pollScanStatus, 60000);
 
     function _timeAgo(date) {
       const seconds = Math.floor((new Date() - date) / 1000);
@@ -10163,121 +10187,6 @@
       }
     }
 
-    // -----------------------------------------------------------------------
-    // Goals Tab
-    // -----------------------------------------------------------------------
-    function showAddGoalForm() {
-      document.getElementById('goal-form').style.display = 'block';
-    }
-
-    function addGoal() {
-      const metric = document.getElementById('goal-metric').value.trim();
-      const target = parseFloat(document.getElementById('goal-target').value);
-      const direction = document.getElementById('goal-direction').value;
-      const baseline = document.getElementById('goal-baseline').value ? parseFloat(document.getElementById('goal-baseline').value) : null;
-
-      if (!metric || isNaN(target)) return;
-
-      savedGoals.push({ metric_name: metric, target_value: target, direction, baseline });
-      localStorage.setItem('bb_goals', JSON.stringify(savedGoals));
-
-      document.getElementById('goal-form').style.display = 'none';
-      document.getElementById('goal-metric').value = '';
-      document.getElementById('goal-target').value = '';
-      document.getElementById('goal-baseline').value = '';
-
-      loadGoals();
-    }
-
-    function removeGoal(idx) {
-      savedGoals.splice(idx, 1);
-      localStorage.setItem('bb_goals', JSON.stringify(savedGoals));
-      loadGoals();
-    }
-
-    async function loadGoals() {
-      const body = document.getElementById('goals-body');
-      const healthEl = document.getElementById('goals-health');
-
-      if (savedGoals.length === 0) {
-        body.innerHTML = '<div class="feed-empty">No goals set yet. Click "+ Add Goal" to define metric targets.</div>';
-        healthEl.innerHTML = '';
-        return;
-      }
-
-      // Try to get current values from the data quality endpoint
-      let currentValues = {};
-      try {
-        const qData = await apiFetch(API + '/data-quality');
-        if (qData.tables) {
-          for (const t of qData.tables) {
-            if (t.stats) {
-              for (const [col, st] of Object.entries(t.stats)) {
-                if (st && st.mean !== undefined) {
-                  currentValues[col] = st.mean;
-                  currentValues[`${t.table_name}.${col}`] = st.mean;
-                }
-              }
-            }
-          }
-        }
-      } catch (e) { /* optional */ }
-
-      try {
-        const data = await apiFetch(API + '/goals/evaluate', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ goals: savedGoals, current_values: currentValues }),
-        });
-
-        // Health bar
-        if (data.health) {
-          const h = data.health;
-          const hColor = h.health_score >= 70 ? 'var(--green)' : h.health_score >= 40 ? 'var(--yellow)' : 'var(--red)';
-          healthEl.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:0.6rem 0.8rem;">
-              <span style="font-size:var(--text-base);font-weight:600;">Health Score: <span style="color:${hColor};">${h.health_score}</span>/100</span>
-              <span style="font-size:var(--text-sm);color:var(--muted);">${h.total} goals | ${h.achieved_pct}% achieved</span>
-            </div>
-          `;
-        }
-
-        // Goal cards
-        let html = '';
-        (data.goals || []).forEach((g, i) => {
-          const statusColor = g.status === 'achieved' || g.status === 'exceeded' ? 'var(--green)'
-            : g.status === 'on_track' ? 'var(--accent)' : g.status === 'at_risk' ? 'var(--yellow)' : 'var(--red)';
-          const statusIcon = g.status === 'achieved' ? 'OK' : g.status === 'exceeded' ? '++' :
-            g.status === 'on_track' ? '->' : g.status === 'at_risk' ? '!' : 'X';
-
-          html += `<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid ${statusColor};border-radius:var(--radius-md);padding:0.6rem 0.8rem;margin-bottom:0.5rem;">`;
-          html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem;">`;
-          html += `<span style="font-weight:600;font-size:var(--text-base);">${esc(g.metric_name)}</span>`;
-          html += `<div style="display:flex;gap:0.3rem;align-items:center;">`;
-          html += `<span style="font-size:var(--text-xs);padding:2px 6px;border-radius:var(--radius-sm);background:${statusColor}20;color:${statusColor};">[${statusIcon}] ${g.status}</span>`;
-          html += `<button onclick="removeGoal(${i})" style="font-size:var(--text-xs);padding:1px 5px;border-radius:var(--radius-xs);border:1px solid var(--border);background:none;color:var(--muted);cursor:pointer;">x</button>`;
-          html += `</div></div>`;
-
-          // Progress bar
-          const pct = Math.min(Math.max(g.progress_pct, 0), 120);
-          html += `<div style="height:6px;background:var(--border);border-radius:var(--radius-xs);margin-bottom:0.3rem;">`;
-          html += `<div style="height:100%;width:${Math.min(pct, 100)}%;background:${statusColor};border-radius:var(--radius-xs);transition:width 0.3s;"></div>`;
-          html += `</div>`;
-
-          html += `<div style="display:flex;justify-content:space-between;font-size:var(--text-sm);color:var(--muted);">`;
-          html += `<span>Current: ${g.current_value.toLocaleString()} | Target: ${g.target_value.toLocaleString()} (${g.direction})</span>`;
-          html += `<span>${g.progress_pct.toFixed(0)}%</span>`;
-          html += `</div>`;
-          html += `<div style="font-size:var(--text-xs);color:var(--muted);margin-top:2px;">${esc(g.summary)}</div>`;
-          html += `</div>`;
-        });
-        body.innerHTML = html || '<div class="feed-empty">No goal results.</div>';
-      } catch (err) {
-        body.innerHTML = `<div class="feed-empty">Error evaluating goals: ${esc(err.message)}</div>`;
-      }
-    }
-
-    document.querySelector('[data-panel="goals"]').addEventListener('click', loadGoals);
 
     // -----------------------------------------------------------------------
     // Manufacturing Analytics Functions
@@ -12022,12 +11931,10 @@
       { icon: '\u26A0', label: 'Alerts', shortcut: '', action: () => sidebarNav('alerts') },
       { icon: '\u2699', label: 'Setup', shortcut: '', action: () => sidebarNav('setup') },
       { icon: '\u2194', label: 'Relationships', shortcut: '', action: () => sidebarNav('relationships') },
-      { icon: '\u2691', label: 'Goals', shortcut: '', action: () => sidebarNav('goals') },
       { icon: '\uD83D\uDCCB', label: 'Audit Log', shortcut: '', action: () => sidebarNav('changelog') },
       { icon: '\uD83D\uDC65', label: 'Team', shortcut: '', action: () => sidebarNav('users') },
       { icon: '\u21BB', label: 'Scan Now (Discovery)', shortcut: '', action: () => { sidebarNav('feed'); triggerDiscovery(); } },
       { icon: '\u2191', label: 'Upload Data', shortcut: '', action: () => { sidebarNav('data'); switchDataSub('data-upload'); } },
-      { icon: '\u2753', label: 'Product Tour', shortcut: '', action: () => startTutorial() },
       { icon: '\u2192', label: 'Logout', shortcut: '', action: () => doLogout() },
     ];
 

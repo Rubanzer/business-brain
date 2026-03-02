@@ -76,17 +76,34 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                     pass
 
             if outlier_samples:
+                # Parse all outlier values for range info
+                outlier_vals = []
+                for s in outlier_samples:
+                    try:
+                        outlier_vals.append(float(str(s).replace(",", "")))
+                    except (ValueError, TypeError):
+                        pass
+                outlier_min = min(outlier_vals) if outlier_vals else None
+                outlier_max = max(outlier_vals) if outlier_vals else None
+
+                count_desc = f"{len(outlier_samples)} outlier value{'s' if len(outlier_samples) != 1 else ''}"
+                range_desc = ""
+                if outlier_min is not None and outlier_max is not None and outlier_min != outlier_max:
+                    range_desc = f" ranging from {outlier_min:,.2f} to {outlier_max:,.2f}"
+                elif outlier_min is not None:
+                    range_desc = f" ({outlier_min:,.2f})"
+
                 results.append(Insight(
                     id=str(uuid.uuid4()),
                     insight_type="anomaly",
-                    severity="warning",
-                    impact_score=45,
-                    title=f"Outlier values in {profile.table_name}.{col_name}",
+                    severity="warning" if len(outlier_samples) > 3 else "info",
+                    impact_score=min(45 + len(outlier_samples) * 2, 80),
+                    title=f"{count_desc} in {profile.table_name}.{col_name}",
                     description=(
-                        f"{col_name} has values beyond 3 standard deviations from mean "
-                        f"(mean={stats['mean']:.2f}, stdev={stats['stdev']:.2f}). "
-                        f"Examples: {outlier_samples[:3]}. "
-                        f"These extreme values may indicate measurement errors or exceptional events."
+                        f"{col_name} has {count_desc} beyond 3 standard deviations from mean "
+                        f"(mean={stats['mean']:.2f}, stdev={stats['stdev']:.2f}){range_desc}. "
+                        f"Out of {len(samples)} sampled values, {len(outlier_samples)} "
+                        f"({len(outlier_samples)/len(samples)*100:.0f}%) are extreme."
                     ),
                     source_tables=[profile.table_name],
                     source_columns=[col_name],
@@ -95,10 +112,14 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
                         "stdev": stats["stdev"],
                         "low_bound": round(low_bound, 2),
                         "high_bound": round(high_bound, 2),
-                        "outlier_samples": outlier_samples[:5],
+                        "outlier_count": len(outlier_samples),
+                        "sample_size": len(samples),
+                        "outlier_pct": round(len(outlier_samples) / len(samples) * 100, 1) if samples else 0,
+                        "outlier_range": {"min": outlier_min, "max": outlier_max},
+                        "outlier_samples": outlier_samples[:10],
                     },
                     suggested_actions=[
-                        f"Review outlier values in {col_name} for data entry errors",
+                        f"Review {len(outlier_samples)} outlier values in {col_name} for data entry errors",
                         "Check if outliers represent legitimate edge cases",
                     ],
                 ))
@@ -173,10 +194,11 @@ def _scan_table(profile: TableProfile) -> list[Insight]:
     ]
 
     if temp_cols and num_cols:
-        # Only create trend insight if we can detect an actual trend from sample data
-        trend_insight = _detect_actual_trend(profile, cols, temp_cols[0], num_cols[:3])
-        if trend_insight:
-            results.append(trend_insight)
+        # Check every numeric column for trends (not just the first 3)
+        for nc in num_cols:
+            trend_insight = _detect_actual_trend(profile, cols, temp_cols[0], [nc])
+            if trend_insight:
+                results.append(trend_insight)
 
     # 8. Domain-specific anomalies for manufacturing
     domain = (profile.domain_hint or "general").lower()

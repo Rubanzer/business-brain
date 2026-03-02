@@ -57,12 +57,13 @@ def _scan_table_seasonality(profile: TableProfile) -> list[Insight]:
     if not temp_cols or not num_cols:
         return results
 
-    # 1. Shift pattern detection — only if we can find actual performance differences
+    # 1. Shift pattern detection — check all shift columns × all numeric columns
     shift_cols = [c for c in cat_cols if "shift" in c.lower()]
-    if shift_cols and num_cols:
-        shift_insight = _detect_shift_performance_gap(profile, cols, shift_cols[0], num_cols[:3])
-        if shift_insight:
-            results.append(shift_insight)
+    for sc in shift_cols:
+        for nc in num_cols:
+            shift_insight = _detect_shift_performance_gap(profile, cols, sc, [nc])
+            if shift_insight:
+                results.append(shift_insight)
 
     # 2-3. Day-of-week / monthly: suppressed as meta-insights ("opportunity" not "finding").
     # These are pattern _possibilities_, not actual detected patterns.

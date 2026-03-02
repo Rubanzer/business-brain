@@ -91,18 +91,15 @@ async def run_discovery(
     trigger: str = "manual",
     table_filter: list[str] | None = None,
 ) -> DiscoveryRun:
-    """Run the full discovery pipeline.
+    """Run the fast discovery pipeline (fits within serverless timeout).
 
-    1. Profile all tables
-    2. Find cross-table relationships
-    3. Detect anomalies
-    4. Discover composite metrics
-    5. Find cross-event correlations
-    6. Build narratives (if 3+ insights)
-    7. Score and store all insights
-    8. Auto-refresh deployed reports
+    Fast passes (~3-5s): profile, relationships, anomalies, benchmarks,
+    composites, cross-events, seasonality, correlations, domain, entity.
+    All committed before returning.
+
+    Slow passes (narratives, sanctity, precomputation) run separately
+    via run_discovery_enrich().
     """
-    # 1. Create DiscoveryRun
     run = DiscoveryRun(
         id=str(uuid.uuid4()),
         status="running",
@@ -114,7 +111,7 @@ async def run_discovery(
     tracker = _PassTracker()
 
     try:
-        # 2. Profile all tables
+        # 1. Profile all tables
         t0 = time.monotonic()
         logger.info("Discovery: profiling tables...")
         profiles = await profile_all_tables(session, table_filter=table_filter)
@@ -129,7 +126,7 @@ async def run_discovery(
             await session.commit()
             return run
 
-        # 3. Find relationships
+        # 2. Find relationships
         t0 = time.monotonic()
         logger.info("Discovery: finding relationships...")
         try:
@@ -141,14 +138,14 @@ async def run_discovery(
             relationships = []
             tracker.record("find_relationships", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
-        # 4. Detect anomalies
+        # 3. Detect anomalies
         t0 = time.monotonic()
         logger.info("Discovery: detecting anomalies...")
         anomaly_insights = detect_anomalies(profiles)
         logger.info("Discovery: found %d anomaly insights", len(anomaly_insights))
         tracker.record("detect_anomalies", count=len(anomaly_insights), duration_ms=_elapsed_ms(t0))
 
-        # 4b. Check benchmarks against domain knowledge
+        # 3b. Check benchmarks against domain knowledge
         t0 = time.monotonic()
         logger.info("Discovery: checking benchmarks...")
         try:
@@ -161,28 +158,28 @@ async def run_discovery(
             benchmark_insights = []
             tracker.record("benchmark_check", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
-        # 5. Discover composites
+        # 4. Discover composites
         t0 = time.monotonic()
         logger.info("Discovery: discovering composites...")
         composite_insights = discover_composites(profiles, relationships)
         logger.info("Discovery: found %d composite insights", len(composite_insights))
         tracker.record("discover_composites", count=len(composite_insights), duration_ms=_elapsed_ms(t0))
 
-        # 6. Find cross-events
+        # 5. Find cross-events
         t0 = time.monotonic()
         logger.info("Discovery: finding cross-event correlations...")
         cross_insights = await find_cross_events(session, profiles, relationships)
         logger.info("Discovery: found %d cross-event insights", len(cross_insights))
         tracker.record("cross_event_correlations", count=len(cross_insights), duration_ms=_elapsed_ms(t0))
 
-        # 6b. Detect seasonality patterns
+        # 5b. Detect seasonality patterns
         t0 = time.monotonic()
         logger.info("Discovery: detecting seasonality patterns...")
         seasonality_insights = detect_seasonality(profiles)
         logger.info("Discovery: found %d seasonality insights", len(seasonality_insights))
         tracker.record("seasonality_detection", count=len(seasonality_insights), duration_ms=_elapsed_ms(t0))
 
-        # 6c. Discover correlations from profile data
+        # 5c. Discover correlations from profile data
         t0 = time.monotonic()
         logger.info("Discovery: discovering correlations...")
         try:
@@ -195,7 +192,7 @@ async def run_discovery(
             correlation_insights = []
             tracker.record("correlation_discovery", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
-        # 6d. Run domain-specific analysis (heat, material balance, quality, power, etc.)
+        # 5d. Run domain-specific analysis (heat, material balance, quality, power, etc.)
         t0 = time.monotonic()
         logger.info("Discovery: running domain-specific analysis...")
         try:
@@ -208,7 +205,7 @@ async def run_discovery(
             domain_insights = []
             tracker.record("domain_analysis", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
-        # 6e. Entity performance comparison (operational gaps: who's underperforming)
+        # 5e. Entity performance comparison (operational gaps: who's underperforming)
         t0 = time.monotonic()
         logger.info("Discovery: comparing entity performance...")
         try:
@@ -221,291 +218,68 @@ async def run_discovery(
             entity_insights = []
             tracker.record("entity_performance", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
-        # 7. Combine all insights
+        # 6. Combine all fast-pass insights
         all_insights = (
             anomaly_insights + benchmark_insights + composite_insights + cross_insights
             + seasonality_insights + correlation_insights + domain_insights
             + entity_insights
         )
 
-        # ── CHECKPOINT: commit fast-pass insights immediately ──
-        # Vercel serverless may kill the function during slow LLM passes
-        # (narratives, sanctity). By committing here, we guarantee the
-        # fast-pass insights (anomalies, correlations, composites, etc.)
-        # survive even if the function times out.
-        fast_pass_count = len(all_insights)
-        if fast_pass_count:
-            logger.info("Discovery: committing %d fast-pass insights...", fast_pass_count)
-            t0 = time.monotonic()
-            try:
-                # Apply quality gate + dedup to fast-pass insights before persisting
-                from business_brain.discovery.dedup import compute_insight_key, deduplicate_insights
-
-                try:
-                    reinforcement_weights_early = None
-                    from business_brain.discovery.reinforcement_loop import get_latest_weights
-                    reinforcement_weights_early = await get_latest_weights(session)
-                except Exception:
-                    pass
-
-                fast_insights = apply_quality_gate(all_insights, profiles, reinforcement_weights=reinforcement_weights_early)
-
-                # Dedup against existing DB records
-                existing_result = await session.execute(
-                    select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)
-                )
-                existing_keys = set()
-                for row in existing_result.fetchall():
-                    dummy = Insight()
-                    dummy.insight_type = row[2]
-                    dummy.source_tables = row[0]
-                    dummy.source_columns = row[1]
-                    dummy.composite_template = row[3]
-                    existing_keys.add(compute_insight_key(dummy))
-
-                fast_insights = deduplicate_insights(fast_insights, existing_keys)
-
-                for insight in fast_insights:
-                    insight.discovery_run_id = run.id
-                    session.add(insight)
-
-                run.insights_found = len(fast_insights)
-                run.pass_diagnostics = tracker.results
-                await session.commit()
-                logger.info("Discovery: checkpoint committed %d insights", len(fast_insights))
-                tracker.record("fast_pass_commit", count=len(fast_insights), duration_ms=_elapsed_ms(t0))
-
-                # Track already-committed insight keys so we don't re-insert in final commit
-                committed_keys = {compute_insight_key(i) for i in fast_insights}
-            except Exception as exc:
-                logger.exception("Fast-pass commit failed, continuing")
-                await session.rollback()
-                committed_keys = set()
-                tracker.record("fast_pass_commit", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-        else:
-            committed_keys = set()
-
-        # ── SLOW PASSES (LLM-dependent, may timeout on serverless) ──
-
-        # 8. Build narratives (if 2+ insights)
-        if len(all_insights) >= 2:
-            t0 = time.monotonic()
-            logger.info("Discovery: building narratives...")
-            try:
-                story_insights = await build_narratives(all_insights)
-                all_insights.extend(story_insights)
-                logger.info("Discovery: generated %d narrative stories", len(story_insights))
-                tracker.record("narrative_building", count=len(story_insights), duration_ms=_elapsed_ms(t0))
-            except Exception as exc:
-                logger.exception("Narrative building failed, continuing without stories")
-                tracker.record("narrative_building", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 8b. Run sanctity checks
+        # 7. Quality gate + dedup + persist
         t0 = time.monotonic()
-        logger.info("Discovery: running sanctity checks...")
-        try:
-            from business_brain.discovery.sanctity_engine import run_sanctity_check
-            sanctity_summary = await run_sanctity_check(session, profiles)
-            logger.info("Discovery: sanctity check found %d issues", sanctity_summary.get("total", 0))
-            tracker.record("sanctity_check", count=sanctity_summary.get("total", 0), duration_ms=_elapsed_ms(t0))
-        except Exception as exc:
-            logger.exception("Sanctity check failed, continuing")
-            tracker.record("sanctity_check", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 8c. Check pattern memory for matches
-        t0 = time.monotonic()
-        logger.info("Discovery: checking pattern memory...")
-        try:
-            from business_brain.discovery.pattern_memory import check_patterns
-            pattern_match_count = 0
-            for profile in profiles:
-                matches = await check_patterns(session, profile.table_name)
-                if matches:
-                    pattern_match_count += len(matches)
-                    logger.info("Discovery: %d pattern matches in %s", len(matches), profile.table_name)
-            tracker.record("pattern_memory", count=pattern_match_count, duration_ms=_elapsed_ms(t0))
-        except Exception as exc:
-            logger.exception("Pattern matching failed, continuing")
-            tracker.record("pattern_memory", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 8d. Detect duplicate data sources
-        t0 = time.monotonic()
-        logger.info("Discovery: detecting duplicate sources...")
-        try:
-            from business_brain.discovery.format_detector import detect_duplicate_sources
-            duplicates = await detect_duplicate_sources(session, profiles)
-            dup_count = len(duplicates) if duplicates else 0
-            if duplicates:
-                logger.info("Discovery: found %d potential duplicate sources", dup_count)
-            tracker.record("duplicate_detection", count=dup_count, duration_ms=_elapsed_ms(t0))
-        except Exception as exc:
-            logger.exception("Duplicate source detection failed, continuing")
-            tracker.record("duplicate_detection", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 8e. Detect schema changes from previous profiles
-        t0 = time.monotonic()
-        logger.info("Discovery: detecting schema changes...")
-        try:
-            from business_brain.discovery.schema_tracker import detect_schema_changes
-            prev_result = await session.execute(
-                select(TableProfile).where(
-                    TableProfile.table_name.in_([p.table_name for p in profiles])
-                )
-            )
-            previous_profiles = list(prev_result.scalars().all())
-            schema_insights = detect_schema_changes(profiles, previous_profiles)
-            if schema_insights:
-                all_insights.extend(schema_insights)
-                logger.info("Discovery: found %d schema changes", len(schema_insights))
-            tracker.record("schema_change_detection", count=len(schema_insights) if schema_insights else 0, duration_ms=_elapsed_ms(t0))
-        except Exception as exc:
-            logger.exception("Schema change detection failed, continuing")
-            tracker.record("schema_change_detection", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 8f. Data freshness tracking
-        t0 = time.monotonic()
-        logger.info("Discovery: checking data freshness...")
-        try:
-            from business_brain.discovery.data_freshness import detect_stale_tables
-            prev_result2 = await session.execute(
-                select(TableProfile).where(
-                    TableProfile.table_name.in_([p.table_name for p in profiles])
-                )
-            )
-            prev_profiles2 = list(prev_result2.scalars().all())
-            stale_insights = detect_stale_tables(profiles, prev_profiles2)
-            if stale_insights:
-                all_insights.extend(stale_insights)
-                logger.info("Discovery: found %d stale tables", len(stale_insights))
-            tracker.record("data_freshness", count=len(stale_insights) if stale_insights else 0, duration_ms=_elapsed_ms(t0))
-        except Exception as exc:
-            logger.exception("Data freshness check failed, continuing")
-            tracker.record("data_freshness", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 9. Persist any NEW insights from slow passes (narratives, schema changes, freshness)
-        # Fast-pass insights were already committed at the checkpoint above.
-        t0 = time.monotonic()
-        logger.info("Discovery: persisting slow-pass insights...")
+        logger.info("Discovery: committing %d fast-pass insights...", len(all_insights))
         try:
             from business_brain.discovery.dedup import compute_insight_key, deduplicate_insights
 
-            # Filter to only NEW insights not yet committed
-            new_insights = [i for i in all_insights if compute_insight_key(i) not in committed_keys]
+            reinforcement_weights = None
+            try:
+                from business_brain.discovery.reinforcement_loop import get_latest_weights
+                reinforcement_weights = await get_latest_weights(session)
+            except Exception:
+                pass
 
-            if new_insights:
-                try:
-                    reinforcement_weights = None
-                    from business_brain.discovery.reinforcement_loop import get_latest_weights
-                    reinforcement_weights = await get_latest_weights(session)
-                except Exception:
-                    pass
+            gated = apply_quality_gate(all_insights, profiles, reinforcement_weights=reinforcement_weights)
 
-                new_insights = apply_quality_gate(new_insights, profiles, reinforcement_weights=reinforcement_weights)
-
-                # Dedup against DB (includes the checkpoint-committed ones)
-                existing_result = await session.execute(
-                    select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)
-                )
-                existing_keys = set()
-                for row in existing_result.fetchall():
-                    dummy = Insight()
-                    dummy.insight_type = row[2]
-                    dummy.source_tables = row[0]
-                    dummy.source_columns = row[1]
-                    dummy.composite_template = row[3]
-                    existing_keys.add(compute_insight_key(dummy))
-
-                new_insights = deduplicate_insights(new_insights, existing_keys)
-
-                for insight in new_insights:
-                    insight.discovery_run_id = run.id
-                    session.add(insight)
-
-                await session.flush()
-                logger.info("Discovery: persisted %d slow-pass insights", len(new_insights))
-                tracker.record("slow_pass_persist", count=len(new_insights), duration_ms=_elapsed_ms(t0))
-
-                # Update total count
-                run.insights_found = (run.insights_found or 0) + len(new_insights)
-            else:
-                tracker.record("slow_pass_persist", count=0, duration_ms=_elapsed_ms(t0))
-        except Exception as exc:
-            logger.exception("Slow-pass persist failed, fast-pass insights already safe")
-            tracker.record("slow_pass_persist", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 11. Auto-refresh deployed reports whose source tables were re-profiled
-        profiled_tables = {p.table_name for p in profiles}
-        await _refresh_affected_reports(session, profiled_tables)
-
-        # 11b. Evaluate all alert rules after data refresh
-        t0 = time.monotonic()
-        logger.info("Discovery: evaluating alert rules...")
-        try:
-            from business_brain.action.alert_engine import evaluate_all_alerts
-            alert_events = await evaluate_all_alerts(session)
-            if alert_events:
-                logger.info("Discovery: %d alerts triggered", len(alert_events))
-            tracker.record("alert_evaluation", count=len(alert_events) if alert_events else 0, duration_ms=_elapsed_ms(t0))
-        except Exception as exc:
-            logger.exception("Alert evaluation failed, continuing")
-            tracker.record("alert_evaluation", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 12. Pre-compute top analyses in background
-        t0 = time.monotonic()
-        logger.info("Discovery: pre-computing top analyses...")
-        try:
-            from business_brain.discovery.precompute_engine import (
-                invalidate_stale,
-                run_precomputation,
+            # Dedup against existing DB records
+            existing_result = await session.execute(
+                select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)
             )
+            existing_keys = set()
+            for row in existing_result.fetchall():
+                dummy = Insight()
+                dummy.insight_type = row[2]
+                dummy.source_tables = row[0]
+                dummy.source_columns = row[1]
+                dummy.composite_template = row[3]
+                existing_keys.add(compute_insight_key(dummy))
 
-            await invalidate_stale(session, profiled_tables)
-            precomputed = await run_precomputation(
-                session, profiles, max_total=20,
-            )
-            logger.info("Discovery: pre-computed %d analyses", len(precomputed))
-            tracker.record("precomputation", count=len(precomputed), duration_ms=_elapsed_ms(t0))
+            gated = deduplicate_insights(gated, existing_keys)
+
+            for insight in gated:
+                insight.discovery_run_id = run.id
+                session.add(insight)
+
+            run.insights_found = len(gated)
+            tracker.record("persist_insights", count=len(gated), duration_ms=_elapsed_ms(t0))
         except Exception as exc:
-            logger.exception("Pre-computation failed, continuing")
-            tracker.record("precomputation", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+            logger.exception("Insight persist failed")
+            gated = []
+            tracker.record("persist_insights", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
-        # 12b. Update reinforcement weights from engagement data
-        t0 = time.monotonic()
-        logger.info("Discovery: updating reinforcement weights...")
-        try:
-            from business_brain.discovery.reinforcement_loop import update_weights
-            rl_record = await update_weights(session, discovery_run_id=run.id)
-            if rl_record:
-                logger.info("Discovery: reinforcement weights updated to v%d", rl_record.version)
-            tracker.record("reinforcement_update", duration_ms=_elapsed_ms(t0))
-        except Exception as exc:
-            logger.exception("Reinforcement weight update failed, continuing")
-            tracker.record("reinforcement_update", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 13. Complete the run
+        # 8. Complete the fast phase
         run.status = "completed"
-        # insights_found already accumulated from checkpoint + slow-pass persist
         run.pass_diagnostics = tracker.results
         run.completed_at = datetime.now(timezone.utc)
-
         await session.commit()
 
         failed = tracker.failed_count
         logger.info(
-            "Discovery completed: %d tables, %d insights, %d/%d passes failed",
+            "Discovery fast phase done: %d tables, %d insights, %d/%d passes failed",
             run.tables_scanned,
             run.insights_found,
             failed,
             len(tracker.results),
         )
-
-        # 14. Trigger analysis engine on changed tables (optional, non-blocking)
-        try:
-            from business_brain.analysis.integration import run_analysis_after_discovery
-            changed = [p.table_name for p in profiles]
-            await run_analysis_after_discovery(session, changed_tables=changed)
-        except Exception:
-            logger.debug("Analysis trigger skipped (engine not available or failed)")
 
     except Exception as exc:
         run.status = "failed"
@@ -517,6 +291,250 @@ async def run_discovery(
         raise
 
     return run
+
+
+async def run_discovery_enrich(
+    session: AsyncSession,
+    run_id: str | None = None,
+) -> dict:
+    """Run slow enrichment passes (LLM-dependent) as a separate call.
+
+    This is designed to be called AFTER run_discovery() completes.
+    Each pass commits independently so partial progress is never lost.
+
+    Passes: narratives, sanctity, pattern memory, duplicate detection,
+    schema changes, data freshness, alerts, precomputation, reinforcement.
+    """
+    tracker = _PassTracker()
+
+    # Load profiles and existing insights for this run
+    profiles_result = await session.execute(select(TableProfile))
+    profiles = list(profiles_result.scalars().all())
+
+    if not profiles:
+        return {"status": "skipped", "reason": "no_profiles", "passes": []}
+
+    # Load the run record if provided (to update diagnostics)
+    run = None
+    if run_id:
+        run_result = await session.execute(
+            select(DiscoveryRun).where(DiscoveryRun.id == run_id)
+        )
+        run = run_result.scalar_one_or_none()
+
+    # Load insights from the fast phase for narrative building
+    insight_result = await session.execute(
+        select(Insight).order_by(Insight.discovered_at.desc()).limit(50)
+    )
+    recent_insights = list(insight_result.scalars().all())
+
+    all_new_insights: list[Insight] = []
+
+    # ── Narrative building ──
+    if len(recent_insights) >= 2:
+        t0 = time.monotonic()
+        logger.info("Enrich: building narratives...")
+        try:
+            story_insights = await build_narratives(recent_insights)
+            all_new_insights.extend(story_insights)
+            logger.info("Enrich: generated %d narrative stories", len(story_insights))
+            tracker.record("narrative_building", count=len(story_insights), duration_ms=_elapsed_ms(t0))
+        except Exception as exc:
+            logger.exception("Narrative building failed, continuing")
+            tracker.record("narrative_building", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Sanctity checks ──
+    t0 = time.monotonic()
+    logger.info("Enrich: running sanctity checks...")
+    try:
+        from business_brain.discovery.sanctity_engine import run_sanctity_check
+        sanctity_summary = await run_sanctity_check(session, profiles)
+        logger.info("Enrich: sanctity check found %d issues", sanctity_summary.get("total", 0))
+        tracker.record("sanctity_check", count=sanctity_summary.get("total", 0), duration_ms=_elapsed_ms(t0))
+    except Exception as exc:
+        logger.exception("Sanctity check failed, continuing")
+        tracker.record("sanctity_check", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Pattern memory ──
+    t0 = time.monotonic()
+    logger.info("Enrich: checking pattern memory...")
+    try:
+        from business_brain.discovery.pattern_memory import check_patterns
+        pattern_match_count = 0
+        for profile in profiles:
+            matches = await check_patterns(session, profile.table_name)
+            if matches:
+                pattern_match_count += len(matches)
+        tracker.record("pattern_memory", count=pattern_match_count, duration_ms=_elapsed_ms(t0))
+    except Exception as exc:
+        logger.exception("Pattern matching failed, continuing")
+        tracker.record("pattern_memory", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Duplicate detection ──
+    t0 = time.monotonic()
+    logger.info("Enrich: detecting duplicate sources...")
+    try:
+        from business_brain.discovery.format_detector import detect_duplicate_sources
+        duplicates = await detect_duplicate_sources(session, profiles)
+        dup_count = len(duplicates) if duplicates else 0
+        tracker.record("duplicate_detection", count=dup_count, duration_ms=_elapsed_ms(t0))
+    except Exception as exc:
+        logger.exception("Duplicate source detection failed, continuing")
+        tracker.record("duplicate_detection", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Schema change detection ──
+    t0 = time.monotonic()
+    logger.info("Enrich: detecting schema changes...")
+    try:
+        from business_brain.discovery.schema_tracker import detect_schema_changes
+        prev_result = await session.execute(
+            select(TableProfile).where(
+                TableProfile.table_name.in_([p.table_name for p in profiles])
+            )
+        )
+        previous_profiles = list(prev_result.scalars().all())
+        schema_insights = detect_schema_changes(profiles, previous_profiles)
+        if schema_insights:
+            all_new_insights.extend(schema_insights)
+        tracker.record("schema_change_detection", count=len(schema_insights) if schema_insights else 0, duration_ms=_elapsed_ms(t0))
+    except Exception as exc:
+        logger.exception("Schema change detection failed, continuing")
+        tracker.record("schema_change_detection", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Data freshness ──
+    t0 = time.monotonic()
+    logger.info("Enrich: checking data freshness...")
+    try:
+        from business_brain.discovery.data_freshness import detect_stale_tables
+        prev_result2 = await session.execute(
+            select(TableProfile).where(
+                TableProfile.table_name.in_([p.table_name for p in profiles])
+            )
+        )
+        prev_profiles2 = list(prev_result2.scalars().all())
+        stale_insights = detect_stale_tables(profiles, prev_profiles2)
+        if stale_insights:
+            all_new_insights.extend(stale_insights)
+        tracker.record("data_freshness", count=len(stale_insights) if stale_insights else 0, duration_ms=_elapsed_ms(t0))
+    except Exception as exc:
+        logger.exception("Data freshness check failed, continuing")
+        tracker.record("data_freshness", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Persist new insights from enrichment ──
+    new_count = 0
+    if all_new_insights:
+        t0 = time.monotonic()
+        try:
+            from business_brain.discovery.dedup import compute_insight_key, deduplicate_insights
+
+            reinforcement_weights = None
+            try:
+                from business_brain.discovery.reinforcement_loop import get_latest_weights
+                reinforcement_weights = await get_latest_weights(session)
+            except Exception:
+                pass
+
+            gated = apply_quality_gate(all_new_insights, profiles, reinforcement_weights=reinforcement_weights)
+
+            existing_result = await session.execute(
+                select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)
+            )
+            existing_keys = set()
+            for row in existing_result.fetchall():
+                dummy = Insight()
+                dummy.insight_type = row[2]
+                dummy.source_tables = row[0]
+                dummy.source_columns = row[1]
+                dummy.composite_template = row[3]
+                existing_keys.add(compute_insight_key(dummy))
+
+            gated = deduplicate_insights(gated, existing_keys)
+
+            for insight in gated:
+                if run:
+                    insight.discovery_run_id = run.id
+                session.add(insight)
+
+            new_count = len(gated)
+            await session.commit()
+            tracker.record("enrich_persist", count=new_count, duration_ms=_elapsed_ms(t0))
+        except Exception as exc:
+            logger.exception("Enrich persist failed")
+            new_count = 0
+            await session.rollback()
+            tracker.record("enrich_persist", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Auto-refresh deployed reports ──
+    profiled_tables = {p.table_name for p in profiles}
+    await _refresh_affected_reports(session, profiled_tables)
+
+    # ── Alert evaluation ──
+    t0 = time.monotonic()
+    logger.info("Enrich: evaluating alert rules...")
+    try:
+        from business_brain.action.alert_engine import evaluate_all_alerts
+        alert_events = await evaluate_all_alerts(session)
+        tracker.record("alert_evaluation", count=len(alert_events) if alert_events else 0, duration_ms=_elapsed_ms(t0))
+    except Exception as exc:
+        logger.exception("Alert evaluation failed, continuing")
+        tracker.record("alert_evaluation", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Precomputation ──
+    t0 = time.monotonic()
+    logger.info("Enrich: pre-computing top analyses...")
+    try:
+        from business_brain.discovery.precompute_engine import (
+            invalidate_stale,
+            run_precomputation,
+        )
+        await invalidate_stale(session, profiled_tables)
+        precomputed = await run_precomputation(session, profiles, max_total=20)
+        tracker.record("precomputation", count=len(precomputed), duration_ms=_elapsed_ms(t0))
+    except Exception as exc:
+        logger.exception("Pre-computation failed, continuing")
+        tracker.record("precomputation", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # ── Reinforcement weights ──
+    t0 = time.monotonic()
+    logger.info("Enrich: updating reinforcement weights...")
+    try:
+        from business_brain.discovery.reinforcement_loop import update_weights
+        rl_record = await update_weights(session, discovery_run_id=run.id if run else None)
+        if rl_record:
+            logger.info("Enrich: reinforcement weights updated to v%d", rl_record.version)
+        tracker.record("reinforcement_update", duration_ms=_elapsed_ms(t0))
+    except Exception as exc:
+        logger.exception("Reinforcement weight update failed, continuing")
+        tracker.record("reinforcement_update", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+
+    # Update run record with enrichment diagnostics
+    if run:
+        existing_diags = run.pass_diagnostics or []
+        run.pass_diagnostics = existing_diags + tracker.results
+        run.insights_found = (run.insights_found or 0) + new_count
+        await session.commit()
+
+    # Trigger analysis engine (optional, non-blocking)
+    try:
+        from business_brain.analysis.integration import run_analysis_after_discovery
+        changed = [p.table_name for p in profiles]
+        await run_analysis_after_discovery(session, changed_tables=changed)
+    except Exception:
+        logger.debug("Analysis trigger skipped (engine not available or failed)")
+
+    logger.info(
+        "Enrich phase done: %d new insights, %d/%d passes failed",
+        new_count,
+        tracker.failed_count,
+        len(tracker.results),
+    )
+
+    return {
+        "status": "completed",
+        "new_insights": new_count,
+        "passes": tracker.results,
+        "failed_passes": tracker.failed_count,
+    }
 
 
 import re as _re

@@ -17,49 +17,78 @@ class _Prof:
 
 
 class TestShiftCycleDetection:
-    """Test shift pattern detection."""
+    """Test shift performance gap detection.
+
+    The detector uses _detect_shift_performance_gap which requires:
+    - A shift column with 'shift' in the name, cardinality 2-5, and >=6 sample_values
+    - A numeric column with sample_values of equal length
+    - A measurable gap (>15%) between shift averages
+    """
 
     def test_shift_column_detected(self):
         prof = _Prof("production", {
-            "shift": {"semantic_type": "categorical", "cardinality": 3},
-            "output_tons": {"semantic_type": "numeric_metric", "cardinality": 50},
+            "shift": {
+                "semantic_type": "categorical", "cardinality": 3,
+                "sample_values": ["A", "A", "B", "B", "C", "C", "A", "B"],
+            },
+            "output_tons": {
+                "semantic_type": "numeric_metric", "cardinality": 50,
+                "sample_values": [100, 110, 60, 55, 40, 35, 105, 50],
+            },
             "timestamp": {"semantic_type": "temporal", "cardinality": 30},
         }, domain="manufacturing")
         insights = _scan_table_seasonality(prof)
-        shift_insights = [i for i in insights if i.evidence.get("pattern_type") == "shift_cycle"]
+        shift_insights = [i for i in insights if i.evidence.get("pattern_type") == "shift_performance_gap"]
         assert len(shift_insights) >= 1
         assert shift_insights[0].evidence["shift_column"] == "shift"
-        assert shift_insights[0].evidence["shift_count"] == 3
 
     def test_shift_column_with_2_shifts(self):
         prof = _Prof("factory", {
-            "shift_name": {"semantic_type": "categorical", "cardinality": 2},
-            "power_kva": {"semantic_type": "numeric_metric", "cardinality": 40},
+            "shift_name": {
+                "semantic_type": "categorical", "cardinality": 2,
+                "sample_values": ["Day", "Day", "Day", "Night", "Night", "Night"],
+            },
+            "power_kva": {
+                "semantic_type": "numeric_metric", "cardinality": 40,
+                "sample_values": [200, 210, 190, 100, 110, 95],
+            },
             "date": {"semantic_type": "temporal", "cardinality": 20},
         })
         insights = _scan_table_seasonality(prof)
-        shift_insights = [i for i in insights if i.evidence.get("pattern_type") == "shift_cycle"]
+        shift_insights = [i for i in insights if i.evidence.get("pattern_type") == "shift_performance_gap"]
         assert len(shift_insights) >= 1
 
     def test_no_shift_if_cardinality_too_high(self):
         """6+ values shouldn't be treated as shifts."""
         prof = _Prof("data", {
-            "shift": {"semantic_type": "categorical", "cardinality": 10},
-            "value": {"semantic_type": "numeric_metric", "cardinality": 50},
+            "shift": {
+                "semantic_type": "categorical", "cardinality": 10,
+                "sample_values": [f"S{i}" for i in range(10)],
+            },
+            "value": {
+                "semantic_type": "numeric_metric", "cardinality": 50,
+                "sample_values": list(range(10)),
+            },
             "date": {"semantic_type": "temporal", "cardinality": 20},
         })
         insights = _scan_table_seasonality(prof)
-        shift_insights = [i for i in insights if i.evidence.get("pattern_type") == "shift_cycle"]
+        shift_insights = [i for i in insights if i.evidence.get("pattern_type") == "shift_performance_gap"]
         assert len(shift_insights) == 0
 
     def test_no_shift_if_cardinality_1(self):
         prof = _Prof("data", {
-            "shift": {"semantic_type": "categorical", "cardinality": 1},
-            "value": {"semantic_type": "numeric_metric", "cardinality": 50},
+            "shift": {
+                "semantic_type": "categorical", "cardinality": 1,
+                "sample_values": ["A"] * 6,
+            },
+            "value": {
+                "semantic_type": "numeric_metric", "cardinality": 50,
+                "sample_values": [10, 20, 30, 40, 50, 60],
+            },
             "date": {"semantic_type": "temporal", "cardinality": 20},
         })
         insights = _scan_table_seasonality(prof)
-        shift_insights = [i for i in insights if i.evidence.get("pattern_type") == "shift_cycle"]
+        shift_insights = [i for i in insights if i.evidence.get("pattern_type") == "shift_performance_gap"]
         assert len(shift_insights) == 0
 
 
@@ -230,11 +259,17 @@ class TestEdgeCases:
         assert insights == []
 
     def test_multiple_profiles(self):
-        """With DOW/monthly suppressed, only shift_cycle and distribution_skew produce insights.
+        """With DOW/monthly suppressed, only shift_performance_gap and distribution_skew produce insights.
         The 'sales' profile (temporal + numeric only) no longer generates insights."""
         prof_a = _Prof("production", {
-            "shift": {"semantic_type": "categorical", "cardinality": 3},
-            "output": {"semantic_type": "numeric_metric", "cardinality": 50},
+            "shift": {
+                "semantic_type": "categorical", "cardinality": 3,
+                "sample_values": ["A", "A", "B", "B", "C", "C", "A", "B"],
+            },
+            "output": {
+                "semantic_type": "numeric_metric", "cardinality": 50,
+                "sample_values": [100, 110, 60, 55, 40, 35, 105, 50],
+            },
             "date": {"semantic_type": "temporal", "cardinality": 90},
         })
         prof_b = _Prof("sales", {
@@ -248,14 +283,20 @@ class TestEdgeCases:
         # sales no longer produces insights (DOW/monthly suppressed)
 
     def test_insight_has_valid_fields(self):
-        """Use a profile with shift column to produce actual insights (shift_cycle)."""
+        """Use a profile with shift column + sample data to produce actual insights."""
         prof = _Prof("data", {
-            "shift": {"semantic_type": "categorical", "cardinality": 3},
+            "shift": {
+                "semantic_type": "categorical", "cardinality": 3,
+                "sample_values": ["A", "A", "B", "B", "C", "C", "A", "B"],
+            },
             "date": {"semantic_type": "temporal", "cardinality": 30},
-            "value": {"semantic_type": "numeric_metric", "cardinality": 50},
+            "value": {
+                "semantic_type": "numeric_metric", "cardinality": 50,
+                "sample_values": [100, 110, 60, 55, 40, 35, 105, 50],
+            },
         })
         insights = _scan_table_seasonality(prof)
-        assert len(insights) > 0  # Should have shift_cycle insight
+        assert len(insights) > 0  # Should have shift_performance_gap insight
         for ins in insights:
             assert ins.id is not None
             assert ins.insight_type == "seasonality"

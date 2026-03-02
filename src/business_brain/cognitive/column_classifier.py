@@ -188,7 +188,7 @@ def _classify_one(
     result: dict[str, Any] = {
         "cardinality": cardinality,
         "null_count": len(raw_values) - len(non_null),
-        "sample_values": [str(v) for v in non_null[:5]],
+        "sample_values": [str(v) for v in non_null[:100]],
     }
 
     sql_type_lower = (sql_type or "").lower().strip()
