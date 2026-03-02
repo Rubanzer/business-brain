@@ -5079,7 +5079,8 @@
         let html = '';
         scores.forEach(function(t) {
           const score = t.overall_score ?? t.score ?? 0;
-          const pct = Math.round(score * 100);
+          // score is already 0-100 from backend (compute_data_quality_score)
+          const pct = Math.round(score);
           const color = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--yellow, orange)' : 'var(--red)';
           html += '<div class="report-section" style="margin-bottom:0.75rem;">';
           html += '<div style="display:flex;justify-content:space-between;align-items:center;">';

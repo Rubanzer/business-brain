@@ -594,16 +594,25 @@ async def run_precomputation(
         analysis_type = candidate["analysis_type"]
         columns = candidate["columns"]
 
-        # Check if we already have a non-stale result for this exact analysis
-        existing = (await session.execute(
-            select(PrecomputedAnalysis).where(
-                PrecomputedAnalysis.table_name == table_name,
-                PrecomputedAnalysis.analysis_type == analysis_type,
-                PrecomputedAnalysis.columns == columns,
-                PrecomputedAnalysis.status.in_(["completed", "running"]),
-                PrecomputedAnalysis.data_hash == candidate.get("data_hash"),
-            )
-        )).scalar_one_or_none()
+        # Check if we already have a non-stale result for this exact analysis.
+        # Cast columns to JSONB for comparison — PostgreSQL's json type
+        # does NOT support the = operator, only jsonb does.
+        from sqlalchemy import cast as sa_cast
+        from sqlalchemy.dialects.postgresql import JSONB
+
+        try:
+            async with session.begin_nested():
+                existing = (await session.execute(
+                    select(PrecomputedAnalysis).where(
+                        PrecomputedAnalysis.table_name == table_name,
+                        PrecomputedAnalysis.analysis_type == analysis_type,
+                        PrecomputedAnalysis.columns.cast(JSONB) == sa_cast(columns, JSONB),
+                        PrecomputedAnalysis.status.in_(["completed", "running"]),
+                        PrecomputedAnalysis.data_hash == candidate.get("data_hash"),
+                    )
+                )).scalar_one_or_none()
+        except Exception:
+            existing = None
 
         if existing:
             completed.append(existing)
@@ -622,7 +631,8 @@ async def run_precomputation(
         session.add(record)
         await session.flush()
 
-        # Run the actual SQL
+        # Run the actual SQL — each candidate in its own savepoint so
+        # one failure doesn't poison the session for the rest
         dispatch_fn = _PRECOMPUTE_DISPATCH.get(analysis_type)
         if not dispatch_fn:
             record.status = "failed"
@@ -630,7 +640,8 @@ async def run_precomputation(
             continue
 
         try:
-            summary, detail, quality = await dispatch_fn(session, table_name, columns)
+            async with session.begin_nested():
+                summary, detail, quality = await dispatch_fn(session, table_name, columns)
             record.status = "completed"
             record.result_summary = summary
             record.result_detail = detail
