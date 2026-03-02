@@ -66,6 +66,9 @@
     { "src": "/export/(.*)", "dest": "api/index.py" },
     { "src": "/process-steps/(.*)", "dest": "api/index.py" },
     { "src": "/process-steps", "dest": "api/index.py" },
+    { "src": "/workspace/(.*)", "dest": "api/index.py" },
+    { "src": "/qualitative/(.*)", "dest": "api/index.py" },
+    { "src": "/qualitative", "dest": "api/index.py" },
     { "src": "/(.*)", "dest": "public/$1" }
   ]
 }
