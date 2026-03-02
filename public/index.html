@@ -8007,8 +8007,8 @@
     // -----------------------------------------------------------------------
     // Discovery: fire-and-forget + background polling
     // -----------------------------------------------------------------------
-    let _scanPollTimer = null;
-    let _lastKnownRunId = null;
+    var _scanPollTimer = null;
+    var _lastKnownRunId = null;
 
     async function triggerDiscovery() {
       const btn = document.getElementById('scan-btn');
