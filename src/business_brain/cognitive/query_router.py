@@ -46,13 +46,21 @@ MULTI-TABLE QUERIES (IMPORTANT):
 Many business questions require combining data from 2+ tables. Examples:
 - "Which customer paid on time?" → needs sales/invoices table + payments/bank table
 - "Compare purchase cost with production output" → needs procurement + production tables
-- "What is the profit margin per product?" → needs sales + costs tables
 
 When the question requires data from multiple tables:
 - Your sql_task MUST explicitly name ALL tables needed
-- Your sql_task MUST specify the JOIN conditions (using the relationships above)
+- Your sql_task MUST specify the JOIN conditions (using the DISCOVERED relationships above)
 - Your sql_task MUST specify which columns from each table are needed
-- Set confidence to 0.7+ if good relationship paths exist between needed tables
+- Set confidence to 0.7+ if verified relationship paths exist between needed tables
+
+JOIN SAFETY (CRITICAL):
+- ONLY reference joins that appear in "Verified Joins" sections above.
+- NEVER assume two columns are joinable just because they have similar names.
+  Check the sample values — "batch_id" with values ["B-001", "B-002"] is NOT the same
+  as "batch_number" with values [1, 2, 3].
+- If no verified join path exists between tables, tell the SQL agent to query each
+  table independently. Set confidence LOW (0.3-0.5) to flag uncertainty.
+- A correct single-table answer is better than a wrong multi-table answer.
 
 CONFIDENCE SCORING:
 - 1.0: Exact table+column match, simple query
@@ -105,7 +113,11 @@ Return ONLY a JSON object:
 
 
 def _build_schema_summary(tables: list[dict]) -> str:
-    """Build a concise schema summary for the router prompt."""
+    """Build a schema summary for the router prompt.
+
+    Includes semantic types and sample values so the router can assess
+    whether columns across tables are actually compatible for JOINs.
+    """
     if not tables:
         return "No tables available yet."
     parts = []
@@ -117,18 +129,30 @@ def _build_schema_summary(tables: list[dict]) -> str:
             ctype = c.get("type", "?")
             desc = c.get("description", "")
             col_str = f"{name} ({ctype})"
+
+            sem_type = c.get("semantic_type")
+            if sem_type:
+                col_str += f" [{sem_type}]"
+
             if desc:
                 col_str += f" — {desc}"
+
+            samples = c.get("sample_values")
+            if samples:
+                preview = ", ".join(str(s) for s in samples[:3])
+                col_str += f" | e.g. [{preview}]"
+
             col_strs.append(col_str)
+
         desc = t.get("description", "")
         rels = t.get("relationships", [])
-        header = f"Table: {t['table_name']}"
+        header = f"Table: \"{t['table_name']}\""
         if desc:
             header += f" — {desc}"
         parts.append(header)
         parts.append(f"  Columns: {', '.join(col_strs)}")
         if rels:
-            parts.append(f"  Joins: {'; '.join(rels)}")
+            parts.append(f"  Verified Joins: {'; '.join(rels)}")
         parts.append("")
     return "\n".join(parts)
 
@@ -143,7 +167,7 @@ def _build_relationships_summary(tables: list[dict]) -> str:
                 rels_seen.add(rel)
                 parts.append(f"  {rel}")
     if not parts:
-        return "No discovered relationships yet. Tables may still be joinable on matching column names."
+        return "No verified relationships between these tables. Do NOT join tables unless sample values clearly match."
     return "\n".join(parts)
 
 

@@ -48,16 +48,16 @@ async def find_cross_events(
 
     for rel in relationships:
         try:
-            result = await _check_correlation(session, rel, profile_map)
-            if result:
-                insights.extend(result)
+            async with session.begin_nested():
+                result = await _check_correlation(session, rel, profile_map)
+                if result:
+                    insights.extend(result)
         except Exception:
             logger.exception(
                 "Cross-event check failed for %s <-> %s",
                 rel.table_a,
                 rel.table_b,
             )
-            await session.rollback()
 
     return insights
 
@@ -102,7 +102,6 @@ async def _check_correlation(
                         event_prof.table_name, event_col,
                         metric_prof.table_name, metric_col,
                     )
-                    await session.rollback()
 
     return results
 

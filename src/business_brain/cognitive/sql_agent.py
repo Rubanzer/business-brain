@@ -56,11 +56,22 @@ COLUMN SELECTION RULES (follow strictly):
 5. When in doubt about a column's meaning, prefer the interpretation that matches
    the steel manufacturing domain
 
+JOIN SAFETY (CRITICAL — follow strictly):
+- ONLY join tables using paths listed in the "Verified Joins" section.
+- If a table says "Verified Joins: NONE", query it ALONE — do NOT join it with other tables.
+- NEVER assume two columns are joinable just because they have similar names.
+  "batch_id" and "batch_number" may contain completely different data.
+- ALWAYS check sample values: if column A contains ["B-001", "B-002"] and column B
+  contains [1, 2, 3], they are NOT the same thing — do NOT join on them.
+- If the question requires data from multiple tables but no verified join path exists,
+  query EACH table separately and let the analysis layer combine the results.
+- Prefer a correct single-table query over a wrong multi-table JOIN.
+
 IMPORTANT RULES:
 - Use CTEs for clarity when appropriate.
 - NEVER use DELETE, DROP, ALTER, INSERT, UPDATE, or TRUNCATE.
 - Return ONLY the SQL query, no explanation or markdown fences.
-- When table relationships/joins are provided, use them for cross-table queries.
+- When table relationships/joins are provided in "Verified Joins", use them for cross-table queries.
 - When metric thresholds are available, use CASE WHEN to flag values:
   e.g., CASE WHEN power_kwh > 750 THEN 'critical'
              WHEN power_kwh > 625 THEN 'warning'
@@ -78,25 +89,57 @@ IMPORTANT RULES:
 def _format_schema_context(tables: list[dict]) -> str:
     """Format table schemas into a string for the LLM prompt.
 
-    Includes column descriptions (when available) so the LLM can distinguish
-    between similarly-typed columns like ``quantity`` vs ``yield``.
+    Includes column descriptions, semantic types, sample values, and stats
+    so the LLM can distinguish between similarly-named columns across tables
+    (e.g. batch_id containing "B-001" vs batch_number containing 1, 2, 3).
     """
     parts = []
     for t in tables:
         col_parts = []
         for c in (t.get("columns") or []):
+            # Base: name (TYPE)
+            col_str = f"{c['name']} ({c['type']})"
+
+            # Semantic type tag
+            sem_type = c.get("semantic_type")
+            if sem_type:
+                col_str += f" [{sem_type}]"
+
+            # Description
             col_desc = c.get("description", "")
             if col_desc:
-                col_parts.append(f"{c['name']} ({c['type']}) -- {col_desc}")
-            else:
-                col_parts.append(f"{c['name']} ({c['type']})")
-        cols = ", ".join(col_parts)
+                col_str += f" -- {col_desc}"
+
+            # Sample values — critical for JOIN safety
+            samples = c.get("sample_values")
+            if samples:
+                preview = ", ".join(str(s) for s in samples[:4])
+                col_str += f" | samples: [{preview}]"
+
+            # Key stats for numeric columns
+            stats = c.get("stats")
+            if stats:
+                stat_parts = []
+                if "mean" in stats:
+                    stat_parts.append(f"avg={stats['mean']}")
+                if "min" in stats:
+                    stat_parts.append(f"min={stats['min']}")
+                if "max" in stats:
+                    stat_parts.append(f"max={stats['max']}")
+                if stat_parts:
+                    col_str += f" | {', '.join(stat_parts)}"
+
+            col_parts.append(col_str)
+
+        cols = "\n    ".join(col_parts)
         desc = t.get("description") or "No description"
         rels = t.get("relationships", [])
 
-        table_str = f"Table: {t['table_name']} — {desc}\n  Columns: {cols}"
+        table_str = f"Table: \"{t['table_name']}\" — {desc}\n  Columns:\n    {cols}"
         if rels:
-            table_str += f"\n  Joins: {'; '.join(rels)}"
+            table_str += f"\n  Verified Joins: {'; '.join(rels)}"
+        else:
+            table_str += "\n  Verified Joins: NONE — do NOT join this table with others unless a join path is listed above"
         parts.append(table_str)
     return "\n\n".join(parts)
 
