@@ -18,24 +18,23 @@ logger = logging.getLogger(__name__)
 async def get_feed(
     session: AsyncSession,
     status: str | None = None,
-    limit: int = 100,
+    insight_type: str | None = None,
+    limit: int = 500,
     min_quality: int = 15,
 ) -> list[Insight]:
-    """Get type-diverse ranked insight feed.
+    """Get ranked insight feed — returns ALL qualifying insights.
 
-    Returns a balanced mix of insight types rather than letting one
-    high-scoring type dominate. Within each type, insights are ranked
-    by impact_score.
+    When no type filter is active, applies type-diverse selection so no
+    single insight type dominates. When a specific type is requested,
+    returns all matching insights up to limit.
 
     Args:
         session: Database session.
         status: Filter by specific status (new/seen/deployed/dismissed).
-        limit: Maximum number of insights to return.
+        insight_type: Filter by specific insight type (e.g. "anomaly").
+        limit: Maximum number of insights to return. Default 500 (effectively all).
         min_quality: Minimum quality_score threshold. Default 15.
     """
-    # Fetch more than needed so we can ensure type diversity
-    fetch_limit = max(limit * 3, 300)
-
     q = select(Insight).order_by(Insight.impact_score.desc(), Insight.discovered_at.desc())
 
     if status:
@@ -43,6 +42,9 @@ async def get_feed(
     else:
         # Exclude dismissed by default
         q = q.where(Insight.status != "dismissed")
+
+    if insight_type:
+        q = q.where(Insight.insight_type == insight_type)
 
     # Filter by minimum quality score to keep feed clean
     if min_quality > 0:
@@ -52,11 +54,12 @@ async def get_feed(
             | (Insight.quality_score >= min_quality)
         )
 
-    q = q.limit(fetch_limit)
+    q = q.limit(limit)
     result = await session.execute(q)
     all_insights = list(result.scalars().all())
 
-    if len(all_insights) <= limit:
+    # If filtering by type, no need for diversity balancing — return all
+    if insight_type or len(all_insights) <= 50:
         return all_insights
 
     # Type-diverse selection: ensure each insight type gets fair representation.
@@ -75,7 +78,7 @@ async def get_feed(
     selected_ids: set[str] = set()
 
     # Round 1: guaranteed slots per type (already sorted by score from query)
-    for insight_type, type_insights in by_type.items():
+    for itype, type_insights in by_type.items():
         for ins in type_insights[:min_per_type]:
             if ins.id not in selected_ids:
                 selected.append(ins)

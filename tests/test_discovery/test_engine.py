@@ -100,7 +100,7 @@ class TestAnomalyDetection:
         }, row_count=100)
 
         insights = detect_anomalies([profile])
-        null_insights = [i for i in insights if "null" in i.title.lower()]
+        null_insights = [i for i in insights if "missing" in i.title.lower()]
         assert len(null_insights) >= 1
         assert null_insights[0].severity in ("warning", "info")
 

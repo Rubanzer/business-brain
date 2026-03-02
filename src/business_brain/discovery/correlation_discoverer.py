@@ -1,13 +1,30 @@
 """Correlation discovery — finds notable correlations from table profiles.
 
 Uses column classification stats to identify potentially correlated numeric columns
-and generates insights. Works with profile data only (no DB queries).
+and generates insights. Includes both sample-based (fast) and SQL-backed (accurate)
+versions.
 """
 
 from __future__ import annotations
 
+import logging
+import re
 import uuid
+
 from business_brain.db.discovery_models import Insight
+
+logger = logging.getLogger(__name__)
+
+
+def _humanize_table(name: str) -> str:
+    """Convert table name to human-readable form."""
+    cleaned = re.sub(r"^\d+[_\s]*", "", name)
+    return cleaned.replace("_", " ").title() if cleaned else name.replace("_", " ").title()
+
+
+def _humanize_col(name: str) -> str:
+    """Convert column name to human-readable form."""
+    return name.replace("_", " ").title()
 
 
 def discover_correlations_from_profiles(profiles: list) -> list[Insight]:
@@ -50,18 +67,28 @@ def discover_correlations_from_profiles(profiles: list) -> list[Insight]:
             continue  # No correlations found — don't generate meta-insights that clutter the feed
 
         # Generate insights for strong correlations only
+        h_table = _humanize_table(profile.table_name)
         for col_a, col_b, est_r, direction in corr_pairs:
+            h_a = _humanize_col(col_a)
+            h_b = _humanize_col(col_b)
             strength = "strong" if abs(est_r) >= 0.7 else "moderate"
+            move_verb = "move together" if direction == "positive" else "move in opposite directions"
+            when_desc = (
+                f"when {h_a} goes up, {h_b} goes up too"
+                if direction == "positive"
+                else f"when {h_a} goes up, {h_b} tends to go down"
+            )
             insights.append(Insight(
                 id=str(uuid.uuid4()),
                 insight_type="correlation",
                 severity="warning" if abs(est_r) >= 0.7 else "info",
                 impact_score=55 if abs(est_r) >= 0.85 else (45 if abs(est_r) >= 0.7 else (30 if abs(est_r) >= 0.6 else 25)),
-                title=f"{strength.title()} {direction} correlation: {col_a} ↔ {col_b} (r={est_r:.2f})",
+                title=f"{h_a} and {h_b} {move_verb} in {h_table}",
                 description=(
-                    f"{col_a} and {col_b} in {profile.table_name} have a {strength} "
-                    f"{direction} correlation (r={est_r:.2f}). "
-                    f"When {col_a} increases, {col_b} {'increases' if direction == 'positive' else 'decreases'} proportionally."
+                    f"There's a {strength} link between {h_a} and {h_b} — "
+                    f"{when_desc}. "
+                    f"This {strength} relationship (correlation: {est_r:.2f}) could help "
+                    f"predict one from the other."
                 ),
                 source_tables=[profile.table_name],
                 source_columns=[col_a, col_b],
@@ -77,12 +104,12 @@ def discover_correlations_from_profiles(profiles: list) -> list[Insight]:
                         "type": "scatter",
                         "x": col_a,
                         "y": col_b,
-                        "title": f"{col_a} vs {col_b} (r={est_r:.2f})",
+                        "title": f"{h_a} vs {h_b}",
                     },
                 },
                 suggested_actions=[
-                    f"Check if changes in {col_a} drive changes in {col_b} or vice versa",
-                    f"Use this relationship to forecast {col_b} from {col_a}",
+                    f"Investigate whether {h_a} actually drives {h_b} or if something else causes both",
+                    f"Use this relationship to predict {h_b} when you know {h_a}",
                 ],
             ))
 
@@ -174,4 +201,140 @@ def _quick_pearson(x: list[float], y: list[float]) -> float | None:
 
     return num / (dx * dy)
 
+
+# ---------------------------------------------------------------------------
+# SQL-backed full-data correlation (async, uses CORR() or fetches raw data)
+# ---------------------------------------------------------------------------
+
+def _safe(name: str) -> str:
+    """Strip non-alphanumeric/underscore chars for SQL safety."""
+    return re.sub(r"[^a-zA-Z0-9_]", "", name)
+
+
+async def discover_correlations_sql(
+    session,
+    profiles: list,
+) -> list[Insight]:
+    """SQL-backed correlation — computes Pearson on full data.
+
+    Uses PostgreSQL's CORR() aggregate for each viable numeric column pair,
+    giving accurate correlations instead of sample-based estimates.
+    """
+    from sqlalchemy import text as sql_text
+
+    insights: list[Insight] = []
+
+    for profile in profiles:
+        try:
+            cls = getattr(profile, "column_classification", None)
+            if not cls or "columns" not in cls:
+                continue
+
+            cols = cls["columns"]
+            row_count = getattr(profile, "row_count", 0) or 0
+            if row_count < 10:
+                continue
+
+            numeric_cols = []
+            for col_name, info in cols.items():
+                sem_type = info.get("semantic_type", "")
+                if sem_type in ("numeric_metric", "numeric_currency", "numeric_percentage"):
+                    stats = info.get("stats")
+                    if stats and stats.get("stdev", 0) > 0:
+                        numeric_cols.append((col_name, info))
+
+            if len(numeric_cols) < 2:
+                continue
+
+            s_table = _safe(profile.table_name)
+            h_table = _humanize_table(profile.table_name)
+
+            # Build a single query that computes CORR() for all pairs at once
+            # PostgreSQL's CORR(y, x) returns Pearson's r
+            corr_selects = []
+            pair_map = []  # Track which pair each SELECT corresponds to
+            for i in range(len(numeric_cols)):
+                for j in range(i + 1, len(numeric_cols)):
+                    col_a, info_a = numeric_cols[i]
+                    col_b, info_b = numeric_cols[j]
+                    s_a = _safe(col_a)
+                    s_b = _safe(col_b)
+                    alias = f"r_{i}_{j}"
+                    corr_selects.append(f'CORR("{s_a}"::float, "{s_b}"::float) AS "{alias}"')
+                    pair_map.append((col_a, col_b, info_a, info_b, alias))
+
+            if not corr_selects:
+                continue
+
+            # Limit to 20 pairs per table to avoid huge queries
+            if len(corr_selects) > 20:
+                corr_selects = corr_selects[:20]
+                pair_map = pair_map[:20]
+
+            query = f'SELECT {", ".join(corr_selects)} FROM "{s_table}"'
+            try:
+                result = await session.execute(sql_text(query))
+                row = dict(result.fetchone()._mapping)
+            except Exception:
+                logger.debug("SQL correlation query failed for %s", s_table)
+                continue
+
+            for col_a, col_b, info_a, info_b, alias in pair_map:
+                r = row.get(alias)
+                if r is None:
+                    continue
+                r = float(r)
+                if abs(r) < 0.5:
+                    continue
+
+                h_a = _humanize_col(col_a)
+                h_b = _humanize_col(col_b)
+                direction = "positive" if r > 0 else "negative"
+                strength = "strong" if abs(r) >= 0.7 else "moderate"
+                move_verb = "move together" if direction == "positive" else "move in opposite directions"
+                when_desc = (
+                    f"when {h_a} goes up, {h_b} goes up too"
+                    if direction == "positive"
+                    else f"when {h_a} goes up, {h_b} tends to go down"
+                )
+
+                insights.append(Insight(
+                    id=str(uuid.uuid4()),
+                    insight_type="correlation",
+                    severity="warning" if abs(r) >= 0.7 else "info",
+                    impact_score=55 if abs(r) >= 0.85 else (45 if abs(r) >= 0.7 else (30 if abs(r) >= 0.6 else 25)),
+                    title=f"{h_a} and {h_b} {move_verb} in {h_table}",
+                    description=(
+                        f"There's a {strength} link between {h_a} and {h_b} — "
+                        f"{when_desc}. "
+                        f"Correlation: {r:.2f} (computed on all {row_count:,} rows of data)."
+                    ),
+                    source_tables=[profile.table_name],
+                    source_columns=[col_a, col_b],
+                    evidence={
+                        "estimated_correlation": round(r, 3),
+                        "direction": direction,
+                        "strength": strength,
+                        "total_rows": row_count,
+                        "query": (
+                            f'SELECT "{col_a}", "{col_b}" FROM "{profile.table_name}" '
+                            f'ORDER BY ctid LIMIT 500'
+                        ),
+                        "chart_spec": {
+                            "type": "scatter",
+                            "x": col_a,
+                            "y": col_b,
+                            "title": f"{h_a} vs {h_b}",
+                        },
+                    },
+                    suggested_actions=[
+                        f"Investigate whether {h_a} actually drives {h_b} or if something else causes both",
+                        f"Use this relationship to predict {h_b} when you know {h_a}",
+                    ],
+                ))
+
+        except Exception:
+            logger.exception("SQL correlation discovery failed for %s", profile.table_name)
+
+    return insights
 

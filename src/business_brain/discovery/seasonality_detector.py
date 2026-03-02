@@ -9,12 +9,24 @@ Detects:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from collections import Counter
 
 from business_brain.db.discovery_models import Insight, TableProfile
 
 logger = logging.getLogger(__name__)
+
+
+def _humanize_table(name: str) -> str:
+    """Convert table name to human-readable form."""
+    cleaned = re.sub(r"^\d+[_\s]*", "", name)
+    return cleaned.replace("_", " ").title() if cleaned else name.replace("_", " ").title()
+
+
+def _humanize_col(name: str) -> str:
+    """Convert column name to human-readable form."""
+    return name.replace("_", " ").title()
 
 
 def detect_seasonality(profiles: list[TableProfile]) -> list[Insight]:
@@ -84,16 +96,18 @@ def _scan_table_seasonality(profile: TableProfile) -> list[Insight]:
 
                 if most_common_pct > 0.5 and least_common_pct < 0.1:
                     dominant = value_counts.most_common(1)[0]
+                    h_col = _humanize_col(cat_col)
+                    h_table = _humanize_table(profile.table_name)
                     results.append(Insight(
                         id=str(uuid.uuid4()),
                         insight_type="seasonality",
                         severity="info",
                         impact_score=25,
-                        title=f"Skewed distribution in {profile.table_name}.{cat_col}",
+                        title=f"{h_col} is heavily concentrated on '{dominant[0]}' in {h_table}",
                         description=(
-                            f"{cat_col} is dominated by '{dominant[0]}' "
-                            f"({dominant[1]}/{len(samples)} samples = {most_common_pct*100:.0f}%). "
-                            f"This may indicate a seasonal or operational pattern."
+                            f"'{dominant[0]}' accounts for {most_common_pct*100:.0f}% of all {h_col} values "
+                            f"({dominant[1]} out of {len(samples)} sampled). "
+                            f"This imbalance may indicate a seasonal pattern or an operational default."
                         ),
                         source_tables=[profile.table_name],
                         source_columns=[cat_col],
@@ -105,8 +119,8 @@ def _scan_table_seasonality(profile: TableProfile) -> list[Insight]:
                             "cardinality": cardinality,
                         },
                         suggested_actions=[
-                            f"Investigate why {cat_col} is dominated by '{dominant[0]}'",
-                            f"Analyze if {num_cols[0] if num_cols else 'metrics'} differ for rare categories",
+                            f"Investigate why '{dominant[0]}' dominates {h_col} — is this expected?",
+                            f"Check if performance differs for the less common {h_col} values",
                         ],
                     ))
 
@@ -173,17 +187,20 @@ def _detect_shift_performance_gap(
         if gap_pct < 15:
             continue
 
+        h_metric = _humanize_col(num_col)
+        h_table = _humanize_table(profile.table_name)
+
         return Insight(
             id=str(uuid.uuid4()),
             insight_type="seasonality",
             severity="warning" if gap_pct > 30 else "info",
             impact_score=min(int(gap_pct / 2) + 30, 75),
-            title=f"{num_col} varies {gap_pct:.0f}% across shifts in {profile.table_name}",
+            title=f"Shift {worst_shift} trails Shift {best_shift} by {gap_pct:.0f}% on {h_metric}",
             description=(
-                f"Shift '{best_shift}' averages {shift_avgs[best_shift]:,.2f} for {num_col} "
-                f"vs shift '{worst_shift}' at {shift_avgs[worst_shift]:,.2f} — "
-                f"a {gap_pct:.1f}% performance gap. "
-                f"Sample sizes: {', '.join(f'{k}={len(v)}' for k, v in shift_groups.items())}."
+                f"In {h_table}, Shift {best_shift} averages {shift_avgs[best_shift]:,.1f} for {h_metric} "
+                f"while Shift {worst_shift} averages {shift_avgs[worst_shift]:,.1f} — "
+                f"a {gap_pct:.0f}% gap. "
+                f"This pattern is consistent across the sampled data."
             ),
             source_tables=[profile.table_name],
             source_columns=[shift_col, num_col],
@@ -199,12 +216,12 @@ def _detect_shift_performance_gap(
                     "type": "bar",
                     "x": shift_col,
                     "y": [num_col],
-                    "title": f"{num_col} by {shift_col}",
+                    "title": f"{h_metric} by Shift",
                 },
             },
             suggested_actions=[
-                f"Investigate why shift '{worst_shift}' underperforms by {gap_pct:.0f}% on {num_col}",
-                f"Check staffing, equipment, or process differences between shifts",
+                f"Investigate why Shift {worst_shift} is {gap_pct:.0f}% behind on {h_metric}",
+                f"Compare staffing, equipment, and processes between Shift {best_shift} and {worst_shift}",
             ],
         )
 

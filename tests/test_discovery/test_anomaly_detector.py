@@ -35,7 +35,7 @@ class TestNullSpike:
             "cardinality": 50,
         }}, row_count=100)
         results = _scan_table(prof)
-        null_insights = [i for i in results if "null" in i.title.lower()]
+        null_insights = [i for i in results if "missing" in i.title.lower()]
         assert len(null_insights) == 1
         assert null_insights[0].severity == "info"  # 15% < 30%
 
@@ -47,7 +47,7 @@ class TestNullSpike:
             "cardinality": 50,
         }}, row_count=100)
         results = _scan_table(prof)
-        null_insights = [i for i in results if "null" in i.title.lower()]
+        null_insights = [i for i in results if "missing" in i.title.lower()]
         assert len(null_insights) == 0
 
     def test_null_above_30_pct_is_warning(self):
@@ -57,7 +57,7 @@ class TestNullSpike:
             "cardinality": 50,
         }}, row_count=100)
         results = _scan_table(prof)
-        null_insights = [i for i in results if "null" in i.title.lower()]
+        null_insights = [i for i in results if "missing" in i.title.lower()]
         assert len(null_insights) == 1
         assert null_insights[0].severity == "warning"
 
@@ -69,7 +69,7 @@ class TestNullSpike:
             "cardinality": 50,
         }}, row_count=100)
         results = _scan_table(prof)
-        null_insights = [i for i in results if "null" in i.title.lower()]
+        null_insights = [i for i in results if "missing" in i.title.lower()]
         assert len(null_insights) == 1
         assert null_insights[0].severity == "info"
 
@@ -80,7 +80,7 @@ class TestNullSpike:
             "cardinality": 5,
         }}, row_count=100)
         results = _scan_table(prof)
-        null_insights = [i for i in results if "null" in i.title.lower()]
+        null_insights = [i for i in results if "missing" in i.title.lower()]
         assert null_insights[0].impact_score == 80
 
     def test_null_zero_row_count_no_crash(self):
@@ -90,7 +90,7 @@ class TestNullSpike:
             "cardinality": 0,
         }}, row_count=0)
         results = _scan_table(prof)
-        null_insights = [i for i in results if "null" in i.title.lower()]
+        null_insights = [i for i in results if "missing" in i.title.lower()]
         assert len(null_insights) == 0
 
 
@@ -109,7 +109,7 @@ class TestNumericOutliers:
             "sample_values": ["10", "12", "100", "9", "11"],
         }})
         results = _scan_table(prof)
-        outlier = [i for i in results if "outlier" in i.title.lower()]
+        outlier = [i for i in results if "unusual" in i.title.lower()]
         assert len(outlier) == 1
         assert "100" in str(outlier[0].evidence["outlier_samples"])
 
@@ -122,7 +122,7 @@ class TestNumericOutliers:
             "sample_values": ["10", "12", "8", "15", "5"],
         }})
         results = _scan_table(prof)
-        outlier = [i for i in results if "outlier" in i.title.lower()]
+        outlier = [i for i in results if "unusual" in i.title.lower()]
         assert len(outlier) == 0
 
     def test_outlier_comma_separated_numbers(self):
@@ -134,7 +134,7 @@ class TestNumericOutliers:
             "sample_values": ["1,000", "1,100", "50,000"],
         }})
         results = _scan_table(prof)
-        outlier = [i for i in results if "outlier" in i.title.lower()]
+        outlier = [i for i in results if "unusual" in i.title.lower()]
         assert len(outlier) == 1
 
     def test_zero_stdev_no_outlier(self):
@@ -146,7 +146,7 @@ class TestNumericOutliers:
             "sample_values": ["10"],
         }})
         results = _scan_table(prof)
-        outlier = [i for i in results if "outlier" in i.title.lower()]
+        outlier = [i for i in results if "unusual" in i.title.lower()]
         assert len(outlier) == 0
 
     def test_outlier_samples_capped_at_10(self):
@@ -158,7 +158,7 @@ class TestNumericOutliers:
             "sample_values": [str(i * 100) for i in range(1, 16)],  # 15 outliers
         }})
         results = _scan_table(prof)
-        outlier = [i for i in results if "outlier" in i.title.lower()]
+        outlier = [i for i in results if "unusual" in i.title.lower()]
         assert len(outlier) == 1
         assert len(outlier[0].evidence["outlier_samples"]) <= 10
         # New evidence fields should be present
@@ -392,7 +392,7 @@ class TestDetectAnomalies:
             "semantic_type": "text", "null_count": 60, "cardinality": 10,
         }}, row_count=100)
         results = detect_anomalies([p1, p2])
-        null_insights = [i for i in results if "null" in i.title.lower()]
+        null_insights = [i for i in results if "missing" in i.title.lower()]
         tables = {i.source_tables[0] for i in null_insights}
         assert "t1" in tables
         assert "t2" in tables
@@ -448,7 +448,7 @@ class TestManufacturingAnomalies:
             "sample_values": [],
         }}, row_count=100, domain="manufacturing")
         results = _scan_table(prof)
-        mfg = [i for i in results if "below expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually low" in i.title.lower()]
         assert len(mfg) == 1
         assert mfg[0].evidence["rule"] == "Furnace Temperature"
 
@@ -461,7 +461,7 @@ class TestManufacturingAnomalies:
             "sample_values": [],
         }}, row_count=100, domain="manufacturing")
         results = _scan_table(prof)
-        mfg = [i for i in results if "above expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually high" in i.title.lower()]
         assert len(mfg) == 1
 
     def test_temperature_in_range_no_alert(self):
@@ -473,7 +473,7 @@ class TestManufacturingAnomalies:
             "sample_values": [],
         }}, row_count=100, domain="manufacturing")
         results = _scan_table(prof)
-        mfg = [i for i in results if "expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually" in i.title.lower()]
         assert len(mfg) == 0
 
     def test_power_factor_below_range(self):
@@ -510,7 +510,7 @@ class TestManufacturingAnomalies:
             "sample_values": [],
         }}, row_count=100, domain="sales")
         results = _scan_table(prof)
-        mfg = [i for i in results if "expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually" in i.title.lower()]
         assert len(mfg) == 0
 
     def test_no_stats_skipped(self):
@@ -520,7 +520,7 @@ class TestManufacturingAnomalies:
             "cardinality": 50,
         }}, row_count=100, domain="manufacturing")
         results = _scan_table(prof)
-        mfg = [i for i in results if "expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually" in i.title.lower()]
         assert len(mfg) == 0
 
     def test_both_below_and_above(self):
@@ -533,7 +533,7 @@ class TestManufacturingAnomalies:
             "sample_values": [],
         }}, row_count=100, domain="manufacturing")
         results = _scan_table(prof)
-        mfg = [i for i in results if "expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually" in i.title.lower()]
         assert len(mfg) == 2
 
     def test_manufacturing_rules_count(self):
@@ -550,7 +550,7 @@ class TestManufacturingAnomalies:
             "sample_values": [],
         }}, row_count=100, domain="manufacturing")
         results = _scan_table(prof)
-        mfg = [i for i in results if "expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually" in i.title.lower()]
         for ins in mfg:
             assert ins.severity == "warning"
             assert ins.impact_score == 55
@@ -565,7 +565,7 @@ class TestManufacturingAnomalies:
             "sample_values": [],
         }}, row_count=100, domain="manufacturing")
         results = _scan_table(prof)
-        mfg = [i for i in results if "expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually" in i.title.lower()]
         assert len(mfg) == 0
 
     def test_energy_domain_triggers_mfg_rules(self):
@@ -578,7 +578,7 @@ class TestManufacturingAnomalies:
             "sample_values": [],
         }}, row_count=100, domain="energy")
         results = _scan_table(prof)
-        mfg = [i for i in results if "expected range" in i.title.lower()]
+        mfg = [i for i in results if "unusually" in i.title.lower()]
         assert len(mfg) >= 1
 
 
@@ -597,7 +597,7 @@ class TestEdgeCases:
             "sample_values": ["abc", "def", "100"],
         }})
         results = _scan_table(prof)
-        outlier = [i for i in results if "outlier" in i.title.lower()]
+        outlier = [i for i in results if "unusual" in i.title.lower()]
         assert len(outlier) == 1
 
     def test_missing_stats_no_crash(self):
@@ -608,7 +608,7 @@ class TestEdgeCases:
         }})
         results = _scan_table(prof)
         # No crash, and no outlier insight since no stats
-        outlier = [i for i in results if "outlier" in i.title.lower()]
+        outlier = [i for i in results if "unusual" in i.title.lower()]
         assert len(outlier) == 0
 
     def test_multiple_columns_multiple_anomalies(self):
@@ -639,10 +639,10 @@ class TestEdgeCases:
         # (constant column and trend are suppressed as meta-insights)
         types = set()
         for r in results:
-            if "null" in r.title.lower():
-                types.add("null")
-            if "outlier" in r.title.lower():
-                types.add("outlier")
+            if "missing" in r.title.lower():
+                types.add("missing")
+            if "unusual" in r.title.lower():
+                types.add("unusual")
             if "negative" in r.title.lower():
                 types.add("negative")
         assert len(types) >= 3

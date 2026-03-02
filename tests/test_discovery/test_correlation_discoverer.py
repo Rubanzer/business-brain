@@ -124,7 +124,7 @@ class TestDiscoverCorrelationsFromProfiles:
         })
         insights = discover_correlations_from_profiles([p])
         assert len(insights) >= 1
-        assert any("correlation" in i.title.lower() for i in insights)
+        assert any("move" in i.title.lower() for i in insights)
 
     def test_zero_stdev_skipped(self):
         p = _Prof("t1", columns={
