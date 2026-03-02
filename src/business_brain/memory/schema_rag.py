@@ -4,6 +4,7 @@ context that downstream agents need to make informed decisions.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -44,11 +45,17 @@ async def retrieve_relevant_tables(
     results: dict[str, dict] = {}
     context_snippets: list[dict] = []
 
-    # 1. Semantic search against business_contexts
+    # 1. Semantic search + metadata fetch in parallel
+    #    embed_text() is sync (blocks event loop), so run it in a thread executor
+    #    while metadata_store.get_filtered() runs concurrently.
+    loop = asyncio.get_event_loop()
+    embed_future = loop.run_in_executor(None, embed_text, query)
+    all_entries = await metadata_store.get_filtered(session, allowed_tables)
+    query_lower = query.lower()
+
     try:
-        query_embedding = embed_text(query)
+        query_embedding = await embed_future
         context_hits = await vector_store.search(session, query_embedding, top_k=top_k + 3)
-        # Context hits give us hints about relevant tables via their content
         context_keywords = " ".join(hit.content for hit in context_hits).lower()
         context_snippets = [
             {"content": hit.content, "source": hit.source or "unknown"}
@@ -58,10 +65,6 @@ async def retrieve_relevant_tables(
         logger.exception("Vector search failed, falling back to keyword-only")
         await session.rollback()
         context_keywords = ""
-
-    # 2. Keyword + context matching against metadata entries (filtered by focus scope)
-    all_entries = await metadata_store.get_filtered(session, allowed_tables)
-    query_lower = query.lower()
 
     # Build a keyword set for smarter matching (ignore stopwords)
     _STOPWORDS = frozenset({
@@ -133,9 +136,11 @@ async def retrieve_relevant_tables(
     #    relationship has verified value overlap.  Unverified name matches
     #    (e.g. same column name but different value domains) are excluded
     #    by _get_relationships() which filters at confidence >= 0.6.
+    cached_relationships: list[dict] = []
     if results:
         try:
-            relationships = await _get_relationships(session)
+            cached_relationships = await _get_relationships(session)
+            relationships = cached_relationships
             # Iterate over a snapshot of current matches so we can mutate `results`
             seed_tables = set(results.keys())
             for rel in relationships:
@@ -192,7 +197,7 @@ async def retrieve_relevant_tables(
 
     # Enrich tables with relationship info (only value-validated joins)
     try:
-        relationships = await _get_relationships(session)
+        relationships = cached_relationships
         ranked_names = {r["table_name"] for r in ranked}
         for table_info in ranked:
             related = []

@@ -30,18 +30,38 @@ def _truncate(text: str, max_len: int = _MAX_TEXT_LEN) -> str:
 class QualitativeAnalyzer:
     """Full qualitative analysis pipeline for text documents."""
 
-    async def analyze(self, text: str, file_name: str) -> dict[str, Any]:
+    async def analyze(
+        self,
+        text: str,
+        file_name: str,
+        company_context: str | None = None,
+        threshold_context: str | None = None,
+    ) -> dict[str, Any]:
         """Run the complete analysis pipeline.
 
         Returns dict with: summary, sentiment, themes, key_findings, entities.
         Each step is independent and fault-tolerant (one failure doesn't block others).
+
+        If company_context or threshold_context are provided, they are injected
+        into the summary and findings prompts so the LLM can relate document
+        content to business operations and known metric thresholds.
         """
         truncated = _truncate(text)
         results: dict[str, Any] = {}
 
+        # Build context preamble from setup data
+        context_preamble = ""
+        if company_context or threshold_context:
+            parts = ["BUSINESS CONTEXT:"]
+            if company_context:
+                parts.append(company_context)
+            if threshold_context:
+                parts.append(threshold_context)
+            context_preamble = "\n".join(parts) + "\n\n"
+
         # 1. Summary
         try:
-            results["summary"] = await self._summarize(truncated, file_name)
+            results["summary"] = await self._summarize(truncated, file_name, context_preamble)
         except Exception:
             logger.exception("Qualitative summary failed for %s", file_name)
             results["summary"] = None
@@ -62,7 +82,7 @@ class QualitativeAnalyzer:
 
         # 4. Key findings
         try:
-            results["key_findings"] = await self._findings(truncated)
+            results["key_findings"] = await self._findings(truncated, context_preamble)
         except Exception:
             logger.exception("Qualitative findings failed for %s", file_name)
             results["key_findings"] = None
@@ -76,8 +96,9 @@ class QualitativeAnalyzer:
 
         return results
 
-    async def _summarize(self, text: str, file_name: str) -> str:
-        prompt = f"""Summarize the following document in 3-5 sentences. Focus on the key business implications, decisions, or findings.
+    async def _summarize(self, text: str, file_name: str, context_preamble: str = "") -> str:
+        prompt = f"""{context_preamble}Summarize the following document in 3-5 sentences. Focus on the key business implications, decisions, or findings.
+When business context is provided above, relate the document's content to the company's operations and known metrics.
 
 Document: {file_name}
 
@@ -138,8 +159,9 @@ Document:
             return result
         return []
 
-    async def _findings(self, text: str) -> list[dict]:
-        prompt = f"""Extract the key business findings, conclusions, and action items from this document.
+    async def _findings(self, text: str, context_preamble: str = "") -> list[dict]:
+        prompt = f"""{context_preamble}Extract the key business findings, conclusions, and action items from this document.
+When metric thresholds are provided above, compare any numbers or metrics in the document against those thresholds and flag deviations.
 
 For each finding:
 1. State the finding clearly

@@ -871,9 +871,30 @@ async def _run_qualitative_analysis(doc_id: str):
             doc.status = "analyzing"
             await session.commit()
 
+            # Fetch business context for qualitative analysis
+            company_context = None
+            threshold_context = None
+            try:
+                from business_brain.memory.schema_rag import (
+                    _get_company_context,
+                    _get_threshold_context,
+                )
+                company_ctx = await _get_company_context(session)
+                if company_ctx:
+                    company_context = company_ctx["content"]
+                threshold_ctx = await _get_threshold_context(session)
+                if threshold_ctx:
+                    threshold_context = threshold_ctx["content"]
+            except Exception:
+                logger.debug("Failed to fetch business context for qualitative analysis")
+
             # Run analysis
             analyzer = QualitativeAnalyzer()
-            results = await analyzer.analyze(doc.raw_text or "", doc.file_name)
+            results = await analyzer.analyze(
+                doc.raw_text or "", doc.file_name,
+                company_context=company_context,
+                threshold_context=threshold_context,
+            )
 
             # Update document with results
             doc.summary = results.get("summary")
