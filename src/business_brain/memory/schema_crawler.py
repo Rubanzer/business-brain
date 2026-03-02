@@ -3,23 +3,13 @@ from __future__ import annotations
 
 import logging
 
-from google import genai
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from business_brain.analysis.tools.llm_gateway import reason as _llm_reason
 from business_brain.memory import metadata_store
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
-
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
 
 
 async def crawl_schema(session: AsyncSession, schema: str = "public") -> list[dict]:
@@ -56,7 +46,6 @@ async def auto_describe(session: AsyncSession) -> None:
     import json as _json
 
     tables = await crawl_schema(session)
-    client = _get_client()
 
     for table_info in tables:
         table_name = table_info["table_name"]
@@ -72,11 +61,7 @@ async def auto_describe(session: AsyncSession) -> None:
         )
 
         try:
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-            )
-            raw = (response.text or "").strip()
+            raw = await _llm_reason(prompt)
             # Strip potential markdown fences
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -90,7 +75,7 @@ async def auto_describe(session: AsyncSession) -> None:
         except (_json.JSONDecodeError, AttributeError, TypeError):
             logger.warning("Could not parse column descriptions for %s, using plain description", table_name)
             try:
-                description = (response.text or "").strip() or f"Table {table_name} with {len(columns)} columns."
+                description = raw.strip() if raw else f"Table {table_name} with {len(columns)} columns."
             except Exception:
                 description = f"Table {table_name} with {len(columns)} columns."
         except Exception:

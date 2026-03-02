@@ -7478,6 +7478,7 @@
           const extra = parts.length ? ' (' + parts.join(', ') + ')' : '';
           toast('Deleted ' + tableName + extra);
           loadSchema();
+          loadSources();  // source record also deleted in cascade
         }
       } catch (e) {
         toast('Delete failed: ' + e.message);
@@ -8055,6 +8056,16 @@
                 clearInterval(poll);
                 if (data.status === 'completed') {
                   toast(`Discovery complete: ${data.insights_found} insights found`);
+                  // Show diagnostics warning if passes failed
+                  if (data.failed_passes > 0) {
+                    const diag = data.pass_diagnostics || [];
+                    const failed = diag.filter(d => d.status === 'failed');
+                    const names = failed.map(d => d.pass).join(', ');
+                    const hasRateLimit = failed.some(d => d.error_type === 'rate_limit');
+                    let msg = `${data.failed_passes} of ${data.total_passes} discovery passes failed: ${names}`;
+                    if (hasRateLimit) msg += '\nLLM quota exceeded \u2014 consider switching provider in Settings.';
+                    toast(msg, 'warning');
+                  }
                 } else if (data.status === 'failed') {
                   toast('Discovery failed: ' + (data.error || 'Unknown error'));
                 }
@@ -10698,7 +10709,8 @@
       await asyncAction(btn, async () => {
         await apiFetch(API + '/sources/' + id, { method: 'DELETE' });
         loadSources();
-      }, { successText: 'Source removed', errorPrefix: 'Failed to remove source' });
+        loadSchema();  // table is also cascade-dropped, refresh data view
+      }, { successText: 'Source and table removed', errorPrefix: 'Failed to remove source' });
     }
 
     // -----------------------------------------------------------------------

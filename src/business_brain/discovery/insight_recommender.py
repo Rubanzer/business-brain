@@ -958,14 +958,7 @@ async def _generate_dynamic_cross_table_suggestions(
     COMPLEMENTARY analyses — novel, industry-specific insights that the
     hardcoded templates can't anticipate.
     """
-    try:
-        from google import genai
-        from config.settings import settings
-    except ImportError:
-        return []
-
-    if not settings.gemini_api_key:
-        return []
+    from business_brain.analysis.tools.llm_gateway import generate_sync as _llm_generate
 
     recommendations: list[Recommendation] = []
     # Prioritize larger groups (more tables = more combination value)
@@ -986,12 +979,8 @@ async def _generate_dynamic_cross_table_suggestions(
         prompt = _build_cross_table_prompt(group, profiles, company_context, existing)
 
         try:
-            client = genai.Client(api_key=settings.gemini_api_key)
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-            )
-            group_recs = _parse_cross_table_suggestions(response.text or "", group)
+            raw = _llm_generate(prompt)
+            group_recs = _parse_cross_table_suggestions(raw, group)
             _dynamic_suggestion_cache[cache_key] = (time.time(), group_recs)
             recommendations.extend(group_recs)
         except Exception:

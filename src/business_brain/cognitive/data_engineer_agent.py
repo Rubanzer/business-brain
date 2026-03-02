@@ -9,17 +9,14 @@ import re
 from datetime import datetime
 from typing import Any
 
-from google import genai
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from business_brain.analysis.tools.llm_gateway import reason as _llm_reason
 from business_brain.ingestion.context_ingestor import ingest_context
 from business_brain.memory import metadata_store
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
-
-_client: genai.Client | None = None
 
 _DATE_PATTERNS = [
     (re.compile(r"^\d{4}-\d{2}-\d{2}$"), "%Y-%m-%d"),
@@ -27,13 +24,6 @@ _DATE_PATTERNS = [
     (re.compile(r"^\d{2}-\d{2}-\d{4}$"), "%m-%d-%Y"),
     (re.compile(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}"), "%Y-%m-%dT%H:%M"),
 ]
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
 
 
 # ---------------------------------------------------------------------------
@@ -477,12 +467,7 @@ async def generate_metadata_with_gemini(
     )
 
     try:
-        client = _get_client()
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-        )
-        raw = response.text.strip()
+        raw = await _llm_reason(prompt)
         # Strip markdown fences if present
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()

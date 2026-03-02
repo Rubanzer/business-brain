@@ -216,31 +216,24 @@ async def _generate_summary(
 
     # Try LLM-powered summary
     try:
-        from google import genai
-        from config.settings import settings
+        from business_brain.analysis.tools.llm_gateway import reason as _llm_reason
 
-        if settings.gemini_api_key:
-            # Build insight summaries
-            top_insights = sorted(insights, key=lambda i: -(i.impact_score or 0))[:5]
-            summaries = [
-                f"- [{i.severity}] {i.title}: {i.description[:100]}"
-                for i in top_insights
-            ]
+        # Build insight summaries
+        top_insights = sorted(insights, key=lambda i: -(i.impact_score or 0))[:5]
+        summaries = [
+            f"- [{i.severity}] {i.title}: {i.description[:100]}"
+            for i in top_insights
+        ]
 
-            prompt = (
-                "Write a 2-3 sentence executive briefing for a factory owner. "
-                "Be direct, use specific numbers, state what needs attention.\n\n"
-                f"Findings:\n" + "\n".join(summaries) + "\n\n"
-                f"Alerts: {len(alert_events)} triggered\n"
-                "Write the briefing (2-3 sentences, no bullet points):"
-            )
+        prompt = (
+            "Write a 2-3 sentence executive briefing for a factory owner. "
+            "Be direct, use specific numbers, state what needs attention.\n\n"
+            f"Findings:\n" + "\n".join(summaries) + "\n\n"
+            f"Alerts: {len(alert_events)} triggered\n"
+            "Write the briefing (2-3 sentences, no bullet points):"
+        )
 
-            client = genai.Client(api_key=settings.gemini_api_key)
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-            )
-            return response.text.strip()
+        return await _llm_reason(prompt)
     except Exception:
         logger.debug("LLM summary generation failed, using template")
 

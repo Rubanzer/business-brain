@@ -176,13 +176,28 @@ async def delete_source_endpoint(
     source_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Disconnect a data source."""
-    from business_brain.ingestion.sync_engine import delete_source
+    """Delete a data source and cascade-drop its table + all dependent data."""
+    from business_brain.ingestion.sync_engine import get_source, delete_source
+    from business_brain.action.routers.data import drop_table_cascade
 
-    deleted = await delete_source(session, source_id)
-    if not deleted:
+    source = await get_source(session, source_id)
+    if not source:
         return {"error": "Source not found"}
-    return {"status": "deleted", "source_id": source_id}
+
+    table_name = source.table_name
+
+    # Delete the source record first
+    await delete_source(session, source_id)
+
+    # Cascade-drop the table and all dependent metadata/analysis data
+    cascade_result = await drop_table_cascade(table_name, session)
+
+    return {
+        "status": "deleted",
+        "source_id": source_id,
+        "table": table_name,
+        "removed": cascade_result.get("removed", {}),
+    }
 
 
 @router.get("/sources/{source_id}/changes")

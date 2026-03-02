@@ -10,12 +10,11 @@ import logging
 import re
 from typing import Any
 
-from google import genai
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from business_brain.analysis.tools.llm_gateway import reason as _llm_reason
 from business_brain.memory.schema_rag import retrieve_relevant_tables
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +73,6 @@ IMPORTANT RULES:
 - Always quote table names with double quotes to handle case sensitivity.
 """
 
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
 
 
 def _format_schema_context(tables: list[dict]) -> str:
@@ -278,12 +269,8 @@ class SQLAgent:
         prompt = "\n".join(prompt_parts)
 
         try:
-            client = _get_client()
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-            )
-            sql = _strip_sql_fences(response.text)
+            raw = await _llm_reason(prompt)
+            sql = _strip_sql_fences(raw)
         except Exception:
             logger.exception("SQL generation failed")
             state["sql_result"] = {"query": "", "rows": [], "error": "SQL generation failed"}
@@ -336,11 +323,8 @@ class SQLAgent:
                         f"Fix the query to resolve the error. Return ONLY the corrected SQL."
                     )
                     try:
-                        retry_response = client.models.generate_content(
-                            model=settings.gemini_model,
-                            contents=retry_prompt,
-                        )
-                        sql = _strip_sql_fences(retry_response.text)
+                        retry_raw = await _llm_reason(retry_prompt)
+                        sql = _strip_sql_fences(retry_raw)
                     except Exception:
                         logger.exception("SQL retry generation failed")
                         break

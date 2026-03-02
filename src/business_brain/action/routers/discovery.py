@@ -40,6 +40,8 @@ async def discovery_status(session: AsyncSession = Depends(get_session)) -> dict
     run = await get_last_run(session)
     if not run:
         return {"status": "no_runs", "message": "No discovery runs yet"}
+    diagnostics = getattr(run, "pass_diagnostics", None) or []
+    failed_passes = [d for d in diagnostics if d.get("status") == "failed"]
     return {
         "id": run.id,
         "status": run.status,
@@ -49,6 +51,9 @@ async def discovery_status(session: AsyncSession = Depends(get_session)) -> dict
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
         "error": run.error,
+        "pass_diagnostics": diagnostics,
+        "failed_passes": len(failed_passes),
+        "total_passes": len(diagnostics),
     }
 
 
@@ -68,6 +73,42 @@ async def get_suggestions(session: AsyncSession = Depends(get_session)) -> dict:
 
     suggestions = generate_suggestions(profiles)
     return {"suggestions": suggestions}
+
+
+@router.get("/discovery/diagnostics/{run_id}")
+async def discovery_diagnostics(
+    run_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get detailed per-pass diagnostics for a specific discovery run."""
+    from sqlalchemy import select
+    from business_brain.db.discovery_models import DiscoveryRun
+
+    result = await session.execute(
+        select(DiscoveryRun).where(DiscoveryRun.id == run_id)
+    )
+    run = result.scalar_one_or_none()
+    if not run:
+        return {"error": "Run not found"}
+
+    diagnostics = getattr(run, "pass_diagnostics", None) or []
+    failed = [d for d in diagnostics if d.get("status") == "failed"]
+    rate_limited = [d for d in failed if d.get("error_type") == "rate_limit"]
+
+    return {
+        "run_id": run.id,
+        "status": run.status,
+        "total_passes": len(diagnostics),
+        "ok_passes": sum(1 for d in diagnostics if d.get("status") == "ok"),
+        "failed_passes": len(failed),
+        "rate_limited_passes": len(rate_limited),
+        "total_duration_ms": sum(d.get("duration_ms", 0) for d in diagnostics),
+        "passes": diagnostics,
+        "failed_summary": [
+            {"pass": d["pass"], "error_type": d.get("error_type", "unknown"), "error": d.get("error", "")}
+            for d in failed
+        ],
+    }
 
 
 @router.get("/discovery/history")

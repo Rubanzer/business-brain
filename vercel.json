@@ -58,6 +58,8 @@
     { "src": "/quarantine", "dest": "api/index.py" },
     { "src": "/deep-tier/(.*)", "dest": "api/index.py" },
     { "src": "/deep-tier", "dest": "api/index.py" },
+    { "src": "/analysis/(.*)", "dest": "api/index.py" },
+    { "src": "/analysis", "dest": "api/index.py" },
     { "src": "/auth/(.*)", "dest": "api/index.py" },
     { "src": "/users/(.*)", "dest": "api/index.py" },
     { "src": "/users", "dest": "api/index.py" },

@@ -67,13 +67,8 @@ def _group_by_tables(insights: list[Insight]) -> list[list[Insight]]:
 
 
 async def _generate_stories(insights: list[Insight]) -> list[Insight]:
-    """Call Gemini to generate narrative stories from a group of insights."""
-    from google import genai
-    from config.settings import settings
-
-    if not settings.gemini_api_key:
-        logger.warning("No Gemini API key — skipping narrative generation")
-        return []
+    """Call LLM to generate narrative stories from a group of insights."""
+    from business_brain.analysis.tools.llm_gateway import reason as _llm_reason
 
     # Build insight summaries
     summaries = []
@@ -104,21 +99,16 @@ async def _generate_stories(insights: list[Insight]) -> list[Insight]:
     )
 
     try:
-        client = genai.Client(api_key=settings.gemini_api_key)
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-        )
-        text = response.text.strip()
+        raw = await _llm_reason(prompt)
 
         # Clean markdown fences if present
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
 
-        stories = json.loads(text)
+        stories = json.loads(raw)
     except Exception:
         logger.exception("Failed to parse LLM narrative response")
         return []
