@@ -219,6 +219,9 @@ async def discover_correlations_sql(
 
     Uses PostgreSQL's CORR() aggregate for each viable numeric column pair,
     giving accurate correlations instead of sample-based estimates.
+
+    Each table is wrapped in its own savepoint so one table's SQL failure
+    doesn't poison the session for subsequent tables.
     """
     from sqlalchemy import text as sql_text
 
@@ -272,9 +275,13 @@ async def discover_correlations_sql(
                 pair_map = pair_map[:20]
 
             query = f'SELECT {", ".join(corr_selects)} FROM "{s_table}"'
+
+            # Per-table savepoint: isolates SQL failures so one bad table
+            # doesn't poison the session for all subsequent tables
             try:
-                result = await session.execute(sql_text(query))
-                row = dict(result.fetchone()._mapping)
+                async with session.begin_nested():
+                    result = await session.execute(sql_text(query))
+                    row = dict(result.fetchone()._mapping)
             except Exception:
                 logger.debug("SQL correlation query failed for %s", s_table)
                 continue
@@ -283,7 +290,7 @@ async def discover_correlations_sql(
                 r = row.get(alias)
                 if r is None:
                     continue
-                r = float(r)
+                r = float(r)  # CORR() returns Decimal — cast to float
                 if abs(r) < 0.5:
                     continue
 

@@ -355,6 +355,9 @@ async def discover_entity_performance_sql(
     This is the *accurate* version: instead of estimating from 100-row samples,
     it runs ``SELECT cat_col, AVG(num_col), COUNT(*) ... GROUP BY cat_col``
     against the actual database for every viable (categorical × numeric) pair.
+
+    Each table is wrapped in its own savepoint so one table's SQL failure
+    doesn't poison the session for subsequent tables.
     """
     insights: list[Insight] = []
 
@@ -385,11 +388,20 @@ async def discover_entity_performance_sql(
 
             for cat_col, cat_info in cat_cols:
                 for num_col, num_info in num_cols:
-                    insight = await _sql_compare_entities(
-                        session, profile, cat_col, cat_info, num_col, num_info,
-                    )
-                    if insight:
-                        insights.append(insight)
+                    # Per-pair savepoint: if one query fails, the session
+                    # stays clean for the next pair / next table
+                    try:
+                        async with session.begin_nested():
+                            insight = await _sql_compare_entities(
+                                session, profile, cat_col, cat_info, num_col, num_info,
+                            )
+                        if insight:
+                            insights.append(insight)
+                    except Exception:
+                        logger.debug(
+                            "SQL entity pair failed: %s.%s×%s",
+                            profile.table_name, cat_col, num_col,
+                        )
         except Exception:
             logger.exception("SQL entity performance scan failed for %s", profile.table_name)
 
@@ -431,9 +443,10 @@ async def _sql_compare_entities(
     if len(rows) < 2:
         return None
 
-    # Compute overall mean
-    all_total = sum(r["total"] for r in rows if r["total"] is not None)
-    all_count = sum(r["cnt"] for r in rows if r["cnt"])
+    # Compute overall mean — cast to float because PostgreSQL AVG()/SUM()
+    # return decimal.Decimal, and float/Decimal raises TypeError
+    all_total = float(sum(float(r["total"]) for r in rows if r["total"] is not None))
+    all_count = int(sum(int(r["cnt"]) for r in rows if r["cnt"]))
     if all_count == 0:
         return None
     overall_mean = all_total / all_count
@@ -451,7 +464,7 @@ async def _sql_compare_entities(
     if gap_pct < 15:
         return None
 
-    # Build ranking
+    # Build ranking — all values already float from casts above
     entity_stats = []
     for r in rows:
         avg = float(r["avg_val"])
@@ -459,7 +472,7 @@ async def _sql_compare_entities(
         entity_stats.append({
             "entity": str(r["entity"]),
             "mean": round(avg, 2),
-            "count": r["cnt"],
+            "count": int(r["cnt"]),
             "vs_avg_pct": round(vs_avg, 1),
         })
 
