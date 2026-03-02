@@ -1058,16 +1058,7 @@ async def _generate_dynamic_analysis(
     Only runs when no pre-built module matched. Uses company profile context
     to generate industry-specific analysis.
     """
-    try:
-        from google import genai
-        from config.settings import settings
-    except ImportError:
-        logger.warning("Gemini SDK not available — skipping dynamic analysis")
-        return []
-
-    if not settings.gemini_api_key:
-        logger.debug("No Gemini API key — skipping dynamic analysis")
-        return []
+    from business_brain.analysis.tools.llm_gateway import reason as _llm_reason
 
     # Get company profile for context
     company_context = await _get_company_context(session)
@@ -1126,12 +1117,7 @@ async def _generate_dynamic_analysis(
     )
 
     try:
-        client = genai.Client(api_key=settings.gemini_api_key)
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-        )
-        code = response.text.strip()
+        code = await _llm_reason(prompt)
 
         # Clean markdown fences
         if code.startswith("```"):

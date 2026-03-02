@@ -1,10 +1,11 @@
-"""Centralized LLM gateway for the analysis engine.
+"""Centralized LLM gateway for the entire application.
 
 Provides structured LLM access with:
+- Multi-provider support (Gemini, OpenAI, Anthropic) via llm_providers
 - Rate limiting (asyncio.Semaphore)
 - Exponential backoff retry (3 attempts)
 - Prompt-level caching (md5 hash)
-- Robust JSON extraction (from query_router.py)
+- Robust JSON extraction
 """
 
 from __future__ import annotations
@@ -13,28 +14,11 @@ import asyncio
 import hashlib
 import json
 import logging
-import time
 from typing import Any
 
-from google import genai
-
-from config.settings import settings
+from business_brain.analysis.tools.llm_providers import get_provider
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Client singleton
-# ---------------------------------------------------------------------------
-
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
-
 
 # ---------------------------------------------------------------------------
 # Rate limiting
@@ -93,7 +77,7 @@ def _extract_json(raw: str) -> dict | None:
 
 
 async def _call_llm(prompt: str, use_cache: bool = True) -> str:
-    """Low-level call to Gemini with semaphore, retry, and cache."""
+    """Call the configured LLM provider with semaphore, retry, and cache."""
     key = _cache_key(prompt)
     if use_cache and key in _cache:
         return _cache[key]
@@ -102,13 +86,8 @@ async def _call_llm(prompt: str, use_cache: bool = True) -> str:
         last_error: Exception | None = None
         for attempt in range(3):
             try:
-                client = _get_client()
-                response = await asyncio.to_thread(
-                    client.models.generate_content,
-                    model=settings.gemini_model,
-                    contents=prompt,
-                )
-                text = response.text.strip()
+                provider = get_provider()
+                text = await asyncio.to_thread(provider.generate, prompt)
 
                 # Cache the result
                 if use_cache:
@@ -124,15 +103,26 @@ async def _call_llm(prompt: str, use_cache: bool = True) -> str:
                 last_error = exc
                 wait = 2 ** attempt  # 1s, 2s, 4s
                 logger.warning(
-                    "LLM call failed (attempt %d/%d): %s — retrying in %ds",
+                    "LLM call failed (attempt %d/%d, provider=%s): %s — retrying in %ds",
                     attempt + 1,
                     3,
+                    get_provider().name(),
                     str(exc)[:200],
                     wait,
                 )
                 await asyncio.sleep(wait)
 
         raise RuntimeError(f"LLM call failed after 3 attempts: {last_error}")
+
+
+# ---------------------------------------------------------------------------
+# Synchronous call (for sync contexts like insight_formatter, python_analyst)
+# ---------------------------------------------------------------------------
+
+
+def generate_sync(prompt: str) -> str:
+    """Synchronous LLM call. No cache, no retry — use for sync call sites."""
+    return get_provider().generate(prompt)
 
 
 # ---------------------------------------------------------------------------

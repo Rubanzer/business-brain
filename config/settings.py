@@ -9,15 +9,22 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+psycopg://brain:brain@localhost:5432/business_brain"
 
-    # LLM — Fast Tier (Gemini)
+    # LLM — Provider selection
+    llm_provider: str = ""  # "gemini" | "openai" | "anthropic" | "" (auto-detect from keys)
+    embedding_provider: str = ""  # "" = same as llm_provider
+
+    # LLM — API keys
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     gemini_api_key: str = ""
-    embedding_model: str = "gemini-embedding-001"
+
+    # LLM — Model names
     gemini_model: str = "gemini-2.0-flash"
+    openai_model: str = "gpt-4o-mini"
+    claude_model: str = "claude-sonnet-4-20250514"
+    embedding_model: str = "gemini-embedding-001"
 
     # LLM — Deep Tier (Claude)
-    claude_model: str = "claude-sonnet-4-20250514"
     deep_tier_auto_threshold: float = 0.3  # auto-escalate when confidence < this
 
     # Watcher

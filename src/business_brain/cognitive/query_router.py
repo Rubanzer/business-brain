@@ -11,9 +11,8 @@ import json
 import logging
 from typing import Any
 
-from google import genai
-
-from config.settings import settings
+from business_brain.analysis.tools.llm_gateway import reason as _llm_reason
+from business_brain.analysis.tools.llm_gateway import _extract_json
 
 logger = logging.getLogger(__name__)
 
@@ -103,42 +102,6 @@ Return ONLY a JSON object:
 }}
 """
 
-_client: genai.Client | None = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
-
-
-def _extract_json(raw: str) -> dict | None:
-    """Robustly extract a JSON object from an LLM response."""
-    text = raw.strip()
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        pass
-    if "```" in text:
-        parts = text.split("```")
-        for part in parts[1::2]:
-            block = part.strip()
-            for tag in ("json", "JSON"):
-                if block.startswith(tag):
-                    block = block[len(tag):].strip()
-            try:
-                return json.loads(block)
-            except (json.JSONDecodeError, ValueError):
-                continue
-    start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            return json.loads(text[start:end + 1])
-        except (json.JSONDecodeError, ValueError):
-            pass
-    return None
 
 
 def _build_schema_summary(tables: list[dict]) -> str:
@@ -266,12 +229,7 @@ class QueryRouter:
         prompt_parts.append(f"\nQuestion: {question}")
 
         try:
-            client = _get_client()
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents="\n".join(prompt_parts),
-            )
-            raw = response.text.strip()
+            raw = await _llm_reason("\n".join(prompt_parts))
             result = _extract_json(raw)
             if result is None:
                 raise ValueError(f"Could not parse router JSON: {raw[:200]}")

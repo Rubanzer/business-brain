@@ -6,9 +6,7 @@ import json
 import logging
 from typing import Any, Optional
 
-from google import genai
-
-from config.settings import settings
+from business_brain.analysis.tools.llm_gateway import generate_sync as _llm_generate
 
 logger = logging.getLogger(__name__)
 
@@ -144,14 +142,6 @@ Format guide: use "currency" for monetary values (₹), "percentage" for rates/r
 "number" for counts/quantities.
 """
 
-_client: Optional[genai.Client] = None
-
-
-def _get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        _client = genai.Client(api_key=settings.gemini_api_key)
-    return _client
 
 
 def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -278,7 +268,6 @@ def _extract_code(raw: str) -> str:
 
 
 def _interpret_output(
-    client: genai.Client,
     question: str,
     stdout: str,
     variables: dict,
@@ -312,11 +301,7 @@ def _interpret_output(
     prompt = "\n".join(prompt_parts)
 
     try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-        )
-        raw_text = response.text or ""
+        raw_text = _llm_generate(prompt)
         text = _extract_code(raw_text)  # reuse fence stripper for JSON
         if not text.strip():
             raise ValueError("LLM returned empty response for interpretation")
@@ -414,12 +399,8 @@ class PythonAnalystAgent:
         )
 
         try:
-            client = _get_client()
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-            )
-            code = _extract_code(response.text)
+            raw_code = _llm_generate(prompt)
+            code = _extract_code(raw_code)
         except Exception:
             logger.exception("Code generation LLM call failed")
             state["python_analysis"] = {
@@ -452,11 +433,8 @@ class PythonAnalystAgent:
                 f"Fix the code to resolve the error. Return ONLY corrected Python code."
             )
             try:
-                fix_response = client.models.generate_content(
-                    model=settings.gemini_model,
-                    contents=fix_prompt,
-                )
-                code = _extract_code(fix_response.text)
+                fix_raw = _llm_generate(fix_prompt)
+                code = _extract_code(fix_raw)
                 exec_result = execute_sandboxed(code, rows)
             except Exception:
                 logger.exception("Code fix LLM call failed")
@@ -481,7 +459,7 @@ class PythonAnalystAgent:
         biz_context_str = "\n".join(biz_ctx_parts)
 
         interpreted = _interpret_output(
-            client, question, exec_result["stdout"], exec_result["variables"],
+            question, exec_result["stdout"], exec_result["variables"],
             business_context=biz_context_str,
         )
 

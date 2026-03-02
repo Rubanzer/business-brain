@@ -80,20 +80,11 @@ async def parse_alert_natural_language(
 
     schema_context = "\n\n".join(schema_lines) if schema_lines else "No tables profiled yet."
 
-    # Call Gemini LLM
-    from google import genai
-    from config.settings import settings
+    # Call LLM
+    from business_brain.analysis.tools.llm_gateway import reason as _llm_reason
 
-    client = genai.Client(api_key=settings.gemini_api_key)
     prompt = _PARSE_PROMPT.format(schema_context=schema_context, user_input=user_input)
-
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=prompt,
-    )
-
-    # Parse the JSON response
-    text = response.text.strip()
+    text = await _llm_reason(prompt)
     # Strip markdown code fences if present
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]
