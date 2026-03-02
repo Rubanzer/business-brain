@@ -64,12 +64,15 @@ async def upsert(
     columns_metadata: list[dict] | None = None,
     uploaded_by: str | None = None,
     uploaded_by_role: str | None = None,
+    business_notes: str | None = None,
 ) -> MetadataEntry:
     try:
         existing = await get_by_table(session, table_name)
         if existing:
             existing.description = description
             existing.columns_metadata = columns_metadata
+            if business_notes is not None:
+                existing.business_notes = business_notes
             # Don't overwrite original uploader on update
         else:
             existing = MetadataEntry(
@@ -78,6 +81,7 @@ async def upsert(
                 columns_metadata=columns_metadata,
                 uploaded_by=uploaded_by,
                 uploaded_by_role=uploaded_by_role,
+                business_notes=business_notes,
             )
             session.add(existing)
         await session.commit()
@@ -85,6 +89,50 @@ async def upsert(
         return existing
     except Exception:
         logger.exception("Failed to upsert metadata for table: %s", table_name)
+        await session.rollback()
+        raise
+
+
+async def update_context(
+    session: AsyncSession,
+    table_name: str,
+    description: str | None = None,
+    business_notes: str | None = None,
+    column_descriptions: list[dict] | None = None,
+) -> MetadataEntry | None:
+    """Update user-editable context fields for a table.
+
+    column_descriptions: [{name, description}] — merges into existing
+    columns_metadata by column name, only updating the description field.
+    """
+    try:
+        existing = await get_by_table(session, table_name)
+        if not existing:
+            return None
+
+        if description is not None:
+            existing.description = description
+        if business_notes is not None:
+            existing.business_notes = business_notes
+
+        # Merge column descriptions into existing columns_metadata
+        if column_descriptions and existing.columns_metadata:
+            # Build lookup: column_name -> user description
+            user_descs = {cd["name"]: cd["description"] for cd in column_descriptions if cd.get("name")}
+            # Merge into existing column metadata (must create new list for SQLAlchemy change detection)
+            updated_cols = []
+            for col in existing.columns_metadata:
+                col_copy = dict(col)
+                if col_copy.get("name") in user_descs:
+                    col_copy["description"] = user_descs[col_copy["name"]]
+                updated_cols.append(col_copy)
+            existing.columns_metadata = updated_cols
+
+        await session.commit()
+        await session.refresh(existing)
+        return existing
+    except Exception:
+        logger.exception("Failed to update context for table: %s", table_name)
         await session.rollback()
         raise
 

@@ -80,6 +80,7 @@ async def retrieve_relevant_tables(
         score = 0.0
         table_lower = entry.table_name.lower()
         desc_lower = (entry.description or "").lower()
+        notes_lower = (getattr(entry, "business_notes", None) or "").lower()
 
         # Also build searchable text from column names and descriptions
         col_text = ""
@@ -92,10 +93,12 @@ async def retrieve_relevant_tables(
         if table_lower in query_lower or table_lower.rstrip("s") in query_lower:
             score += 5.0
 
-        # Keywords from query appear in description
+        # Keywords from query appear in description or business notes
         for word in query_words:
             if word in desc_lower:
                 score += 1.0
+            if word in notes_lower:
+                score += 1.5  # business notes are user-curated, high signal
             if word in table_lower:
                 score += 2.0
             # Column name match — very important for finding relevant tables
@@ -115,12 +118,15 @@ async def retrieve_relevant_tables(
                     break  # one match is enough for boost
 
         if score > 0:
-            results[entry.table_name] = {
+            table_info = {
                 "table_name": entry.table_name,
                 "description": entry.description,
                 "columns": entry.columns_metadata,
                 "score": score,
             }
+            if getattr(entry, "business_notes", None):
+                table_info["business_notes"] = entry.business_notes
+            results[entry.table_name] = table_info
 
     # 3. Expand via value-validated relationships only
     #    For matched tables, pull in related tables — but ONLY when the

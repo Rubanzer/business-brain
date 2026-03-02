@@ -241,3 +241,31 @@ class DeployedReport(Base):
     session_id = Column(String(64), nullable=True)
     active = Column(Boolean, default=True)
     refresh_frequency = Column(String(20), default="manual")  # manual/hourly/daily/weekly
+
+
+class QualitativeDocument(Base):
+    """Uploaded qualitative text documents with LLM-generated analysis."""
+
+    __tablename__ = "qualitative_documents"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(10))  # pdf, xlsx, txt, md
+    raw_text = Column(Text)
+    page_count = Column(Integer)
+    word_count = Column(Integer)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+    uploaded_by = Column(String(36), nullable=True)
+    status = Column(String(20), default="pending")  # pending/analyzing/complete/failed
+
+    # LLM analysis results
+    summary = Column(Text)
+    sentiment = Column(JSON)      # {overall, score, breakdown: [{section, sentiment, score}]}
+    themes = Column(JSON)         # [{theme, count, evidence: [quotes]}]
+    key_findings = Column(JSON)   # [{finding, severity, evidence}]
+    entities = Column(JSON)       # [{name, type, mentions}]
+    error = Column(Text)
+
+    # Links to quantitative data
+    linked_tables = Column(JSON)    # Table names this document relates to
+    linked_insights = Column(JSON)  # Insight IDs generated from this document
