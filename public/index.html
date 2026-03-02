@@ -4453,6 +4453,8 @@
     let _lastDeployedReportId = null;
     let currentFeedTypeFilter = 'all';
     let _currentStatusFilter = null;
+    let _feedTypeCounts = {};   // Persists across filtered loads so pills don't collapse
+    let _feedTotalCount = 0;
 
     // Friendly names for insight types — used in filter pills and card badges
     const INSIGHT_TYPE_LABELS = {
@@ -7616,14 +7618,21 @@
       const body = document.getElementById('feed-body');
       feedInsights = insights;
 
+      // Only update type counts when viewing unfiltered feed (the "All" view)
+      if (currentFeedTypeFilter === 'all' && !_currentStatusFilter) {
+        _feedTypeCounts = {};
+        for (const ins of insights) {
+          const t = ins.insight_type || 'unknown';
+          _feedTypeCounts[t] = (_feedTypeCounts[t] || 0) + 1;
+        }
+        _feedTotalCount = insights.length;
+      }
+      _renderTypeFilterPills();
+
       if (!insights.length) {
         body.innerHTML = `<div class="feed-empty">${emptyMessage || 'No insights found.'}</div>`;
-        _buildTypeFilterPills(insights);
         return;
       }
-
-      // Build dynamic type filter pills from loaded data
-      _buildTypeFilterPills(insights);
 
       body.innerHTML = insights.map((ins, i) => {
         const sevClass = ins.insight_type === 'story' ? 'type-story' : `severity-${ins.severity}`;
@@ -7682,20 +7691,13 @@
       if (currentFeedTypeFilter !== 'all') _applyTypeFilter(currentFeedTypeFilter);
     }
 
-    function _buildTypeFilterPills(insights) {
+    function _renderTypeFilterPills() {
       const container = document.getElementById('feed-type-filters');
-      if (!container) return;
+      if (!container || !Object.keys(_feedTypeCounts).length) return;
 
-      // Count insights by type
-      const typeCounts = {};
-      for (const ins of insights) {
-        const t = ins.insight_type || 'unknown';
-        typeCounts[t] = (typeCounts[t] || 0) + 1;
-      }
-
-      // Build pills: "All" first, then each type with count
-      let html = `<button class="feed-filter ${currentFeedTypeFilter === 'all' ? 'active' : ''}" onclick="filterFeedByType('all', this)">All (${insights.length})</button>`;
-      const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+      // Build pills from stored counts (persists across filtered loads)
+      let html = `<button class="feed-filter ${currentFeedTypeFilter === 'all' ? 'active' : ''}" onclick="filterFeedByType('all', this)">All (${_feedTotalCount})</button>`;
+      const sortedTypes = Object.entries(_feedTypeCounts).sort((a, b) => b[1] - a[1]);
       for (const [typ, count] of sortedTypes) {
         const isActive = currentFeedTypeFilter === typ ? 'active' : '';
         html += `<button class="feed-filter ${isActive}" onclick="filterFeedByType('${esc(typ)}', this)">${esc(friendlyType(typ))} (${count})</button>`;
