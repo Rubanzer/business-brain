@@ -70,6 +70,10 @@ class TestProfileAllTablesFiltering:
         )
         mock_metadata_store.get_filtered = AsyncMock(return_value=[entry])
 
+        # Mock begin_nested as an async context manager (savepoint)
+        nested_ctx = AsyncMock()
+        session.begin_nested = MagicMock(return_value=nested_ctx)
+
         # Mock the SQL queries that _profile_table executes
         count_result = MagicMock()
         count_result.scalar.return_value = 42

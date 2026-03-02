@@ -1,16 +1,24 @@
 """Discovery & Suggestions routes."""
 
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from business_brain.action.dependencies import get_focus_tables, run_discovery_background
+from business_brain.action.dependencies import (
+    get_focus_tables,
+    run_discovery_background,
+    run_discovery_enrich_background,
+)
 from business_brain.db.connection import get_session
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["discovery"])
+
+# If a run has been "running" for longer than this, consider it stale (Lambda died)
+_STALE_RUN_SECONDS = 120
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +31,10 @@ async def trigger_discovery(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Manually trigger a discovery sweep, respecting focus scope."""
+    """Trigger fast discovery (profile + fast passes). Returns quickly.
+
+    After this completes, call POST /discovery/enrich to run slow LLM passes.
+    """
     focus_tables = await get_focus_tables(session)
     background_tasks.add_task(run_discovery_background, "manual", table_filter=focus_tables)
     msg = "Discovery sweep triggered in background"
@@ -32,19 +43,57 @@ async def trigger_discovery(
     return {"status": "started", "message": msg}
 
 
+@router.post("/discovery/enrich")
+async def trigger_enrich(
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Run slow enrichment passes (narratives, sanctity, precomputation).
+
+    Should be called after the fast discovery phase completes.
+    Each pass commits independently — safe for serverless timeouts.
+    """
+    from business_brain.discovery.feed_store import get_last_run
+
+    run = await get_last_run(session)
+    run_id = run.id if run else None
+    background_tasks.add_task(run_discovery_enrich_background, run_id=run_id)
+    return {"status": "started", "message": "Enrichment passes triggered", "run_id": run_id}
+
+
 @router.get("/discovery/status")
 async def discovery_status(session: AsyncSession = Depends(get_session)) -> dict:
-    """Get the last discovery run info."""
+    """Get the last discovery run info.
+
+    If a run has been "running" for > _STALE_RUN_SECONDS, mark it as
+    completed-with-partial-results (Lambda likely timed out but passes
+    committed their results independently).
+    """
     from business_brain.discovery.feed_store import get_last_run
 
     run = await get_last_run(session)
     if not run:
         return {"status": "no_runs", "message": "No discovery runs yet"}
+
+    status = run.status
+    # Detect stale "running" runs (Lambda died before marking complete)
+    if status == "running" and run.started_at:
+        elapsed = (datetime.now(timezone.utc) - run.started_at.replace(tzinfo=timezone.utc)).total_seconds()
+        if elapsed > _STALE_RUN_SECONDS:
+            # Mark as completed (partial) — passes already committed their results
+            status = "completed"
+            run.status = "completed"
+            run.error = "Serverless timeout — partial results saved"
+            try:
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
     diagnostics = getattr(run, "pass_diagnostics", None) or []
     failed_passes = [d for d in diagnostics if d.get("status") == "failed"]
     return {
         "id": run.id,
-        "status": run.status,
+        "status": status,
         "trigger": run.trigger,
         "tables_scanned": run.tables_scanned,
         "insights_found": run.insights_found,

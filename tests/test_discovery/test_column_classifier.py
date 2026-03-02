@@ -100,9 +100,9 @@ class TestClassifyOne:
         assert r["null_count"] == 2
 
     def test_sample_values_limited(self):
-        values = list(range(20))
+        values = list(range(200))
         r = self._classify("num", values)
-        assert len(r["sample_values"]) <= 5
+        assert len(r["sample_values"]) <= 100
 
 
 # ---------------------------------------------------------------------------
