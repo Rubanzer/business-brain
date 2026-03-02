@@ -173,6 +173,13 @@ async def retrieve_relevant_tables(
     # Sort by score descending, return top_k
     ranked = sorted(results.values(), key=lambda r: r["score"], reverse=True)[:top_k]
 
+    # Enrich columns with profiling data (sample values, semantic types, stats)
+    # This is critical — without it the LLM can't distinguish batch_id from batch_number
+    try:
+        ranked = await _enrich_with_column_profiles(session, ranked)
+    except Exception:
+        logger.debug("Column profile enrichment failed, continuing without it")
+
     # Enrich tables with relationship info
     try:
         relationships = await _get_relationships(session)
@@ -435,3 +442,51 @@ async def _get_domain_context(session: AsyncSession) -> Optional[dict]:
         }
     except Exception:
         return None
+
+
+async def _enrich_with_column_profiles(
+    session: AsyncSession,
+    ranked_tables: list[dict],
+) -> list[dict]:
+    """Merge column_classification from TableProfile into each table's columns.
+
+    Adds per-column: semantic_type, cardinality, sample_values, and stats.
+    This lets downstream LLMs see that batch_id contains ["B-2024-001", ...]
+    while batch_number contains [1, 2, 3, ...] — preventing bad JOINs.
+    """
+    from business_brain.db.discovery_models import TableProfile
+
+    table_names = [t["table_name"] for t in ranked_tables]
+    if not table_names:
+        return ranked_tables
+
+    result = await session.execute(
+        select(TableProfile).where(TableProfile.table_name.in_(table_names))
+    )
+    profiles_by_name = {p.table_name: p for p in result.scalars().all()}
+
+    for table_info in ranked_tables:
+        profile = profiles_by_name.get(table_info["table_name"])
+        if not profile or not profile.column_classification:
+            continue
+
+        classified_cols = profile.column_classification.get("columns", {})
+        columns = table_info.get("columns") or []
+
+        for col in columns:
+            col_name = col.get("name", "")
+            cls_info = classified_cols.get(col_name)
+            if not cls_info:
+                continue
+
+            # Merge profiling data into column dict
+            if cls_info.get("semantic_type"):
+                col["semantic_type"] = cls_info["semantic_type"]
+            if cls_info.get("cardinality") is not None:
+                col["cardinality"] = cls_info["cardinality"]
+            if cls_info.get("sample_values"):
+                col["sample_values"] = cls_info["sample_values"][:5]
+            if cls_info.get("stats"):
+                col["stats"] = cls_info["stats"]
+
+    return ranked_tables
