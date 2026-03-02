@@ -446,23 +446,15 @@ async def run_discovery_enrich(
         tracker.record("schema_change_detection", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
     # ── Data freshness ──
-    t0 = time.monotonic()
-    logger.info("Enrich: checking data freshness...")
-    try:
-        from business_brain.discovery.data_freshness import detect_stale_tables
-        prev_result2 = await session.execute(
-            select(TableProfile).where(
-                TableProfile.table_name.in_([p.table_name for p in profiles])
-            )
-        )
-        prev_profiles2 = list(prev_result2.scalars().all())
-        stale_insights = detect_stale_tables(profiles, prev_profiles2)
-        if stale_insights:
-            all_new_insights.extend(stale_insights)
-        tracker.record("data_freshness", count=len(stale_insights) if stale_insights else 0, duration_ms=_elapsed_ms(t0))
-    except Exception as exc:
-        logger.exception("Data freshness check failed, continuing")
-        tracker.record("data_freshness", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+    # NOTE: Stale data detection requires comparing CURRENT profiles against
+    # PREVIOUS-run profiles. Since the profiler updates rows in place (one row
+    # per table_name), loading profiles for the same table_names always returns
+    # the *current* profiles — making the comparison always self==self. This
+    # produced false "stale data" insights every single run.
+    #
+    # Proper fix: store prev_data_hash on the profile before overwriting, or
+    # use DiscoveryRun snapshots. For now: skip this pass entirely.
+    tracker.record("data_freshness", count=0, duration_ms=0)
 
     # ── Persist new insights from enrichment ──
     new_count = 0
@@ -538,6 +530,11 @@ async def run_discovery_enrich(
     except Exception as exc:
         logger.exception("Pre-computation failed, continuing")
         tracker.record("precomputation", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+        # Recover session so reinforcement weights + final commit succeed
+        try:
+            await session.rollback()
+        except Exception:
+            pass
 
     # ── Reinforcement weights ──
     t0 = time.monotonic()
