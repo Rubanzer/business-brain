@@ -240,9 +240,11 @@ async def run_discovery(
 
             gated = apply_quality_gate(all_insights, profiles, reinforcement_weights=reinforcement_weights)
 
-            # Dedup against existing DB records
+            # Dedup against existing DB records (exclude dismissed —
+            # dismissed insights should be re-discoverable after purge)
             existing_result = await session.execute(
                 select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)
+                .where(Insight.status != "dismissed")
             )
             existing_keys = set()
             for row in existing_result.fetchall():
@@ -438,6 +440,7 @@ async def run_discovery_enrich(
 
             existing_result = await session.execute(
                 select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)
+                .where(Insight.status != "dismissed")
             )
             existing_keys = set()
             for row in existing_result.fetchall():

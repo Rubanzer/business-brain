@@ -154,6 +154,19 @@ async def dismiss_all_insights(session: AsyncSession = Depends(get_session)) -> 
     return {"status": "ok", "dismissed": count}
 
 
+@router.delete("/feed/purge-dismissed")
+async def purge_dismissed_insights(session: AsyncSession = Depends(get_session)) -> dict:
+    """Permanently delete all dismissed insights from the database.
+
+    This frees them for re-discovery on the next scan. Use after
+    'Dismiss All' when you want a completely fresh scan.
+    """
+    from business_brain.discovery.feed_store import purge_dismissed
+
+    count = await purge_dismissed(session)
+    return {"status": "ok", "purged": count}
+
+
 @router.post("/feed/{insight_id}/status")
 async def update_insight_status(
     insight_id: str,

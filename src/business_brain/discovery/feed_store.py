@@ -74,6 +74,21 @@ async def dismiss_all(session: AsyncSession) -> int:
     return result.rowcount
 
 
+async def purge_dismissed(session: AsyncSession) -> int:
+    """Permanently delete all dismissed insights from the database.
+
+    Returns the count of deleted rows. This frees them up for re-discovery
+    on the next scan (dedup won't see them anymore).
+    """
+    from sqlalchemy import delete
+
+    result = await session.execute(
+        delete(Insight).where(Insight.status == "dismissed")
+    )
+    await session.commit()
+    return result.rowcount
+
+
 async def deploy_insight(session: AsyncSession, insight_id: str, name: str) -> DeployedReport:
     """Create a deployed report from an insight."""
     result = await session.execute(select(Insight).where(Insight.id == insight_id))
