@@ -136,6 +136,7 @@ async def _ensure_tables():
             "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS source_columns JSON",
             "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS auto_linked BOOLEAN DEFAULT FALSE",
             "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS confidence FLOAT",
+            "ALTER TABLE discovery_runs ADD COLUMN IF NOT EXISTS pass_diagnostics JSON",
         ]
 
         async with engine.begin() as conn:
