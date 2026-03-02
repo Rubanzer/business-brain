@@ -228,6 +228,65 @@ async def run_discovery(
             + entity_insights
         )
 
+        # ── CHECKPOINT: commit fast-pass insights immediately ──
+        # Vercel serverless may kill the function during slow LLM passes
+        # (narratives, sanctity). By committing here, we guarantee the
+        # fast-pass insights (anomalies, correlations, composites, etc.)
+        # survive even if the function times out.
+        fast_pass_count = len(all_insights)
+        if fast_pass_count:
+            logger.info("Discovery: committing %d fast-pass insights...", fast_pass_count)
+            t0 = time.monotonic()
+            try:
+                # Apply quality gate + dedup to fast-pass insights before persisting
+                from business_brain.discovery.dedup import compute_insight_key, deduplicate_insights
+
+                try:
+                    reinforcement_weights_early = None
+                    from business_brain.discovery.reinforcement_loop import get_latest_weights
+                    reinforcement_weights_early = await get_latest_weights(session)
+                except Exception:
+                    pass
+
+                fast_insights = apply_quality_gate(all_insights, profiles, reinforcement_weights=reinforcement_weights_early)
+
+                # Dedup against existing DB records
+                existing_result = await session.execute(
+                    select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)
+                )
+                existing_keys = set()
+                for row in existing_result.fetchall():
+                    dummy = Insight()
+                    dummy.insight_type = row[2]
+                    dummy.source_tables = row[0]
+                    dummy.source_columns = row[1]
+                    dummy.composite_template = row[3]
+                    existing_keys.add(compute_insight_key(dummy))
+
+                fast_insights = deduplicate_insights(fast_insights, existing_keys)
+
+                for insight in fast_insights:
+                    insight.discovery_run_id = run.id
+                    session.add(insight)
+
+                run.insights_found = len(fast_insights)
+                run.pass_diagnostics = tracker.results
+                await session.commit()
+                logger.info("Discovery: checkpoint committed %d insights", len(fast_insights))
+                tracker.record("fast_pass_commit", count=len(fast_insights), duration_ms=_elapsed_ms(t0))
+
+                # Track already-committed insight keys so we don't re-insert in final commit
+                committed_keys = {compute_insight_key(i) for i in fast_insights}
+            except Exception as exc:
+                logger.exception("Fast-pass commit failed, continuing")
+                await session.rollback()
+                committed_keys = set()
+                tracker.record("fast_pass_commit", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
+        else:
+            committed_keys = set()
+
+        # ── SLOW PASSES (LLM-dependent, may timeout on serverless) ──
+
         # 8. Build narratives (if 2+ insights)
         if len(all_insights) >= 2:
             t0 = time.monotonic()
@@ -323,51 +382,56 @@ async def run_discovery(
             logger.exception("Data freshness check failed, continuing")
             tracker.record("data_freshness", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
-        # 9. Load reinforcement weights and apply insight quality gate
+        # 9. Persist any NEW insights from slow passes (narratives, schema changes, freshness)
+        # Fast-pass insights were already committed at the checkpoint above.
         t0 = time.monotonic()
-        logger.info("Discovery: applying quality gate...")
-        try:
-            from business_brain.discovery.reinforcement_loop import get_latest_weights
-            reinforcement_weights = await get_latest_weights(session)
-        except Exception:
-            reinforcement_weights = None
-        pre_gate = len(all_insights)
-        all_insights = apply_quality_gate(all_insights, profiles, reinforcement_weights=reinforcement_weights)
-        logger.info("Discovery: quality gate: %d → %d insights", pre_gate, len(all_insights))
-        tracker.record("quality_gate", count=len(all_insights), duration_ms=_elapsed_ms(t0))
-
-        # 10. Deduplicate insights against existing DB records
-        t0 = time.monotonic()
-        logger.info("Discovery: deduplicating insights...")
+        logger.info("Discovery: persisting slow-pass insights...")
         try:
             from business_brain.discovery.dedup import compute_insight_key, deduplicate_insights
-            existing_result = await session.execute(select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template))
-            existing_keys = set()
-            for row in existing_result.fetchall():
-                dummy = Insight()
-                dummy.insight_type = row[2]
-                dummy.source_tables = row[0]
-                dummy.source_columns = row[1]
-                dummy.composite_template = row[3]
-                existing_keys.add(compute_insight_key(dummy))
-            pre_count = len(all_insights)
-            all_insights = deduplicate_insights(all_insights, existing_keys)
-            deduped = pre_count - len(all_insights)
-            if deduped:
-                logger.info("Discovery: deduplicated %d insights", deduped)
-            tracker.record("deduplication", count=len(all_insights), duration_ms=_elapsed_ms(t0))
+
+            # Filter to only NEW insights not yet committed
+            new_insights = [i for i in all_insights if compute_insight_key(i) not in committed_keys]
+
+            if new_insights:
+                try:
+                    reinforcement_weights = None
+                    from business_brain.discovery.reinforcement_loop import get_latest_weights
+                    reinforcement_weights = await get_latest_weights(session)
+                except Exception:
+                    pass
+
+                new_insights = apply_quality_gate(new_insights, profiles, reinforcement_weights=reinforcement_weights)
+
+                # Dedup against DB (includes the checkpoint-committed ones)
+                existing_result = await session.execute(
+                    select(Insight.source_tables, Insight.source_columns, Insight.insight_type, Insight.composite_template)
+                )
+                existing_keys = set()
+                for row in existing_result.fetchall():
+                    dummy = Insight()
+                    dummy.insight_type = row[2]
+                    dummy.source_tables = row[0]
+                    dummy.source_columns = row[1]
+                    dummy.composite_template = row[3]
+                    existing_keys.add(compute_insight_key(dummy))
+
+                new_insights = deduplicate_insights(new_insights, existing_keys)
+
+                for insight in new_insights:
+                    insight.discovery_run_id = run.id
+                    session.add(insight)
+
+                await session.flush()
+                logger.info("Discovery: persisted %d slow-pass insights", len(new_insights))
+                tracker.record("slow_pass_persist", count=len(new_insights), duration_ms=_elapsed_ms(t0))
+
+                # Update total count
+                run.insights_found = (run.insights_found or 0) + len(new_insights)
+            else:
+                tracker.record("slow_pass_persist", count=0, duration_ms=_elapsed_ms(t0))
         except Exception as exc:
-            logger.exception("Insight deduplication failed, continuing")
-            tracker.record("deduplication", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
-
-        # 11. Assign run ID to all insights (scoring already done by quality gate)
-        for insight in all_insights:
-            insight.discovery_run_id = run.id
-
-        # 11. Bulk insert insights
-        for insight in all_insights:
-            session.add(insight)
-        await session.flush()
+            logger.exception("Slow-pass persist failed, fast-pass insights already safe")
+            tracker.record("slow_pass_persist", status="failed", error=str(exc), error_type=_classify_error(exc), duration_ms=_elapsed_ms(t0))
 
         # 11. Auto-refresh deployed reports whose source tables were re-profiled
         profiled_tables = {p.table_name for p in profiles}
@@ -420,7 +484,7 @@ async def run_discovery(
 
         # 13. Complete the run
         run.status = "completed"
-        run.insights_found = len(all_insights)
+        # insights_found already accumulated from checkpoint + slow-pass persist
         run.pass_diagnostics = tracker.results
         run.completed_at = datetime.now(timezone.utc)
 
