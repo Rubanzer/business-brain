@@ -325,6 +325,10 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_login_at = Column(DateTime(timezone=True), nullable=True)
+    # Google OAuth
+    google_id = Column(String(255), nullable=True, unique=True)
+    avatar_url = Column(String(500), nullable=True)
+    auth_provider = Column(String(20), default="email")  # "email" | "google"
 
 
 class InviteToken(Base):
@@ -341,6 +345,52 @@ class InviteToken(Base):
     used = Column(Boolean, default=False)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(String(36), nullable=True)
+
+
+class TableRoleAccess(Base):
+    """Admin-configured table access rules. Maps (table_name, role) pairs.
+
+    If a table has NO rows here, all roles can see it (backward compat).
+    If it HAS rows, only the listed roles (and admin/owner) can see it.
+    """
+
+    __tablename__ = "table_role_access"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    table_name = Column(String(255), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # viewer/operator/manager
+    created_by = Column(String(36), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanyRegistry(Base):
+    """Registry of all companies — lives in master DB only (multi-tenant mode)."""
+
+    __tablename__ = "company_registry"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(_uuid_mod.uuid4()))
+    name = Column(String(255), nullable=False)
+    slug = Column(String(100), unique=True, nullable=False)  # URL-safe identifier
+    database_url = Column(Text, nullable=False)  # connection string for tenant DB
+    plan = Column(String(20), default="basic")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    max_users = Column(Integer, default=10)
+
+
+class AuditLog(Base):
+    """Audit trail for security-sensitive actions."""
+
+    __tablename__ = "audit_logs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(_uuid_mod.uuid4()))
+    user_id = Column(String(36), nullable=True)
+    action = Column(String(50), nullable=False)  # login/upload/access_change/role_change/delete
+    resource_type = Column(String(30), nullable=True)  # table/user/report/insight
+    resource_id = Column(String(255), nullable=True)
+    details = Column(JSON, nullable=True)
+    ip_address = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 # ---------------------------------------------------------------------------

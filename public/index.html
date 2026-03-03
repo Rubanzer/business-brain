@@ -2050,6 +2050,61 @@
       cursor: pointer;
       text-decoration: underline;
     }
+    .btn-google {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+      width: 100%;
+      padding: var(--space-2p5) var(--space-4);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-weight: 500;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: background var(--transition-fast), box-shadow var(--transition-fast);
+    }
+    .btn-google:hover { background: var(--surface-sunken); box-shadow: var(--shadow-sm); }
+    .btn-google svg { width: 18px; height: 18px; flex-shrink: 0; }
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      margin: var(--space-4) 0;
+      color: var(--muted);
+      font-size: var(--text-sm);
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .auth-divider span { padding: 0 var(--space-3); }
+    /* Table access control */
+    .table-access-grid {
+      display: grid;
+      gap: var(--space-2);
+    }
+    .table-access-row {
+      display: grid;
+      grid-template-columns: 1fr repeat(3, 60px) 80px;
+      align-items: center;
+      padding: var(--space-2) var(--space-3);
+      background: var(--surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      font-size: var(--text-sm);
+    }
+    .table-access-row.header {
+      background: var(--surface-sunken);
+      font-weight: 600;
+      font-size: var(--text-xs);
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .table-access-row input[type="checkbox"] { width: 16px; height: 16px; margin: auto; cursor: pointer; }
     .user-badge {
       font-size: var(--text-sm);
       color: var(--muted);
@@ -2803,6 +2858,11 @@
       <!-- Login Form -->
       <div id="auth-login">
         <h3 style="font-size:var(--text-md);margin-bottom:0.75rem;">Sign In</h3>
+        <button class="btn-google" onclick="loginWithGoogle()">
+          <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Continue with Google
+        </button>
+        <div class="auth-divider"><span>or</span></div>
         <label style="font-size:var(--text-sm);">Email</label>
         <input type="email" id="login-email" placeholder="you@company.com" style="width:100%;box-sizing:border-box;" />
         <label style="font-size:var(--text-sm);">Password</label>
@@ -2820,6 +2880,11 @@
       <!-- Register Form -->
       <div id="auth-register" style="display:none;">
         <h3 style="font-size:var(--text-md);margin-bottom:0.75rem;">Create Account</h3>
+        <button class="btn-google" onclick="loginWithGoogle()">
+          <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Continue with Google
+        </button>
+        <div class="auth-divider"><span>or</span></div>
         <label style="font-size:var(--text-sm);">Name</label>
         <input type="text" id="reg-name" placeholder="Your name" style="width:100%;box-sizing:border-box;" />
         <label style="font-size:var(--text-sm);">Email</label>
@@ -3615,6 +3680,7 @@
         <button class="sub-nav-pill active" data-sub="users-list" onclick="switchUsersSub('users-list')">Team Members</button>
         <button class="sub-nav-pill" data-sub="users-invite" onclick="switchUsersSub('users-invite')">Invite User</button>
         <button class="sub-nav-pill" data-sub="users-pending" onclick="switchUsersSub('users-pending')">Pending Invites</button>
+        <button class="sub-nav-pill" data-sub="users-access" onclick="switchUsersSub('users-access')">Table Access</button>
       </div>
 
       <!-- Sub: Team Members List -->
@@ -3652,6 +3718,20 @@
       <div id="users-pending" class="sub-panel">
         <div id="pending-invites-body">
           <div class="feed-empty">Loading pending invites...</div>
+        </div>
+      </div>
+
+      <!-- Sub: Table Access Control -->
+      <div id="users-access" class="sub-panel">
+        <div style="max-width:700px;">
+          <h3 style="margin-top:0;">Table Access Control</h3>
+          <p style="font-size:var(--text-sm);color:var(--text-secondary);margin-bottom:var(--space-4);">
+            Control which roles can see each table. Tables with no restrictions are visible to all roles.
+            Admin and Owner always have full access.
+          </p>
+          <div id="table-access-body">
+            <div class="feed-empty">Loading table access rules...</div>
+          </div>
         </div>
       </div>
     </div>
@@ -4269,10 +4349,18 @@
       const nameEl = document.getElementById('user-name-display');
       const planBadge = document.getElementById('user-plan-badge');
       const logoutBtn = document.getElementById('logout-btn');
+      const avatarEl = document.getElementById('user-avatar');
 
       if (currentUser) {
         nameEl.textContent = currentUser.name + ' (' + currentUser.role + ')';
         logoutBtn.style.display = '';
+
+        // Show avatar if Google user has one
+        if (avatarEl && currentUser.avatar_url) {
+          avatarEl.innerHTML = `<img src="${esc(currentUser.avatar_url)}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" />`;
+        } else if (avatarEl) {
+          avatarEl.textContent = (currentUser.name || '?').charAt(0).toUpperCase();
+        }
 
         const planColors = { free: 'var(--muted)', basic: 'var(--green)', pro: 'var(--accent)', enterprise: 'var(--yellow)' };
         planBadge.textContent = currentUser.plan;
@@ -4331,8 +4419,43 @@
       });
     }
 
-    // Check auth on page load
+    // Google OAuth login
+    async function loginWithGoogle() {
+      try {
+        const data = await apiFetch(API + '/auth/google/url');
+        if (data.url) window.location.href = data.url;
+        else toast('Google OAuth not configured', 'error');
+      } catch (e) {
+        toast(e.message || 'Google login unavailable', 'error');
+      }
+    }
+
+    // Check auth on page load (including Google OAuth callback)
     async function checkAuth() {
+      // Handle Google OAuth callback (?code=...)
+      const urlParams = new URLSearchParams(window.location.search);
+      const googleCode = urlParams.get('code');
+      if (googleCode) {
+        history.replaceState({}, '', '/');  // clean URL
+        try {
+          const res = await apiFetch(API + '/auth/google/callback', {
+            method: 'POST',
+            body: JSON.stringify({ code: googleCode }),
+            headers: { 'Content-Type': 'application/json' },
+          });
+          if (res.token) {
+            authToken = res.token;
+            localStorage.setItem('bb_auth_token', authToken);
+            currentUser = res.user;
+            showMainApp();
+            applyRolePermissions();
+            return;
+          }
+        } catch (e) {
+          toast('Google login failed: ' + (e.message || 'Unknown error'), 'error');
+        }
+      }
+
       if (authToken) {
         try {
           const data = await apiFetch(API + '/auth/me');
@@ -4361,6 +4484,7 @@
       if (btn) btn.classList.add('active');
       if (subId === 'users-list') loadUsersList();
       if (subId === 'users-pending') loadPendingInvites();
+      if (subId === 'users-access') loadTableAccess();
     }
 
     async function loadUsersList() {
@@ -4495,6 +4619,87 @@
       } catch (e) {
         toast('Failed: ' + e.message);
       }
+    }
+
+    // -----------------------------------------------------------------------
+    // Table Access Control (Admin)
+    // -----------------------------------------------------------------------
+
+    async function loadTableAccess() {
+      const body = document.getElementById('table-access-body');
+      if (!currentUser || !['admin', 'owner'].includes(currentUser.role)) {
+        body.innerHTML = '<div class="feed-empty">Admin or owner access required.</div>';
+        return;
+      }
+      body.innerHTML = '<div class="feed-empty"><span class="spinner"></span> Loading table access rules...</div>';
+      try {
+        const tables = await apiFetch(API + '/tables/access/summary');
+        if (!tables.length) {
+          body.innerHTML = '<div class="feed-empty">No tables uploaded yet.</div>';
+          return;
+        }
+        let html = '<div class="table-access-grid">';
+        html += `<div class="table-access-row header">
+          <div>Table</div><div>Viewer</div><div>Operator</div><div>Manager</div><div></div>
+        </div>`;
+        for (const t of tables) {
+          const vChk = t.roles.includes('viewer') ? 'checked' : '';
+          const oChk = t.roles.includes('operator') ? 'checked' : '';
+          const mChk = t.roles.includes('manager') ? 'checked' : '';
+          html += `<div class="table-access-row" data-table="${esc(t.table_name)}">
+            <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;" title="${esc(t.table_name)}">${esc(t.table_name)}</div>
+            <div><input type="checkbox" data-role="viewer" ${vChk} /></div>
+            <div><input type="checkbox" data-role="operator" ${oChk} /></div>
+            <div><input type="checkbox" data-role="manager" ${mChk} /></div>
+            <div>
+              ${t.restricted
+                ? '<span style="font-size:var(--text-xs);color:var(--amber);font-weight:500;">Restricted</span>'
+                : '<span style="font-size:var(--text-xs);color:var(--green);">Open</span>'}
+            </div>
+          </div>`;
+        }
+        html += '</div>';
+        html += `<div style="margin-top:var(--space-4);display:flex;gap:var(--space-2);">
+          <button onclick="saveAllTableAccess(this)">Save Access Rules</button>
+          <span style="font-size:var(--text-sm);color:var(--text-secondary);align-self:center;">
+            Unchecked roles = unrestricted (all roles see it). Check specific roles to restrict.
+          </span>
+        </div>`;
+        body.innerHTML = html;
+      } catch (e) {
+        body.innerHTML = `<div class="feed-empty" style="color:var(--red);">${e.message}</div>`;
+      }
+    }
+
+    async function saveAllTableAccess(btn) {
+      const rows = document.querySelectorAll('.table-access-row[data-table]');
+      const changes = [];
+      rows.forEach(row => {
+        const tableName = row.dataset.table;
+        const roles = [];
+        row.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+          roles.push(cb.dataset.role);
+        });
+        changes.push({ table_name: tableName, roles });
+      });
+
+      await asyncAction(btn, async () => {
+        let saved = 0;
+        for (const ch of changes) {
+          try {
+            await apiFetch(API + `/tables/${encodeURIComponent(ch.table_name)}/access`, {
+              method: 'PUT',
+              body: JSON.stringify({ roles: ch.roles }),
+              headers: { 'Content-Type': 'application/json' },
+            });
+            saved++;
+          } catch (e) {
+            toast(`Failed for ${ch.table_name}: ${e.message}`, 'error');
+          }
+        }
+        toast(`Saved access rules for ${saved} tables`);
+        loadTableAccess();  // refresh
+      }, { label: 'Saving...' });
     }
 
     // Wire Users tab auto-load

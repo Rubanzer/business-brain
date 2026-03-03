@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 if not JWT_SECRET:
+    # In multi-tenant mode, JWT_SECRET MUST be set (tokens shared across instances)
+    from config.settings import settings as _boot_settings
+    if _boot_settings.multi_tenant:
+        raise RuntimeError(
+            "JWT_SECRET must be set in multi-tenant mode. "
+            "Set the JWT_SECRET environment variable."
+        )
     JWT_SECRET = secrets.token_hex(32)
     logger.warning(
         "JWT_SECRET not set in environment — generated ephemeral secret. "
@@ -92,7 +99,13 @@ async def migrate_password_to_bcrypt(user, password: str, session) -> None:
 # ---------------------------------------------------------------------------
 
 
-def create_jwt(user_id: str, email: str, role: str, plan: str) -> str:
+def create_jwt(
+    user_id: str,
+    email: str,
+    role: str,
+    plan: str,
+    company_id: str | None = None,
+) -> str:
     """Create a simple JWT token."""
     import base64
     import json as _json
@@ -106,6 +119,7 @@ def create_jwt(user_id: str, email: str, role: str, plan: str) -> str:
         "email": email,
         "role": role,
         "plan": plan,
+        "company_id": company_id,
         "iat": now,
         "exp": now + (JWT_EXPIRE_DAYS * 86400),
     }
@@ -186,12 +200,11 @@ def require_role(min_role: str):
 async def get_accessible_tables(
     session: AsyncSession, user: Optional[dict] = None
 ) -> Optional[list]:
-    """Return table names the user can access based on role hierarchy.
+    """Return table names the user can access based on admin-configured role rules.
 
     - owner/admin or no auth: None (all tables — backward compat)
-    - manager: own uploads + uploads by operator/viewer + legacy (no uploader)
-    - operator: own uploads + uploads by viewer + legacy
-    - viewer: own uploads + legacy (no uploader recorded)
+    - Tables with NO access rules: visible to all roles (unrestricted)
+    - Tables WITH access rules: only visible to explicitly listed roles
     """
     if user is None:
         return None
@@ -200,29 +213,89 @@ async def get_accessible_tables(
     if role in ("owner", "admin"):
         return None
 
-    user_id = user.get("sub")
-    user_level = ROLE_LEVELS.get(role, 0)
-
     try:
+        from sqlalchemy import select
+
+        from business_brain.db.v3_models import TableRoleAccess
+
+        # Fetch tables this role has explicit access to
+        result = await session.execute(
+            select(TableRoleAccess.table_name).where(TableRoleAccess.role == role)
+        )
+        role_tables = {row[0] for row in result.fetchall()}
+
+        # Fetch ALL table names
         entries = await metadata_store.get_all(session)
+        all_tables = [e.table_name for e in entries]
+
+        # Fetch tables that have ANY access rules (restricted tables)
+        result2 = await session.execute(
+            select(TableRoleAccess.table_name).distinct()
+        )
+        restricted_tables = {row[0] for row in result2.fetchall()}
+
+        # A table is accessible if:
+        # 1. It has no access rules (unrestricted), OR
+        # 2. The user's role is explicitly listed
+        accessible = []
+        for t in all_tables:
+            if t not in restricted_tables or t in role_tables:
+                accessible.append(t)
+        return accessible
     except Exception:
-        logger.exception("Failed to fetch metadata for access control")
+        logger.exception("Failed to fetch access rules — falling back to all tables")
         return None
 
-    accessible = []
-    for entry in entries:
-        uploaded_by = getattr(entry, "uploaded_by", None)
-        uploaded_role = getattr(entry, "uploaded_by_role", None)
 
-        if uploaded_by is None:
-            accessible.append(entry.table_name)
-        elif uploaded_by == user_id:
-            accessible.append(entry.table_name)
-        elif uploaded_role is not None:
-            uploader_level = ROLE_LEVELS.get(uploaded_role, 0)
-            if uploader_level <= user_level:
-                accessible.append(entry.table_name)
-    return accessible
+async def get_tenant_db(
+    authorization: str = Header(default=""),
+):
+    """Route to the correct database based on JWT company_id.
+
+    When multi_tenant=False: returns the default session (backward compat).
+    When multi_tenant=True: looks up company's DB URL from registry.
+    """
+    from config.settings import settings as _settings
+
+    if not _settings.multi_tenant:
+        async with async_session() as session:
+            yield session
+        return
+
+    user = await get_current_user(authorization)
+    if not user or not user.get("company_id"):
+        raise HTTPException(status_code=401, detail="Authentication required (company context)")
+
+    from business_brain.db.connection import get_tenant_session
+
+    async for session in get_tenant_session(user["company_id"]):
+        yield session
+
+
+async def log_audit(
+    session: AsyncSession,
+    action: str,
+    user_id: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    details: Optional[dict] = None,
+    ip_address: Optional[str] = None,
+) -> None:
+    """Write an audit log entry. Non-blocking — failures are logged but don't raise."""
+    try:
+        from business_brain.db.v3_models import AuditLog
+
+        session.add(AuditLog(
+            user_id=user_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            details=details,
+            ip_address=ip_address,
+        ))
+        await session.flush()
+    except Exception:
+        logger.debug("Audit log write failed for action=%s", action, exc_info=True)
 
 
 async def get_focus_tables(session: AsyncSession) -> Optional[list]:
