@@ -30,6 +30,7 @@ from business_brain.analysis.models import (
     AnalysisRun,
     LearningState,
 )
+from business_brain.action.dependencies import get_accessible_tables, get_current_user
 from business_brain.db.connection import get_session
 
 router = APIRouter(tags=["analysis"])
@@ -70,11 +71,19 @@ class FeedbackRequest(BaseModel):
 async def explore(
     body: ExploreRequest,
     session: AsyncSession = Depends(get_session),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Run full three-track exploratory analysis."""
+    # Filter requested tables by role-based access
+    accessible = await get_accessible_tables(session, user)
+    table_names = body.table_names
+    if accessible is not None:
+        access_set = set(accessible)
+        table_names = [t for t in table_names if t in access_set]
+
     run, results = await run_analysis(
         session=session,
-        table_names=body.table_names,
+        table_names=table_names,
         situation_type="EXPLORATORY",
         time_scope=body.time_scope,
         budget=body.budget,
@@ -93,6 +102,7 @@ async def explore(
 async def diagnose(
     body: DiagnoseRequest,
     session: AsyncSession = Depends(get_session),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Run question-driven diagnostic analysis."""
     table_names = body.table_names or []
@@ -102,6 +112,12 @@ async def diagnose(
 
         result = await session.execute(select(TableProfile.table_name))
         table_names = [r[0] for r in result.all()]
+
+    # Filter by role-based access
+    accessible = await get_accessible_tables(session, user)
+    if accessible is not None:
+        access_set = set(accessible)
+        table_names = [t for t in table_names if t in access_set]
 
     run, results = await run_analysis(
         session=session,
@@ -123,6 +139,7 @@ async def diagnose(
 async def monitor(
     body: MonitorRequest,
     session: AsyncSession = Depends(get_session),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Quick delta check for monitoring."""
     table_names = body.table_names or []
@@ -131,6 +148,12 @@ async def monitor(
 
         result = await session.execute(select(TableProfile.table_name))
         table_names = [r[0] for r in result.all()]
+
+    # Filter by role-based access
+    accessible = await get_accessible_tables(session, user)
+    if accessible is not None:
+        access_set = set(accessible)
+        table_names = [t for t in table_names if t in access_set]
 
     run, results = await run_analysis(
         session=session,

@@ -40,5 +40,14 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: str = ""
 
+    # Google OAuth
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = ""  # e.g. "https://app.example.com/auth/google/callback"
+
+    # Multi-tenancy
+    multi_tenant: bool = False  # when False, Phase 3 infra is dormant — full backward compat
+    master_database_url: str = ""  # only used when multi_tenant=True
+
 
 settings = Settings()

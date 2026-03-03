@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from business_brain.action.dependencies import get_focus_tables
+from business_brain.action.dependencies import get_accessible_tables, get_current_user, get_focus_tables
 from business_brain.db.connection import get_session
 
 logger = logging.getLogger(__name__)
@@ -49,8 +49,9 @@ async def get_feed(
     status: Optional[str] = None,
     insight_type: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
+    user: Optional[dict] = Depends(get_current_user),
 ) -> list[dict]:
-    """Get ranked insight feed, filtered by focus scope if active."""
+    """Get ranked insight feed, filtered by focus scope and table access."""
     from business_brain.discovery.feed_store import get_feed as _get_feed
 
     try:
@@ -62,6 +63,15 @@ async def get_feed(
             insights = [
                 i for i in insights
                 if not i.source_tables or any(t in focus_set for t in (i.source_tables or []))
+            ]
+
+        # Filter by role-based table access
+        accessible = await get_accessible_tables(session, user)
+        if accessible is not None:
+            access_set = set(accessible)
+            insights = [
+                i for i in insights
+                if not i.source_tables or any(t in access_set for t in (i.source_tables or []))
             ]
 
         # Track which insights were shown (fire-and-forget)

@@ -138,6 +138,13 @@ async def _ensure_tables():
             "ALTER TABLE metric_thresholds ADD COLUMN IF NOT EXISTS confidence FLOAT",
             "ALTER TABLE discovery_runs ADD COLUMN IF NOT EXISTS pass_diagnostics JSON",
             "ALTER TABLE metadata_entries ADD COLUMN IF NOT EXISTS business_notes TEXT",
+            # Phase 1: Google OAuth columns
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR(20) DEFAULT 'email'",
+            # Phase 2: Table-level access control
+            # (table created by create_all, but add migration for safety)
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) DEFAULT ''",
         ]
 
         # Run each migration in its own transaction so AccessExclusiveLock
@@ -322,7 +329,11 @@ async def health() -> dict:
 
 
 @app.post("/analyze")
-async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_session)) -> dict:
+async def analyze(
+    req: AnalyzeRequest,
+    session: AsyncSession = Depends(get_session),
+    user: Optional[dict] = Depends(get_current_user),
+) -> dict:
     """Trigger an analysis run for the given business question."""
     session_id = req.session_id or str(uuid.uuid4())
 
@@ -338,6 +349,15 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
         await session.rollback()
 
     focus_tables = await get_focus_tables(session)
+    accessible_tables = await get_accessible_tables(session, user)
+
+    # Combine focus scope and role-based access (intersection)
+    allowed_tables = focus_tables
+    if accessible_tables is not None:
+        if allowed_tables is not None:
+            allowed_tables = [t for t in allowed_tables if t in accessible_tables]
+        else:
+            allowed_tables = accessible_tables
 
     graph = build_graph()
     invoke_state = {
@@ -345,7 +365,7 @@ async def analyze(req: AnalyzeRequest, session: AsyncSession = Depends(get_sessi
         "db_session": session,
         "session_id": session_id,
         "chat_history": chat_history,
-        "allowed_tables": focus_tables,
+        "allowed_tables": allowed_tables,
     }
     if req.parent_finding:
         invoke_state["parent_finding"] = req.parent_finding
